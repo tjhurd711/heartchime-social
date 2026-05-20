@@ -6,7 +6,8 @@
 // Card design matches the socialMode HeartchimePreviewCard exactly
 // ═══════════════════════════════════════════════════════════════════════════
 
-import puppeteer from 'puppeteer'
+import chromium from '@sparticuz/chromium'
+import puppeteer from 'puppeteer-core'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -14,6 +15,7 @@ import puppeteer from 'puppeteer'
 
 const CANVAS_WIDTH = 1080
 const CANVAS_HEIGHT = 1920
+const isLocal = !process.env.AWS_LAMBDA_FUNCTION_VERSION && !process.env.VERCEL
 
 // Card dimensions (scaled 3.2x from 300px preview)
 const CARD_WIDTH = 960
@@ -222,14 +224,12 @@ export async function renderSocialCard(
 
     // Launch headless browser
     browser = await puppeteer.launch({
+      args: isLocal ? [] : chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: isLocal
+        ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+        : await chromium.executablePath(),
       headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--font-render-hinting=none',
-      ],
     })
 
     const page = await browser.newPage()

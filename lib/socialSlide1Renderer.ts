@@ -6,7 +6,8 @@
 // Full-bleed recipient photo with text overlay in Snapchat or Clean style
 // ═══════════════════════════════════════════════════════════════════════════
 
-import puppeteer from 'puppeteer'
+import chromium from '@sparticuz/chromium'
+import puppeteer from 'puppeteer-core'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -16,6 +17,7 @@ import { v4 as uuidv4 } from 'uuid'
 
 const CANVAS_WIDTH = 1080
 const CANVAS_HEIGHT = 1920
+const isLocal = !process.env.AWS_LAMBDA_FUNCTION_VERSION && !process.env.VERCEL
 
 // S3 config
 const s3Client = new S3Client({
@@ -267,14 +269,12 @@ export async function renderSlide1(
   try {
     // Launch headless browser
     browser = await puppeteer.launch({
+      args: isLocal ? [] : chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: isLocal
+        ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+        : await chromium.executablePath(),
       headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--font-render-hinting=none',
-      ],
     })
 
     const page = await browser.newPage()

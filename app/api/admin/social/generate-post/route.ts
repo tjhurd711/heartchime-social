@@ -7,6 +7,9 @@ import { buildPhotoPrompt } from '@/lib/socialPhotoPrompt'
 import { generateAndUploadPhoto } from '@/lib/geminiImageGen'
 import { getRandomSocialCaption } from '@/lib/socialMemoryBank'
 
+export const maxDuration = 60
+export const runtime = 'nodejs'
+
 // ═══════════════════════════════════════════════════════════════════════════
 // SUPABASE CLIENT
 // ═══════════════════════════════════════════════════════════════════════════
