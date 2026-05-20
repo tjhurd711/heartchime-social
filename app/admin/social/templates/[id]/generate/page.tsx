@@ -30,6 +30,11 @@ interface Template {
   slides?: Array<{ slide_type?: string }>
 }
 
+interface PersonaOption {
+  id: string
+  name: string
+}
+
 const ETHNICITIES: { value: SelfieEthnicity; label: string }[] = [
   { value: 'white', label: 'White' },
   { value: 'black', label: 'Black' },
@@ -79,6 +84,9 @@ export default function GenerateFromTemplatePage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [uploadingField, setUploadingField] = useState<string | null>(null)
+  const [personas, setPersonas] = useState<PersonaOption[]>([])
+  const [selectedPersonaId, setSelectedPersonaId] = useState('')
+  const [loadingPersonas, setLoadingPersonas] = useState(false)
   const [isGeneratingSelfie, setIsGeneratingSelfie] = useState(false)
   const [selfieAge, setSelfieAge] = useState(35)
   const [selfieGender, setSelfieGender] = useState<SelfieGender>('female')
@@ -111,6 +119,31 @@ export default function GenerateFromTemplatePage() {
     }
   }, [templateId])
 
+  useEffect(() => {
+    const loadPersonas = async () => {
+      if (accountType !== 'persona' || personas.length > 0) return
+      setLoadingPersonas(true)
+      try {
+        const res = await fetch('/api/admin/social/ai-ugc/personas')
+        const data = await res.json()
+        if (!res.ok) {
+          throw new Error(data?.error || 'Failed to load personas')
+        }
+        const personaOptions: PersonaOption[] = (data.personas || []).map((p: { id: string; name: string }) => ({
+          id: p.id,
+          name: p.name,
+        }))
+        setPersonas(personaOptions)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load personas')
+      } finally {
+        setLoadingPersonas(false)
+      }
+    }
+
+    void loadPersonas()
+  }, [accountType, personas.length])
+
   const variablesSchema = useMemo(() => template?.variables_schema || [], [template])
   const hasSelfieSlide = useMemo(
     () => !!template?.slides?.some((slide) => slide?.slide_type === 'selfie'),
@@ -121,6 +154,7 @@ export default function GenerateFromTemplatePage() {
     return variablesSchema.some((field) => field.required && !variables[field.name]?.trim())
   }, [variablesSchema, variables])
   const selfieMissing = hasSelfieSlide && !variables.selfie_url
+  const personaMissing = accountType === 'persona' && !selectedPersonaId
 
   const accountTypeOptions = useMemo(() => {
     if (!template) return ['business', 'persona'] as AccountType[]
@@ -190,7 +224,7 @@ export default function GenerateFromTemplatePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!template) return
-    if (requiredMissing || selfieMissing) {
+    if (requiredMissing || selfieMissing || personaMissing) {
       setError('Please fill all required fields.')
       return
     }
@@ -204,6 +238,7 @@ export default function GenerateFromTemplatePage() {
         body: JSON.stringify({
           template_id: template.id,
           account_type: accountType,
+          persona_id: accountType === 'persona' ? selectedPersonaId : undefined,
           variables,
         }),
       })
@@ -261,6 +296,29 @@ export default function GenerateFromTemplatePage() {
             ))}
           </select>
         </div>
+
+        {accountType === 'persona' && (
+          <div>
+            <label className="block text-sm text-gray-300 mb-2">
+              Persona <span className="text-amber-300">*</span>
+            </label>
+            <select
+              value={selectedPersonaId}
+              onChange={(e) => setSelectedPersonaId(e.target.value)}
+              disabled={loadingPersonas}
+              className="w-full max-w-xs px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-amber-400 disabled:opacity-60"
+            >
+              <option value="">
+                {loadingPersonas ? 'Loading personas...' : 'Choose a persona...'}
+              </option>
+              {personas.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {hasSelfieSlide && (
           <div className="border border-gray-700/60 rounded-xl p-4 space-y-3">
@@ -362,7 +420,7 @@ export default function GenerateFromTemplatePage() {
 
         <button
           type="submit"
-          disabled={submitting || requiredMissing || selfieMissing || !!uploadingField}
+          disabled={submitting || requiredMissing || selfieMissing || personaMissing || !!uploadingField}
           className={`w-full py-3 rounded-xl font-semibold transition-all ${
             !submitting && !requiredMissing && !uploadingField
               ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-400 hover:to-orange-400'
