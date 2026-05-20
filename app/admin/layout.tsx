@@ -29,11 +29,15 @@ const socialNavigation: NavItem[] = [
   },
   {
     name: '➕ Create',
-    href: '/admin/social/evergreen/create',
+    href: '/admin/social/create',
   },
   {
     name: '📝 Hooks',
     href: '/admin/social/evergreen/hooks',
+  },
+  {
+    name: '🎬 Templates',
+    href: '/admin/social/templates',
   },
   {
     name: '⚡ Live Now',
