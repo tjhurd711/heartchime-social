@@ -177,14 +177,16 @@ function buildGenericPhotoPrompt(sceneDescription: string): string {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// GENERATE WITH IMAGEN 4 (FOR GENERIC PHOTOS - NO PEOPLE)
+// GENERATE WITH GEMINI 3.1 FLASH IMAGE PREVIEW
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function generatePhotoWithImagen4(prompt: string): Promise<string | null> {
+const GEMINI_MODEL = 'gemini-3.1-flash-image-preview'
+
+async function generateGenericPhotoWithGemini3Pro(prompt: string): Promise<string | null> {
   const apiKey = process.env.GEMINI_API_KEY
   
   console.log('═══════════════════════════════════════════════════════════════')
-  console.log('[ai-ugc/generate-post] 🎨 STARTING IMAGEN 4 GENERATION (generic photo)')
+  console.log('[ai-ugc/generate-post] 🎨 STARTING GEMINI 3.1 FLASH GENERATION (generic photo)')
   console.log('═══════════════════════════════════════════════════════════════')
   
   if (!apiKey) {
@@ -198,19 +200,24 @@ async function generatePhotoWithImagen4(prompt: string): Promise<string | null> 
   console.log(prompt)
   console.log('---END PROMPT---')
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`
   const requestBody = {
-    instances: [{ prompt }],
-    parameters: {
-      sampleCount: 1,
-      aspectRatio: '9:16',
-    },
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: prompt }],
+      }
+    ],
+    generationConfig: {
+      temperature: 0.8,
+      responseModalities: ['IMAGE', 'TEXT']
+    }
   }
 
-  console.log('[ai-ugc/generate-post] 🌐 API ENDPOINT: imagen-4.0-generate-001:predict')
+  console.log(`[ai-ugc/generate-post] 🌐 API ENDPOINT: ${GEMINI_MODEL}:generateContent`)
 
   try {
-    console.log('[ai-ugc/generate-post] ⏳ Sending request to Imagen 4...')
+    console.log('[ai-ugc/generate-post] ⏳ Sending request to Gemini...')
     const startTime = Date.now()
     
     const response = await fetch(endpoint, {
@@ -236,36 +243,40 @@ async function generatePhotoWithImagen4(prompt: string): Promise<string | null> 
     }
 
     if (data.error) {
-      console.error('[ai-ugc/generate-post] ❌ IMAGEN 4 API ERROR:', JSON.stringify(data.error, null, 2))
+      console.error('[ai-ugc/generate-post] ❌ GEMINI API ERROR:', JSON.stringify(data.error, null, 2))
       return null
     }
 
-    if (data.predictions && data.predictions[0]?.bytesBase64Encoded) {
-      console.log('[ai-ugc/generate-post] ✅ Image data received! Uploading to S3...')
-      
-      const base64 = data.predictions[0].bytesBase64Encoded
-      const buffer = Buffer.from(base64, 'base64')
-      console.log('[ai-ugc/generate-post] 📊 Image buffer size:', buffer.length, 'bytes')
-
-      const bucket = process.env.S3_BUCKET_NAME || 'heartbeat-photos-prod'
-      const key = `ai-ugc-posts/${uuidv4()}.png`
-      
-      try {
-        await s3Client.send(new PutObjectCommand({
-          Bucket: bucket,
-          Key: key,
-          Body: buffer,
-          ContentType: 'image/png',
-        }))
+    const parts = data.candidates?.[0]?.content?.parts
+    if (parts) {
+      const imagePart = parts.find((p: any) => p.inlineData?.mimeType?.startsWith('image/'))
+      if (imagePart?.inlineData?.data) {
+        console.log('[ai-ugc/generate-post] ✅ Image data received! Uploading to S3...')
         
-        const url = `https://${bucket}.s3.amazonaws.com/${key}`
-        console.log('[ai-ugc/generate-post] ✅ S3 UPLOAD SUCCESS!')
-        console.log('[ai-ugc/generate-post] 🔗 Final URL:', url)
-        console.log('═══════════════════════════════════════════════════════════════')
-        return url
-      } catch (s3Error) {
-        console.error('[ai-ugc/generate-post] ❌ S3 UPLOAD FAILED:', s3Error)
-        return null
+        const base64 = imagePart.inlineData.data
+        const buffer = Buffer.from(base64, 'base64')
+        console.log('[ai-ugc/generate-post] 📊 Image buffer size:', buffer.length, 'bytes')
+
+        const bucket = process.env.S3_BUCKET_NAME || 'heartbeat-photos-prod'
+        const key = `ai-ugc-posts/${uuidv4()}.png`
+        
+        try {
+          await s3Client.send(new PutObjectCommand({
+            Bucket: bucket,
+            Key: key,
+            Body: buffer,
+            ContentType: 'image/png',
+          }))
+          
+          const url = `https://${bucket}.s3.us-east-2.amazonaws.com/${key}`
+          console.log('[ai-ugc/generate-post] ✅ S3 UPLOAD SUCCESS!')
+          console.log('[ai-ugc/generate-post] 🔗 Final URL:', url)
+          console.log('═══════════════════════════════════════════════════════════════')
+          return url
+        } catch (s3Error) {
+          console.error('[ai-ugc/generate-post] ❌ S3 UPLOAD FAILED:', s3Error)
+          return null
+        }
       }
     }
 
@@ -273,19 +284,15 @@ async function generatePhotoWithImagen4(prompt: string): Promise<string | null> 
     console.log('═══════════════════════════════════════════════════════════════')
     return null
   } catch (error) {
-    console.error('[ai-ugc/generate-post] ❌ IMAGEN 4 REQUEST FAILED:', error)
+    console.error('[ai-ugc/generate-post] ❌ GEMINI REQUEST FAILED:', error)
     console.log('═══════════════════════════════════════════════════════════════')
     return null
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// GENERATE WITH IMAGEN 4 + SUBJECT REFERENCE (FOR PHOTOS WITH PEOPLE)
-// ═══════════════════════════════════════════════════════════════════════════
-
-async function generatePhotoWithImagen4SubjectRef(
+async function generatePhotoWithGemini3Pro(
   scenePrompt: string,
-  referenceImages: string[], // URLs to reference photos
+  referenceImages: string[],
   era: string,
   numPeople: number,
   personaInfo?: { age: number; gender: string },
@@ -293,11 +300,8 @@ async function generatePhotoWithImagen4SubjectRef(
 ): Promise<string | null> {
   const apiKey = process.env.GEMINI_API_KEY
   
-  // ═══════════════════════════════════════════════════════════════════════════
-  // STEP 1: Check API Key
-  // ═══════════════════════════════════════════════════════════════════════════
   console.log('═══════════════════════════════════════════════════════════════')
-  console.log('[ai-ugc/generate-post] 🚀 STARTING IMAGEN 4 WITH SUBJECT REFERENCE')
+  console.log('[ai-ugc/generate-post] 🚀 STARTING GEMINI 3.1 FLASH WITH SUBJECT REFERENCE')
   console.log('═══════════════════════════════════════════════════════════════')
   
   if (!apiKey) {
@@ -306,17 +310,14 @@ async function generatePhotoWithImagen4SubjectRef(
   }
   console.log('[ai-ugc/generate-post] ✅ GEMINI_API_KEY is set (length:', apiKey.length, ')')
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // STEP 2: Fetch reference images and convert to base64
-  // ═══════════════════════════════════════════════════════════════════════════
   console.log('[ai-ugc/generate-post] 📸 Fetching subject reference images...')
   console.log(`[ai-ugc/generate-post] Reference images to fetch: ${referenceImages.length}`)
   
-  const base64Images: string[] = []
+  const base64Images: Base64Image[] = []
   for (const url of referenceImages) {
     const imgData = await fetchImageAsBase64(url)
     if (imgData) {
-      base64Images.push(imgData.base64)
+      base64Images.push(imgData)
       console.log(`[ai-ugc/generate-post] ✅ Fetched reference image: ${url.slice(0, 60)}...`)
     } else {
       console.warn(`[ai-ugc/generate-post] ⚠️ Could not fetch reference image: ${url}`)
@@ -330,70 +331,52 @@ async function generatePhotoWithImagen4SubjectRef(
   
   console.log(`[ai-ugc/generate-post] ✅ Successfully fetched ${base64Images.length} reference images`)
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // STEP 3: Build the prompt with [1] and [2] references
-  // ═══════════════════════════════════════════════════════════════════════════
-  const prompt = buildImagen4SubjectPrompt({
+  const basePrompt = buildImagen4SubjectPrompt({
     sceneDescription: scenePrompt,
     era,
     numPeople,
     personaInfo,
     lovedOneInfo,
   })
+  const prompt = `Establish a high-fidelity identity lock on the subjects in the reference images. ${basePrompt}`
   
-  console.log('[ai-ugc/generate-post] 📝 IMAGEN 4 SUBJECT PROMPT:')
+  console.log('[ai-ugc/generate-post] 📝 GEMINI SUBJECT PROMPT:')
   console.log('---START PROMPT---')
   console.log(prompt)
   console.log('---END PROMPT---')
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // STEP 4: Build request with referenceImages parameter
-  // ═══════════════════════════════════════════════════════════════════════════
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`
-  
-  // Build referenceImages array for subject references
-  const subjectReferences: any[] = []
-  
-  if (base64Images.length >= 1) {
-    subjectReferences.push({
-      referenceId: 1,
-      referenceType: 'REFERENCE_TYPE_SUBJECT',
-      image: { bytesBase64Encoded: base64Images[0] }
+  const parts: any[] = []
+  for (const imgData of base64Images) {
+    parts.push({
+      inline_data: {
+        mime_type: imgData.mimeType,
+        data: imgData.base64
+      }
     })
-    console.log('[ai-ugc/generate-post] 🖼️ Added subject reference [1] (persona)')
   }
-  
-  if (base64Images.length >= 2) {
-    subjectReferences.push({
-      referenceId: 2,
-      referenceType: 'REFERENCE_TYPE_SUBJECT',
-      image: { bytesBase64Encoded: base64Images[1] }
-    })
-    console.log('[ai-ugc/generate-post] 🖼️ Added subject reference [2] (loved one)')
-  }
-  
+  parts.push({ text: prompt })
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`
   const requestBody = {
-    instances: [{ prompt }],
-    parameters: {
-      sampleCount: 1,
-      aspectRatio: '9:16',
-      referenceImages: subjectReferences,
+    contents: [
+      {
+        role: 'user',
+        parts
+      }
+    ],
+    generationConfig: {
+      temperature: 0.6,
+      responseModalities: ['IMAGE', 'TEXT']
     }
   }
 
-  console.log('[ai-ugc/generate-post] 🌐 API ENDPOINT: imagen-4.0-generate-001:predict')
+  console.log(`[ai-ugc/generate-post] 🌐 API ENDPOINT: ${GEMINI_MODEL}:generateContent`)
   console.log('[ai-ugc/generate-post] 📦 REQUEST STRUCTURE:')
   console.log(`  - Prompt length: ${prompt.length} chars`)
-  console.log(`  - Subject references: ${subjectReferences.length}`)
-  
-  // Log detailed subject reference info (without full base64)
-  console.log('[ai-ugc/generate-post] 📦 referenceImages array:')
-  subjectReferences.forEach((ref, i) => {
-    console.log(`  [${i}] { referenceId: ${ref.referenceId}, type: ${ref.referenceType}, imageSize: ${ref.image.bytesBase64Encoded.length} chars }`)
-  })
+  console.log(`  - Subject references: ${base64Images.length}`)
   
   try {
-    console.log('[ai-ugc/generate-post] ⏳ Sending request to Imagen 4 with Subject Reference...')
+    console.log('[ai-ugc/generate-post] ⏳ Sending request to Gemini with Subject Reference...')
     const startTime = Date.now()
     
     const response = await fetch(endpoint, {
@@ -406,9 +389,6 @@ async function generatePhotoWithImagen4SubjectRef(
     console.log(`[ai-ugc/generate-post] ⏱️ Response received in ${elapsed}ms`)
     console.log('[ai-ugc/generate-post] 📊 Response status:', response.status, response.statusText)
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // STEP 5: Parse response
-    // ═══════════════════════════════════════════════════════════════════════════
     const responseText = await response.text()
     console.log('[ai-ugc/generate-post] 📄 RAW RESPONSE (first 500 chars):')
     console.log(responseText.slice(0, 500))
@@ -422,47 +402,40 @@ async function generatePhotoWithImagen4SubjectRef(
     }
 
     if (data.error) {
-      console.error('[ai-ugc/generate-post] ❌ IMAGEN 4 API ERROR:', JSON.stringify(data.error, null, 2))
+      console.error('[ai-ugc/generate-post] ❌ GEMINI API ERROR:', JSON.stringify(data.error, null, 2))
       return null
     }
 
-    // Log if model acknowledged subject references
-    console.log('[ai-ugc/generate-post] 🔍 Checking for subject reference acknowledgment...')
-    if (data.predictions?.[0]?.subjectReferenceResults) {
-      console.log('[ai-ugc/generate-post] ✅ Subject references acknowledged:', JSON.stringify(data.predictions[0].subjectReferenceResults, null, 2))
-    } else {
-      console.log('[ai-ugc/generate-post] ℹ️ No explicit subjectReferenceResults in response (this is normal for Imagen 4)')
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // STEP 6: Extract image and upload to S3
-    // ═══════════════════════════════════════════════════════════════════════════
-    if (data.predictions && data.predictions[0]?.bytesBase64Encoded) {
-      console.log('[ai-ugc/generate-post] ✅ Image data received! Uploading to S3...')
-      
-      const base64 = data.predictions[0].bytesBase64Encoded
-      const buffer = Buffer.from(base64, 'base64')
-      console.log('[ai-ugc/generate-post] 📊 Image buffer size:', buffer.length, 'bytes')
-
-      const bucket = process.env.S3_BUCKET_NAME || 'heartbeat-photos-prod'
-      const key = `ai-ugc-posts/${uuidv4()}.png`
-      
-      try {
-        await s3Client.send(new PutObjectCommand({
-          Bucket: bucket,
-          Key: key,
-          Body: buffer,
-          ContentType: 'image/png',
-        }))
+    const responseParts = data.candidates?.[0]?.content?.parts
+    if (responseParts) {
+      const imagePart = responseParts.find((p: any) => p.inlineData?.mimeType?.startsWith('image/'))
+      if (imagePart?.inlineData?.data) {
+        console.log('[ai-ugc/generate-post] ✅ Image data received! Uploading to S3...')
         
-        const url = `https://${bucket}.s3.amazonaws.com/${key}`
-        console.log('[ai-ugc/generate-post] ✅ S3 UPLOAD SUCCESS!')
-        console.log('[ai-ugc/generate-post] 🔗 Final URL:', url)
-        console.log('═══════════════════════════════════════════════════════════════')
-        return url
-      } catch (s3Error) {
-        console.error('[ai-ugc/generate-post] ❌ S3 UPLOAD FAILED:', s3Error)
-        return null
+        const base64 = imagePart.inlineData.data
+        const buffer = Buffer.from(base64, 'base64')
+        console.log('[ai-ugc/generate-post] 📊 Image buffer size:', buffer.length, 'bytes')
+
+        const bucket = process.env.S3_BUCKET_NAME || 'heartbeat-photos-prod'
+        const key = `ai-ugc-posts/${uuidv4()}.png`
+        
+        try {
+          await s3Client.send(new PutObjectCommand({
+            Bucket: bucket,
+            Key: key,
+            Body: buffer,
+            ContentType: 'image/png',
+          }))
+          
+          const url = `https://${bucket}.s3.us-east-2.amazonaws.com/${key}`
+          console.log('[ai-ugc/generate-post] ✅ S3 UPLOAD SUCCESS!')
+          console.log('[ai-ugc/generate-post] 🔗 Final URL:', url)
+          console.log('═══════════════════════════════════════════════════════════════')
+          return url
+        } catch (s3Error) {
+          console.error('[ai-ugc/generate-post] ❌ S3 UPLOAD FAILED:', s3Error)
+          return null
+        }
       }
     }
     
@@ -471,7 +444,7 @@ async function generatePhotoWithImagen4SubjectRef(
     console.log('═══════════════════════════════════════════════════════════════')
     return null
   } catch (error) {
-    console.error('[ai-ugc/generate-post] ❌ IMAGEN 4 REQUEST FAILED:', error)
+    console.error('[ai-ugc/generate-post] ❌ GEMINI REQUEST FAILED:', error)
     console.log('═══════════════════════════════════════════════════════════════')
     return null
   }
@@ -971,11 +944,11 @@ async function generateSlide(
     // Generic photos (no people) - use Imagen 4
     console.log('[ai-ugc/generate-post] 🎨 Routing to Imagen 4 (generic photo, no people)')
     const genericPrompt = buildGenericPhotoPrompt(sceneDescription)
-    photoUrl = await generatePhotoWithImagen4(genericPrompt)
+    photoUrl = await generateGenericPhotoWithGemini3Pro(genericPrompt)
   } else {
     // Photos with people - use Imagen 4 with Subject Reference
     console.log('[ai-ugc/generate-post] 📸 Routing to Imagen 4 with Subject Reference (photo with people)')
-    photoUrl = await generatePhotoWithImagen4SubjectRef(
+    photoUrl = await generatePhotoWithGemini3Pro(
       sceneDescription,
       referenceImages,
       effectiveEra,

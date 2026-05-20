@@ -44,7 +44,7 @@ const s3Client = new S3Client({
 // GEMINI 3 PRO IMAGE PREVIEW CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════
 
-const GEMINI_MODEL = 'gemini-3-pro-image-preview'
+const GEMINI_MODEL = 'gemini-3.1-flash-image-preview'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -426,7 +426,7 @@ async function generateGenericPhotoWithGemini3Pro(prompt: string): Promise<strin
           ContentType: 'image/png',
         }))
         
-        const url = `https://${bucket}.s3.amazonaws.com/${key}`
+        const url = `https://${bucket}.s3.us-east-2.amazonaws.com/${key}`
         console.log('[generate-photos] ✅ Photo generated:', url.slice(0, 60))
         return url
       }
@@ -581,7 +581,7 @@ async function generatePhotoWithGemini3Pro(
           ContentType: 'image/png',
         }))
         
-        const url = `https://${bucket}.s3.amazonaws.com/${key}`
+        const url = `https://${bucket}.s3.us-east-2.amazonaws.com/${key}`
         console.log('[generate-photos] ✅ Photo generated:', url.slice(0, 60))
         return url
       }

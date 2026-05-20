@@ -40,7 +40,7 @@ const photoAgeRanges: PersonPhotoRanges = {
     { file: 'Mike_1990s.png', minAge: 10, maxAge: 20 },
     { file: 'Mike_2000s.png', minAge: 20, maxAge: 31 },
     { file: 'Mike_2010s.png', minAge: 32, maxAge: 47 },
-    { file: 'Mike.jpeg', minAge: 48, maxAge: 999 },
+    { file: 'Mike-v2.jpg', minAge: 48, maxAge: 999 },
   ],
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -63,7 +63,7 @@ const photoAgeRanges: PersonPhotoRanges = {
     { file: 'Linda_1980s.png', minAge: 12, maxAge: 17 },
     { file: 'Linda_1990s.png', minAge: 18, maxAge: 28 },
     { file: 'Linda_2000s.png', minAge: 29, maxAge: 45 },
-    { file: 'Linda.png', minAge: 46, maxAge: 999 },
+    { file: 'Linda-v2.jpg', minAge: 46, maxAge: 999 },
   ],
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -84,7 +84,7 @@ const photoAgeRanges: PersonPhotoRanges = {
   'Jenna': [
     { file: 'Jenna_2000s.png', minAge: 0, maxAge: 12 },
     { file: 'Jenna_2010s.png', minAge: 13, maxAge: 23 },
-    { file: 'Jenna.png', minAge: 24, maxAge: 999 },
+    { file: 'Jenna-v2.jpg', minAge: 24, maxAge: 999 },
   ],
 
   // ═══════════════════════════════════════════════════════════════════════════

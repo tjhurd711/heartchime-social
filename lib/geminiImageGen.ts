@@ -10,7 +10,7 @@ const s3Client = new S3Client({
 })
 
 // Gemini 3 Pro Image Preview model
-const GEMINI_MODEL = 'gemini-3-pro-image-preview'
+const GEMINI_MODEL = 'gemini-3.1-flash-image-preview'
 
 export async function generateAndUploadPhoto(
   prompt: string
@@ -72,7 +72,7 @@ export async function generateAndUploadPhoto(
           ContentType: 'image/png',
         }))
         
-        const url = `https://${process.env.S3_BUCKET_NAME || 'heartbeat-photos-prod'}.s3.amazonaws.com/${key}`
+        const url = `https://${process.env.S3_BUCKET_NAME || 'heartbeat-photos-prod'}.s3.us-east-2.amazonaws.com/${key}`
         console.log('[gemini] Image uploaded:', url)
         
         return url

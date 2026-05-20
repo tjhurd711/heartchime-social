@@ -25,17 +25,22 @@ export async function POST(request: NextRequest) {
   const prompt = `Authentic vintage photograph from the 1970s. Warm faded colors, orange and brown tones, soft focus, 1970s fashion. An elderly woman with warm smile, grandmotherly presence, with her granddaughter age 8. Backyard birthday party with decorations, wide angle shot. Medium shot, not close-up. Natural candid moment. Authentic family snapshot feel. No watermarks. No text. No AI artifacts. Aspect ratio: 4:3 landscape.`
 
   try {
-    // Use Imagen 3 model
+    // Use Gemini image preview model
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          instances: [{ prompt }],
-          parameters: {
-            sampleCount: 1,
-            aspectRatio: '4:3'
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: prompt }]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.8,
+            responseModalities: ['IMAGE', 'TEXT']
           }
         })
       }
@@ -50,16 +55,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: data.error }, { status: 500 })
     }
     
-    // Extract base64 image data
-    const predictions = data.predictions
-    if (!predictions || predictions.length === 0) {
-      console.error('[test-gemini] No predictions in response')
+    // Extract image from Gemini generateContent response
+    const parts = data.candidates?.[0]?.content?.parts
+    if (!parts) {
+      console.error('[test-gemini] No parts in response')
       return NextResponse.json({ error: 'No image generated' }, { status: 500 })
     }
     
-    const base64Image = predictions[0].bytesBase64Encoded
+    const imagePart = parts.find((p: any) => p.inlineData?.mimeType?.startsWith('image/'))
+    const base64Image = imagePart?.inlineData?.data
     if (!base64Image) {
-      console.error('[test-gemini] No base64 image in prediction')
+      console.error('[test-gemini] No base64 image in response')
       return NextResponse.json({ error: 'No image data in response' }, { status: 500 })
     }
     

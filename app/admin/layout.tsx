@@ -8,54 +8,44 @@ import Image from 'next/image'
 interface NavItem {
   name: string
   href: string
-  icon: React.ReactNode
 }
 
 const socialNavigation: NavItem[] = [
   {
-    name: 'Dashboard',
+    name: '📊 Dashboard',
     href: '/admin/social',
-    icon: <span className="text-base">📊</span>,
   },
   {
-    name: 'Recipients',
+    name: '👥 Recipients',
     href: '/admin/social/recipients',
-    icon: <span className="text-base">👥</span>,
   },
   {
-    name: 'Evergreen',
+    name: '🌲 Evergreen',
     href: '/admin/social/evergreen',
-    icon: <span className="text-base">🌲</span>,
   },
   {
-    name: 'Posts',
+    name: '📋 Posts',
     href: '/admin/social/evergreen',
-    icon: <span className="text-base">📋</span>,
   },
   {
-    name: 'Create',
+    name: '➕ Create',
     href: '/admin/social/evergreen/create',
-    icon: <span className="text-base">➕</span>,
   },
   {
-    name: 'Hooks',
+    name: '📝 Hooks',
     href: '/admin/social/evergreen/hooks',
-    icon: <span className="text-base">📝</span>,
   },
   {
-    name: 'Live Now',
+    name: '⚡ Live Now',
     href: '/admin/social/live-now',
-    icon: <span className="text-base">⚡</span>,
   },
   {
-    name: 'Live Past',
+    name: '📅 Live Past',
     href: '/admin/social/live-past',
-    icon: <span className="text-base">📅</span>,
   },
   {
-    name: 'AI UGC',
+    name: '🤖 AI UGC',
     href: '/admin/social/ai-ugc',
-    icon: <span className="text-base">🤖</span>,
   },
 ]
 
@@ -213,7 +203,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       : 'text-gray-400 hover:bg-gray-800/50 hover:text-white'
                   }`}
                 >
-                  {item.icon}
                   {item.name}
                 </Link>
               </div>

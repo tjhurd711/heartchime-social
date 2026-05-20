@@ -27,6 +27,8 @@ export default function PhotoGeneratorPage() {
   const [photoType, setPhotoType] = useState<AssetType>('persona_solo')
   const [era, setEra] = useState<string>('')
   const [context, setContext] = useState<string>('')
+  const [shotType, setShotType] = useState<'selfie' | 'photo'>('photo')
+  const [distance, setDistance] = useState<number>(8)
   
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
@@ -82,6 +84,8 @@ export default function PhotoGeneratorPage() {
           photoType,
           era: era || undefined,
           context: context || undefined,
+          shotType,
+          distance,
         }),
       })
 
@@ -295,6 +299,39 @@ export default function PhotoGeneratorPage() {
                     {suggestion}
                   </button>
                 ))}
+              </div>
+            </div>
+
+            {/* Shot Controls */}
+            <div className="bg-[#161b22] rounded-xl border border-gray-800 p-6">
+              <h3 className="text-lg font-semibold text-white mb-4">5. Shot Settings</h3>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Shot type</label>
+                  <select
+                    value={shotType}
+                    onChange={(e) => setShotType(e.target.value as 'selfie' | 'photo')}
+                    className="w-full bg-[#0d1117] border border-gray-700 rounded-lg px-4 py-3 text-white focus:border-emerald-500 focus:outline-none"
+                  >
+                    <option value="photo">photo</option>
+                    <option value="selfie">selfie</option>
+                  </select>
+                </div>
+
+                {shotType === 'photo' && (
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Distance (feet)</label>
+                    <input
+                      type="number"
+                      value={distance}
+                      min={2}
+                      max={30}
+                      onChange={(e) => setDistance(Number(e.target.value))}
+                      className="w-full bg-[#0d1117] border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-emerald-500 focus:outline-none"
+                    />
+                  </div>
+                )}
               </div>
             </div>
 

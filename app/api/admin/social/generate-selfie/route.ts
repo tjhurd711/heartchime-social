@@ -16,7 +16,7 @@ const s3Client = new S3Client({
 })
 
 // Gemini 3 Pro Image Preview model
-const GEMINI_MODEL = 'gemini-3-pro-image-preview'
+const GEMINI_MODEL = 'gemini-3.1-flash-image-preview'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES

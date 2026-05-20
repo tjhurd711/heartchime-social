@@ -31,7 +31,7 @@ const s3Client = new S3Client({
 // GEMINI 3 PRO IMAGE PREVIEW CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════
 
-const GEMINI_MODEL = 'gemini-3-pro-image-preview'
+const GEMINI_MODEL = 'gemini-3.1-flash-image-preview'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AGE CALCULATION
@@ -357,13 +357,13 @@ function buildAiUgcPrompt(params: PromptParams): string {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const eraAestheticStrings: Record<string, string> = {
-  '1960s': '1960s amateur snapshot, Kodak Brownie aesthetic, faded colors with yellow-green tint, soft focus, visible film grain, slightly overexposed, natural lighting only.',
-  '1970s': '1970s amateur snapshot, 110 film cartridge camera, warm faded colors with yellow-orange tint, heavy film grain, soft focus, slight vignetting, Kodak Instamatic look.',
-  '1980s': '1980s amateur snapshot, 110 film or early 35mm point-and-shoot, faded colors with slight magenta cast, film grain, soft flash lighting, Polaroid-adjacent aesthetic.',
-  '1990s': '1990s amateur snapshot, harsh on-camera flash, blown-out faces, heavy film grain, orange date stamp in corner, red-eye effect, disposable camera look, slightly oversaturated colors.',
-  '2000s': '2000s amateur snapshot, early digital camera aesthetic, slight pixelation, orange timestamp in corner, oversaturated colors, jpeg compression artifacts, 2-3 megapixel quality, slight motion blur.',
-  '2010s': '2010s smartphone photo, Instagram-era filter look, slight HDR processing, portrait mode blur on edges, warm color grading, slightly overprocessed look.',
-  '2020s': '2020s smartphone photo, portrait mode with artificial background blur, night mode grain in shadows, natural but slightly enhanced colors, iPhone aesthetic.',
+  '1960s': 'Kodak Brownie camera. Faded yellow-green tint, soft focus everywhere, visible film grain. Overexposed in spots.',
+  '1970s': '110 film cartridge camera. Warm faded orange-yellow cast, heavy grain, soft everywhere. Kodak Instamatic. Colors bleeding.',
+  '1980s': '35mm point-and-shoot or Polaroid. Slight magenta cast, harsh flash making skin look flat. Film grain. Red-eye if facing camera.',
+  '1990s': 'Disposable camera. Harsh flash blowing out faces, heavy grain, orange date stamp bottom-right. Red-eye. Oversaturated. Fujifilm QuickSnap.',
+  '2000s': 'Early digital camera, 2-3 megapixel. Slight pixelation, jpeg compression visible. Orange timestamp in corner. Oversaturated. Slight shutter lag motion blur.',
+  '2010s': 'iPhone 4 or 5. HDR looks slightly off. Instagram-era warmth. Slight overprocessing.',
+  '2020s': 'iPhone 12 or newer. Portrait mode blur that looks slightly artificial. Night mode grain in shadows. Colors natural but slightly enhanced.',
 }
 
 /**
@@ -419,39 +419,61 @@ interface MultimodalPromptParams {
   numPeople: number // 1 or 2
   personaInfo?: { age: number; gender: string }
   lovedOneInfo?: { age: number; gender: string; relationship: string }
+  shotType?: 'selfie' | 'photo'
+  distance?: number
 }
 
 /**
  * Build prompt for Gemini 3 Pro with Subject Reference
  * Uses [1] for persona and [2] for loved one to reference the subject images
  */
+function getFramingForDistance(feet: number): string {
+  if (feet <= 4) return 'Face and shoulders fill the entire frame. Skin texture visible. Very close.'
+  if (feet <= 8) return 'Waist-up visible. Background showing around the subject.'
+  if (feet <= 15) return 'Full body visible head to toe. Person takes up about half the frame. Ground and surroundings visible.'
+  if (feet <= 25) return 'Full body visible, person is small in the frame. Environment dominates. Lots of space around them.'
+  return 'Person is small and distant in the frame. Landscape/environment is the main visual. Person takes up less than 20% of the image.'
+}
+
 function buildGemini3ProSubjectPrompt(params: MultimodalPromptParams): string {
-  const { sceneDescription, era, numPeople, personaInfo, lovedOneInfo } = params
-  const aestheticString = getEraAestheticString(era)
+  const { sceneDescription, era, numPeople, personaInfo, lovedOneInfo, shotType, distance } = params
+  const device = eraAestheticStrings[era] || eraAestheticStrings['2020s']
   
-  // ═══════════════════════════════════════════════════════════════════════════
-  // TOGETHER PHOTO - TWO PEOPLE
-  // ═══════════════════════════════════════════════════════════════════════════
+  const flaws = [
+    'Slightly out of focus.', 'Subject not centered.', 'Thumb barely visible in corner.',
+    'Slight motion blur from shaky hands.', 'Horizon is tilted.', 'Too much headroom.',
+    'Awkward crop cutting off feet.', 'Someone else blurry in background.',
+    'Lens flare from window.', 'Shadow of photographer visible.',
+  ]
+  const flaw1 = flaws[Math.floor(Math.random() * flaws.length)]
+  let flaw2 = flaws[Math.floor(Math.random() * flaws.length)]
+  while (flaw2 === flaw1) flaw2 = flaws[Math.floor(Math.random() * flaws.length)]
+  
+  const eraYear = parseInt(era.slice(0, 4))
+  const specificYear = eraYear + Math.floor(Math.random() * 10)
+  
+  const isSelfie = shotType === 'selfie'
+  const cameraDesc = isSelfie
+    ? `Selfie taken at arm's length. Front-facing camera, slightly too close. ${device}`
+    : `Someone took this from about ${distance || 8} feet away. ${getFramingForDistance(distance || 8)} ${device}`
+  
+  const selfieFlaws = isSelfie
+    ? 'Arm partially visible at bottom. Angle slightly from above. Not centered.'
+    : `${flaw1} ${flaw2}`
+  
   if (numPeople === 2 && personaInfo && lovedOneInfo) {
-    return `Amateur snapshot of [1] (${personaInfo.age} years old, ${personaInfo.gender}) and [2] (${lovedOneInfo.age} years old, ${lovedOneInfo.gender}, their ${lovedOneInfo.relationship}) ${sceneDescription}. Both people fully visible head to toe, standing 25-30 feet from camera. Eye-level shot from 5.5 feet height. [1] on the left, [2] on the right. Slightly tilted horizon, more foreground than sky. ${aestheticString} 9:16 vertical.`
+    return `Snapshot from ${specificYear}. [1] is a ${personaInfo.gender}, ${personaInfo.age} years old. [2] is a ${lovedOneInfo.gender}, ${lovedOneInfo.age} years old, their ${lovedOneInfo.relationship}. They are ${sceneDescription}. ${cameraDesc} ${selfieFlaws} Not a good photo. Not a professional photo. Not a stock image. Real amateur snapshot. Aspect ratio: 9:16 vertical.`
   }
   
-  // ═══════════════════════════════════════════════════════════════════════════
-  // SINGLE PERSON - PERSONA
-  // ═══════════════════════════════════════════════════════════════════════════
   if (numPeople === 1 && personaInfo) {
-    return `Amateur snapshot of [1] (${personaInfo.age} years old, ${personaInfo.gender}) ${sceneDescription}. ${aestheticString} 9:16 vertical.`
+    return `Snapshot from ${specificYear}. ${personaInfo.gender}, ${personaInfo.age} years old, caught mid-moment ${sceneDescription}. ${cameraDesc} ${selfieFlaws} Not a good photo. Not a professional photo. Not a stock image. Real amateur snapshot. Aspect ratio: 9:16 vertical.`
   }
   
-  // ═══════════════════════════════════════════════════════════════════════════
-  // SINGLE PERSON - LOVED ONE
-  // ═══════════════════════════════════════════════════════════════════════════
   if (numPeople === 1 && lovedOneInfo) {
-    return `Amateur snapshot of [1] (${lovedOneInfo.age} years old, ${lovedOneInfo.gender}) ${sceneDescription}. ${aestheticString} 9:16 vertical.`
+    return `Snapshot from ${specificYear}. ${lovedOneInfo.gender}, ${lovedOneInfo.age} years old, caught mid-moment ${sceneDescription}. ${cameraDesc} ${selfieFlaws} Not a good photo. Not a professional photo. Not a stock image. Real amateur snapshot. Aspect ratio: 9:16 vertical.`
   }
   
-  // Fallback
-  return `Amateur snapshot ${sceneDescription}. ${aestheticString} 9:16 vertical.`
+  return `Snapshot from ${specificYear}. Someone ${sceneDescription}. ${cameraDesc} ${selfieFlaws} Not a professional photo. Real amateur snapshot. Aspect ratio: 9:16 vertical.`
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -556,7 +578,7 @@ async function generateGenericPhotoWithGemini3Pro(prompt: string): Promise<strin
             ContentType: 'image/png',
           }))
           
-          const url = `https://${bucket}.s3.amazonaws.com/${key}`
+          const url = `https://${bucket}.s3.us-east-2.amazonaws.com/${key}`
           console.log('[ai-ugc/generate] ✅ S3 UPLOAD SUCCESS!')
           console.log('[ai-ugc/generate] 🔗 Final URL:', url)
           console.log('═══════════════════════════════════════════════════════════════')
@@ -589,7 +611,9 @@ async function generatePhotoWithGemini3Pro(
   era: string,
   numPeople: number,
   personaInfo?: { age: number; gender: string },
-  lovedOneInfo?: { age: number; gender: string; relationship: string }
+  lovedOneInfo?: { age: number; gender: string; relationship: string },
+  shotType?: 'selfie' | 'photo',
+  distance?: number
 ): Promise<string | null> {
   const apiKey = process.env.GEMINI_API_KEY
   
@@ -637,10 +661,12 @@ async function generatePhotoWithGemini3Pro(
       numPeople,
       personaInfo,
       lovedOneInfo,
+      shotType,
+      distance,
     })
     
     // Add identity lock instruction prefix
-    const prompt = `Establish a high-fidelity identity lock on the subjects in the reference images. ${basePrompt}`
+    const prompt = `This is a reference photo of the person. Generate a new photo of this exact same person in the scene described below.\n\n${basePrompt}`
     
     console.log('[ai-ugc/generate] 📝 GEMINI 3 PRO SUBJECT PROMPT:')
     console.log('---START PROMPT---')
@@ -746,7 +772,7 @@ async function generatePhotoWithGemini3Pro(
             ContentType: 'image/png',
           }))
           
-          const url = `https://${bucket}.s3.amazonaws.com/${key}`
+          const url = `https://${bucket}.s3.us-east-2.amazonaws.com/${key}`
           console.log('[ai-ugc/generate] ✅ S3 UPLOAD SUCCESS!')
           console.log('[ai-ugc/generate] 🔗 Final URL:', url)
           console.log('═══════════════════════════════════════════════════════════════')
@@ -782,11 +808,15 @@ export async function POST(request: NextRequest) {
       photoType,
       era,
       context,
+      shotType = 'photo',
+      distance = 8,
     } = body as {
       personaId: string
       photoType: 'persona_solo' | 'loved_one_solo' | 'together' | 'generic'
       era?: string
       context?: string
+      shotType?: 'selfie' | 'photo'
+      distance?: number
     }
 
     // Validate required fields
@@ -960,7 +990,9 @@ export async function POST(request: NextRequest) {
         effectiveEra,
         numPeople,
         personaInfo,
-        lovedOneInfo
+        lovedOneInfo,
+        shotType,
+        distance
       )
     }
 
