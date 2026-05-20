@@ -479,7 +479,7 @@ export async function renderSlide3(
     // Launch headless browser
     browser = await puppeteer.launch({
       args: isLocal ? [] : chromium.args,
-      defaultViewport: chromium.defaultViewport,
+      defaultViewport: { width: 1080, height: 1920 },
       executablePath: isLocal
         ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
         : await chromium.executablePath(),
