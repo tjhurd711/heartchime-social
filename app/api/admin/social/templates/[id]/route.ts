@@ -14,7 +14,7 @@ export async function GET(
     const { id } = await params
     const { data, error } = await supabase
       .from('post_templates')
-      .select('id, name, category, account_type, slide_count, description, variables_schema')
+      .select('id, name, category, account_type, slide_count, description, variables_schema, slides')
       .eq('id', id)
       .eq('is_active', true)
       .single()

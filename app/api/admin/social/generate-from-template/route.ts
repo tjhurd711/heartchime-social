@@ -211,6 +211,21 @@ export async function POST(request: NextRequest) {
         continue
       }
 
+      if (slide.slide_type === 'selfie' && variables.selfie_url) {
+        const overlayText = resolveOverlayText(slide, variables, interpolatedPrompt)
+        const selfieUrl = overlayText && overlayText.trim()
+          ? await renderAndUploadSlide1(
+              variables.selfie_url,
+              overlayText,
+              overlayStyleToTextStyle(slide.overlay_style)
+            )
+          : variables.selfie_url
+
+        slideResults.push({ order: slide.order, url: selfieUrl, slide_type: slide.slide_type })
+        latestImageUrl = selfieUrl
+        continue
+      }
+
       if (slide.slide_type === 'text_card') {
         const textBody = interpolatedPrompt || slide.text_overlay || variables.hook || 'HeartChime'
         const textCardUrl = await renderAndUploadSlide1(

@@ -6,6 +6,12 @@ import { useParams, useRouter } from 'next/navigation'
 
 type AccountType = 'business' | 'persona'
 type FieldType = 'text' | 'textarea' | 'select' | 'photo_upload'
+type SelfieGender = 'male' | 'female'
+type SelfieEthnicity = 'white' | 'black' | 'hispanic' | 'asian' | 'middle eastern' | 'south asian' | 'mixed'
+type SelfieAngle = 'from below' | 'straight on' | 'from above' | 'side tilt'
+type SelfieEmotion = 'neutral' | 'slight smile' | 'bittersweet' | 'sad' | 'hopeful' | 'tired' | 'peaceful'
+type SelfieGaze = 'looking at camera' | 'looking away' | 'eyes down' | 'looking off to side'
+type SelfieSetting = 'home' | 'car' | 'outside' | 'office'
 
 interface VariableField {
   name: string
@@ -21,7 +27,45 @@ interface Template {
   description: string | null
   account_type: 'business' | 'persona' | 'both'
   variables_schema: VariableField[] | null
+  slides?: Array<{ slide_type?: string }>
 }
+
+const ETHNICITIES: { value: SelfieEthnicity; label: string }[] = [
+  { value: 'white', label: 'White' },
+  { value: 'black', label: 'Black' },
+  { value: 'hispanic', label: 'Hispanic' },
+  { value: 'asian', label: 'Asian' },
+  { value: 'middle eastern', label: 'Middle Eastern' },
+  { value: 'south asian', label: 'South Asian' },
+  { value: 'mixed', label: 'Mixed' },
+]
+const ANGLES: { value: SelfieAngle; label: string }[] = [
+  { value: 'from below', label: 'From Below' },
+  { value: 'straight on', label: 'Straight On' },
+  { value: 'from above', label: 'From Above' },
+  { value: 'side tilt', label: 'Side Tilt' },
+]
+const EMOTIONS: { value: SelfieEmotion; label: string }[] = [
+  { value: 'neutral', label: 'Neutral' },
+  { value: 'slight smile', label: 'Slight Smile' },
+  { value: 'bittersweet', label: 'Bittersweet' },
+  { value: 'sad', label: 'Sad' },
+  { value: 'hopeful', label: 'Hopeful' },
+  { value: 'tired', label: 'Tired' },
+  { value: 'peaceful', label: 'Peaceful' },
+]
+const GAZES: { value: SelfieGaze; label: string }[] = [
+  { value: 'looking at camera', label: 'At Camera' },
+  { value: 'looking away', label: 'Looking Away' },
+  { value: 'eyes down', label: 'Eyes Down' },
+  { value: 'looking off to side', label: 'Off to Side' },
+]
+const SETTINGS: { value: SelfieSetting; label: string }[] = [
+  { value: 'home', label: 'Home' },
+  { value: 'car', label: 'Car' },
+  { value: 'outside', label: 'Outside' },
+  { value: 'office', label: 'Office' },
+]
 
 export default function GenerateFromTemplatePage() {
   const params = useParams<{ id: string }>()
@@ -35,6 +79,14 @@ export default function GenerateFromTemplatePage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [uploadingField, setUploadingField] = useState<string | null>(null)
+  const [isGeneratingSelfie, setIsGeneratingSelfie] = useState(false)
+  const [selfieAge, setSelfieAge] = useState(35)
+  const [selfieGender, setSelfieGender] = useState<SelfieGender>('female')
+  const [selfieEthnicity, setSelfieEthnicity] = useState<SelfieEthnicity>('white')
+  const [selfieAngle, setSelfieAngle] = useState<SelfieAngle>('straight on')
+  const [selfieEmotion, setSelfieEmotion] = useState<SelfieEmotion>('bittersweet')
+  const [selfieGaze, setSelfieGaze] = useState<SelfieGaze>('looking at camera')
+  const [selfieSetting, setSelfieSetting] = useState<SelfieSetting>('home')
 
   useEffect(() => {
     const loadTemplate = async () => {
@@ -60,10 +112,15 @@ export default function GenerateFromTemplatePage() {
   }, [templateId])
 
   const variablesSchema = useMemo(() => template?.variables_schema || [], [template])
+  const hasSelfieSlide = useMemo(
+    () => !!template?.slides?.some((slide) => slide?.slide_type === 'selfie'),
+    [template]
+  )
 
   const requiredMissing = useMemo(() => {
     return variablesSchema.some((field) => field.required && !variables[field.name]?.trim())
   }, [variablesSchema, variables])
+  const selfieMissing = hasSelfieSlide && !variables.selfie_url
 
   const accountTypeOptions = useMemo(() => {
     if (!template) return ['business', 'persona'] as AccountType[]
@@ -101,10 +158,39 @@ export default function GenerateFromTemplatePage() {
     }
   }
 
+  const handleGenerateSelfie = async () => {
+    setIsGeneratingSelfie(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/admin/social/generate-selfie', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          age: selfieAge,
+          gender: selfieGender,
+          ethnicity: selfieEthnicity,
+          angle: selfieAngle,
+          emotion: selfieEmotion,
+          gaze: selfieGaze,
+          setting: selfieSetting,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to generate selfie')
+      }
+      setVariables((prev) => ({ ...prev, selfie_url: data.selfieUrl }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate selfie')
+    } finally {
+      setIsGeneratingSelfie(false)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!template) return
-    if (requiredMissing) {
+    if (requiredMissing || selfieMissing) {
       setError('Please fill all required fields.')
       return
     }
@@ -176,6 +262,38 @@ export default function GenerateFromTemplatePage() {
           </select>
         </div>
 
+        {hasSelfieSlide && (
+          <div className="border border-gray-700/60 rounded-xl p-4 space-y-3">
+            <h2 className="text-white font-semibold">Generate Selfie (Slide 1)</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <input type="number" min={18} max={80} value={selfieAge} onChange={(e) => setSelfieAge(Number(e.target.value))} className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white" />
+              <select value={selfieGender} onChange={(e) => setSelfieGender(e.target.value as SelfieGender)} className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white">
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+              </select>
+              <select value={selfieEthnicity} onChange={(e) => setSelfieEthnicity(e.target.value as SelfieEthnicity)} className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white">
+                {ETHNICITIES.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+              </select>
+              <select value={selfieAngle} onChange={(e) => setSelfieAngle(e.target.value as SelfieAngle)} className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white">
+                {ANGLES.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+              </select>
+              <select value={selfieEmotion} onChange={(e) => setSelfieEmotion(e.target.value as SelfieEmotion)} className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white">
+                {EMOTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+              </select>
+              <select value={selfieGaze} onChange={(e) => setSelfieGaze(e.target.value as SelfieGaze)} className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white">
+                {GAZES.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+              </select>
+            </div>
+            <select value={selfieSetting} onChange={(e) => setSelfieSetting(e.target.value as SelfieSetting)} className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white">
+              {SETTINGS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+            </select>
+            <button type="button" onClick={handleGenerateSelfie} disabled={isGeneratingSelfie} className={`px-4 py-2 rounded-lg font-medium ${isGeneratingSelfie ? 'bg-gray-700 text-gray-500' : 'bg-purple-600 text-white hover:bg-purple-500'}`}>
+              {isGeneratingSelfie ? 'Generating Selfie...' : variables.selfie_url ? 'Regenerate Selfie' : 'Generate Selfie'}
+            </button>
+            {variables.selfie_url && <p className="text-xs text-green-300 break-all">Selfie URL set.</p>}
+          </div>
+        )}
+
         {variablesSchema.map((field) => (
           <div key={field.name}>
             <label className="block text-sm text-gray-300 mb-2">
@@ -244,7 +362,7 @@ export default function GenerateFromTemplatePage() {
 
         <button
           type="submit"
-          disabled={submitting || requiredMissing || !!uploadingField}
+          disabled={submitting || requiredMissing || selfieMissing || !!uploadingField}
           className={`w-full py-3 rounded-xl font-semibold transition-all ${
             !submitting && !requiredMissing && !uploadingField
               ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-400 hover:to-orange-400'
