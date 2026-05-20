@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation'
 
 type AccountType = 'business' | 'persona'
 type FieldType = 'text' | 'textarea' | 'select' | 'photo_upload'
+type CharacterKey = 'alive' | 'deceased'
 type SelfieGender = 'male' | 'female'
 type SelfieEthnicity = 'white' | 'black' | 'hispanic' | 'asian' | 'middle eastern' | 'south asian' | 'mixed'
 type SelfieAngle = 'from below' | 'straight on' | 'from above' | 'side tilt'
@@ -27,7 +28,7 @@ interface Template {
   description: string | null
   account_type: 'business' | 'persona' | 'both'
   variables_schema: VariableField[] | null
-  slides?: Array<{ slide_type?: string }>
+  slides?: Array<{ slide_type?: string; characters?: CharacterKey[] }>
 }
 
 interface PersonaOption {
@@ -71,6 +72,14 @@ const SETTINGS: { value: SelfieSetting; label: string }[] = [
   { value: 'outside', label: 'Outside' },
   { value: 'office', label: 'Office' },
 ]
+
+const CHARACTER_AGE_OPTIONS = ['teens', '20s', '30s', '40s', '50s', '60s', '70s', '80s', '90s']
+const CHARACTER_GENDER_OPTIONS = ['male', 'female']
+const CHARACTER_ETHNICITY_OPTIONS = ['white', 'black', 'hispanic', 'asian', 'middle_eastern', 'mixed']
+
+function formatEthnicityLabel(value: string): string {
+  return value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
+}
 
 export default function GenerateFromTemplatePage() {
   const params = useParams<{ id: string }>()
@@ -149,6 +158,31 @@ export default function GenerateFromTemplatePage() {
     () => !!template?.slides?.some((slide) => slide?.slide_type === 'selfie'),
     [template]
   )
+  const needsAliveDemographics = useMemo(
+    () => !!template?.slides?.some((slide) => (slide?.characters || []).includes('alive')),
+    [template]
+  )
+  const needsDeceasedDemographics = useMemo(
+    () => !!template?.slides?.some((slide) => (slide?.characters || []).includes('deceased')),
+    [template]
+  )
+  const shouldShowCharacterInputs = accountType === 'business' && (needsAliveDemographics || needsDeceasedDemographics)
+
+  const demographicsMissing = useMemo(() => {
+    if (!shouldShowCharacterInputs) return false
+
+    const aliveMissing = needsAliveDemographics && (
+      !variables.alive_age?.trim() ||
+      !variables.alive_gender?.trim() ||
+      !variables.alive_ethnicity?.trim()
+    )
+    const deceasedMissing = needsDeceasedDemographics && (
+      !variables.deceased_age?.trim() ||
+      !variables.deceased_gender?.trim() ||
+      !variables.deceased_ethnicity?.trim()
+    )
+    return aliveMissing || deceasedMissing
+  }, [shouldShowCharacterInputs, needsAliveDemographics, needsDeceasedDemographics, variables])
 
   const requiredMissing = useMemo(() => {
     return variablesSchema.some((field) => field.required && !variables[field.name]?.trim())
@@ -224,7 +258,7 @@ export default function GenerateFromTemplatePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!template) return
-    if (requiredMissing || selfieMissing || personaMissing) {
+    if (requiredMissing || selfieMissing || personaMissing || demographicsMissing) {
       setError('Please fill all required fields.')
       return
     }
@@ -352,6 +386,88 @@ export default function GenerateFromTemplatePage() {
           </div>
         )}
 
+        {shouldShowCharacterInputs && (
+          <div className="border border-gray-700/60 rounded-xl p-4 space-y-4">
+            <h2 className="text-white font-semibold">Character Demographics</h2>
+
+            {needsAliveDemographics && (
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium text-amber-300">Alive Person</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <select
+                    value={variables.alive_age || ''}
+                    onChange={(e) => setVariables((prev) => ({ ...prev, alive_age: e.target.value }))}
+                    className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                  >
+                    <option value="">Select age...</option>
+                    {CHARACTER_AGE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={variables.alive_gender || ''}
+                    onChange={(e) => setVariables((prev) => ({ ...prev, alive_gender: e.target.value }))}
+                    className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                  >
+                    <option value="">Select gender...</option>
+                    {CHARACTER_GENDER_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={variables.alive_ethnicity || ''}
+                    onChange={(e) => setVariables((prev) => ({ ...prev, alive_ethnicity: e.target.value }))}
+                    className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                  >
+                    <option value="">Select ethnicity...</option>
+                    {CHARACTER_ETHNICITY_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{formatEthnicityLabel(option)}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {needsDeceasedDemographics && (
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium text-amber-300">Deceased Person</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <select
+                    value={variables.deceased_age || ''}
+                    onChange={(e) => setVariables((prev) => ({ ...prev, deceased_age: e.target.value }))}
+                    className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                  >
+                    <option value="">Select age...</option>
+                    {CHARACTER_AGE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={variables.deceased_gender || ''}
+                    onChange={(e) => setVariables((prev) => ({ ...prev, deceased_gender: e.target.value }))}
+                    className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                  >
+                    <option value="">Select gender...</option>
+                    {CHARACTER_GENDER_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={variables.deceased_ethnicity || ''}
+                    onChange={(e) => setVariables((prev) => ({ ...prev, deceased_ethnicity: e.target.value }))}
+                    className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                  >
+                    <option value="">Select ethnicity...</option>
+                    {CHARACTER_ETHNICITY_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{formatEthnicityLabel(option)}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {variablesSchema.map((field) => (
           <div key={field.name}>
             <label className="block text-sm text-gray-300 mb-2">
@@ -420,9 +536,9 @@ export default function GenerateFromTemplatePage() {
 
         <button
           type="submit"
-          disabled={submitting || requiredMissing || selfieMissing || personaMissing || !!uploadingField}
+          disabled={submitting || requiredMissing || selfieMissing || personaMissing || demographicsMissing || !!uploadingField}
           className={`w-full py-3 rounded-xl font-semibold transition-all ${
-            !submitting && !requiredMissing && !uploadingField
+            !submitting && !requiredMissing && !demographicsMissing && !uploadingField
               ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-400 hover:to-orange-400'
               : 'bg-gray-700 text-gray-500 cursor-not-allowed'
           }`}

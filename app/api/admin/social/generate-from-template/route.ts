@@ -22,10 +22,13 @@ type SlideType =
   | 'vintage'
   | 'gravesite'
   | 'object'
+  | 'ai_generated'
   | 'text_card'
   | 'heartchime_card'
   | 'before_after'
 type LegacyEvergreenPostType = 'birthday' | 'passing_anniversary' | 'wedding_anniversary' | 'user_birthday'
+type CharacterKey = 'alive' | 'deceased'
+type PhotoSource = 'generated' | 'variable'
 
 interface GenerateFromTemplateRequest {
   template_id: string
@@ -40,6 +43,11 @@ interface PostTemplateSlide {
   prompt_recipe?: string
   text_overlay?: string
   overlay_style?: OverlayStyle
+  characters?: CharacterKey[]
+  photo_source?: PhotoSource
+  photo_variable?: string
+  photo_variable_name?: string
+  variable_name?: string
 }
 
 interface PostTemplateRow {
@@ -82,6 +90,41 @@ function parseSlides(raw: unknown): PostTemplateSlide[] {
   }
 
   return slides.sort((a, b) => a.order - b.order)
+}
+
+function normalizeEthnicity(value: string): string {
+  return value.replace(/_/g, ' ')
+}
+
+function genderToNoun(value: string): string {
+  if (value === 'male') return 'man'
+  if (value === 'female') return 'woman'
+  return value
+}
+
+function buildCharacterDescriptions(
+  slide: PostTemplateSlide,
+  variables: Record<string, string>
+): Record<string, string> {
+  const interpolationContext: Record<string, string> = {}
+  const characters = slide.characters || []
+
+  for (const character of characters) {
+    const age = variables[`${character}_age`]
+    const gender = variables[`${character}_gender`]
+    const ethnicity = variables[`${character}_ethnicity`]
+
+    if (age && gender && ethnicity) {
+      interpolationContext[`${character}_description`] =
+        `a ${age} ${genderToNoun(gender)}, ${normalizeEthnicity(ethnicity)}`
+    }
+  }
+
+  return interpolationContext
+}
+
+function resolvePhotoVariableName(slide: PostTemplateSlide): string | null {
+  return slide.photo_variable || slide.photo_variable_name || slide.variable_name || null
 }
 
 function resolveOverlayText(
@@ -174,22 +217,51 @@ export async function POST(request: NextRequest) {
       return value === undefined || value === null || value === ''
     })
 
-    if (missingVariables.length > 0) {
+    const slides = parseSlides(typedTemplate.slides)
+    const slideDerivedMissing = new Set<string>()
+    for (const slide of slides) {
+      for (const character of slide.characters || []) {
+        slideDerivedMissing.add(`${character}_age`)
+        slideDerivedMissing.add(`${character}_gender`)
+        slideDerivedMissing.add(`${character}_ethnicity`)
+      }
+
+      if (slide.photo_source === 'variable') {
+        const photoVariableName = resolvePhotoVariableName(slide)
+        if (!photoVariableName) {
+          return NextResponse.json(
+            { error: `Slide order ${slide.order} uses photo_source=variable but is missing photo variable name` },
+            { status: 400 }
+          )
+        }
+        slideDerivedMissing.add(photoVariableName)
+      }
+    }
+
+    const allMissingVariables = [...new Set([...missingVariables, ...slideDerivedMissing])].filter((name) => {
+      const value = variables[name]
+      return value === undefined || value === null || value === ''
+    })
+
+    if (allMissingVariables.length > 0) {
       return NextResponse.json(
-        { error: `Missing required variables: ${missingVariables.join(', ')}` },
+        { error: `Missing required variables: ${allMissingVariables.join(', ')}` },
         { status: 400 }
       )
     }
-
-    const slides = parseSlides(typedTemplate.slides)
 
     const slideResults: Array<{ order: number; url: string; slide_type: SlideType }> = []
     let latestImageUrl: string | null = null
     let evergreenCardPhotoUrl: string | null = null
 
     for (const slide of slides) {
+      const interpolationContext = {
+        ...variables,
+        ...buildCharacterDescriptions(slide, variables),
+      }
+
       let interpolatedPrompt = slide.prompt_recipe
-        ? interpolatePrompt(slide.prompt_recipe, variables)
+        ? interpolatePrompt(slide.prompt_recipe, interpolationContext)
         : ''
       const legacyEvergreenPrompt = resolveEvergreenLegacyPrompt(
         typedTemplate.category,
@@ -212,7 +284,9 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        const cardPhoto = evergreenCardPhotoUrl || latestImageUrl || ''
+        const photoVariableName = slide.photo_source === 'variable' ? resolvePhotoVariableName(slide) : null
+        const variablePhoto = photoVariableName ? interpolationContext[photoVariableName] : null
+        const cardPhoto = variablePhoto || evergreenCardPhotoUrl || latestImageUrl || ''
         const cardMessage =
           interpolatedPrompt ||
           variables.card_message ||
@@ -224,7 +298,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (slide.slide_type === 'selfie' && variables.selfie_url) {
-        const overlayText = resolveOverlayText(slide, variables, interpolatedPrompt)
+        const overlayText = resolveOverlayText(slide, interpolationContext, interpolatedPrompt)
         const selfieUrl = overlayText && overlayText.trim()
           ? await renderAndUploadSlide1(
               variables.selfie_url,
@@ -239,7 +313,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (slide.slide_type === 'text_card') {
-        const textBody = interpolatedPrompt || slide.text_overlay || variables.hook || 'HeartChime'
+        const textBody = interpolatedPrompt || slide.text_overlay || interpolationContext.hook || 'HeartChime'
         const textCardUrl = await renderAndUploadSlide1(
           TRANSPARENT_PX,
           textBody,
@@ -250,12 +324,19 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      const baseImageUrl = await generateAndUploadPhoto(interpolatedPrompt)
+      let baseImageUrl: string | null = null
+      if (slide.photo_source === 'variable') {
+        const photoVariableName = resolvePhotoVariableName(slide)
+        baseImageUrl = photoVariableName ? interpolationContext[photoVariableName] : null
+      } else {
+        baseImageUrl = await generateAndUploadPhoto(interpolatedPrompt)
+      }
+
       if (!baseImageUrl) {
         throw new Error(`Failed to generate image for slide order ${slide.order} (${slide.slide_type})`)
       }
 
-      const overlayText = resolveOverlayText(slide, variables, interpolatedPrompt)
+      const overlayText = resolveOverlayText(slide, interpolationContext, interpolatedPrompt)
       const finalUrl =
         overlayText && overlayText.trim()
           ? await renderAndUploadSlide1(baseImageUrl, overlayText, overlayStyleToTextStyle(slide.overlay_style))

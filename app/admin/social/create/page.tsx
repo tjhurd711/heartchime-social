@@ -20,7 +20,7 @@ const createPaths: CreatePathCard[] = [
   },
   {
     icon: '✏️',
-    title: 'Custom Evergreen Post',
+    title: 'Custom Post',
     description: 'Build a one-off post by hand. Pick post type, hook, era, demographics — full control.',
     href: '/admin/social/evergreen/create',
     accentClasses: 'from-orange-500/20 to-pink-500/10 border-orange-500/35 hover:border-orange-400/60 hover:shadow-orange-500/20',
