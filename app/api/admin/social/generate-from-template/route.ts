@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { generateAndUploadPhoto } from '@/lib/geminiImageGen'
 import { renderAndUploadSocialCard } from '@/lib/socialCardRenderer'
 import { renderAndUploadSlide1, TextStyle } from '@/lib/socialSlide1Renderer'
+import { buildPhotoPrompt } from '@/lib/socialPhotoPrompt'
 
 export const maxDuration = 60
 export const runtime = 'nodejs'
@@ -24,6 +25,7 @@ type SlideType =
   | 'text_card'
   | 'heartchime_card'
   | 'before_after'
+type LegacyEvergreenPostType = 'birthday' | 'passing_anniversary' | 'wedding_anniversary' | 'user_birthday'
 
 interface GenerateFromTemplateRequest {
   template_id: string
@@ -107,6 +109,28 @@ function overlayStyleToTextStyle(style: OverlayStyle | undefined): TextStyle {
   return style === 'caption' ? 'clean' : 'snapchat'
 }
 
+function resolveEvergreenLegacyPrompt(
+  templateCategory: TemplateCategory,
+  slideType: SlideType,
+  variables: Record<string, string>
+): string | null {
+  if (templateCategory !== 'evergreen') return null
+  if (slideType !== 'selfie' && slideType !== 'vintage') return null
+
+  const relationship = variables.relationship
+  const era = variables.era
+  if (!relationship || !era) return null
+
+  const requestedPostType = variables.post_type as LegacyEvergreenPostType | undefined
+  const postType: LegacyEvergreenPostType =
+    requestedPostType && ['birthday', 'passing_anniversary', 'wedding_anniversary', 'user_birthday'].includes(requestedPostType)
+      ? requestedPostType
+      : 'birthday'
+
+  // Preserve legacy evergreen vintage-photo prompt generation exactly.
+  return buildPhotoPrompt(postType, relationship, 'female', '40s', era, undefined)
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: GenerateFromTemplateRequest = await request.json()
@@ -163,9 +187,17 @@ export async function POST(request: NextRequest) {
     let latestImageUrl: string | null = null
 
     for (const slide of slides) {
-      const interpolatedPrompt = slide.prompt_recipe
+      let interpolatedPrompt = slide.prompt_recipe
         ? interpolatePrompt(slide.prompt_recipe, variables)
         : ''
+      const legacyEvergreenPrompt = resolveEvergreenLegacyPrompt(
+        typedTemplate.category,
+        slide.slide_type,
+        variables
+      )
+      if (legacyEvergreenPrompt) {
+        interpolatedPrompt = legacyEvergreenPrompt
+      }
 
       if (slide.slide_type === 'heartchime_card') {
         const cardPhoto = latestImageUrl || ''

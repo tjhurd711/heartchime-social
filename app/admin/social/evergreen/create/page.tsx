@@ -306,6 +306,7 @@ export default function CreateSocialPostPage() {
             relationship,
             hook: activeHookText,
             era: timePeriod,
+            post_type: postType,
           },
         }),
       });
