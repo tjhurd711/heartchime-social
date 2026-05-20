@@ -196,6 +196,12 @@ export default function SocialMediaCommandCenter() {
       <div>
         <h1 className="text-3xl font-bold text-white">📱 Social Media Command Center</h1>
         <p className="text-gray-400 mt-1">Manage all TikTok & Instagram content pipelines</p>
+        <Link
+          href="/admin/social/templates"
+          className="inline-flex mt-3 px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 text-sm font-medium transition-colors"
+        >
+          Open Template Gallery →
+        </Link>
       </div>
 
       {/* Pipeline Cards */}

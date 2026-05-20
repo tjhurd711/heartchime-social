@@ -11,6 +11,8 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+const EVERGREEN_TEMPLATE_ID = "765d4339-dd64-463c-82ed-b24f07665b38";
+
 interface Hook {
   id: string;
   text: string;
@@ -291,27 +293,21 @@ export default function CreateSocialPostPage() {
     
     setIsGenerating(true);
     try {
-      const platformValue = platforms.tiktok && platforms.instagram 
-        ? 'both' 
-        : platforms.tiktok 
-          ? 'tiktok' 
-          : 'instagram';
+      const accountType: 'business' | 'persona' = postType === 'user_birthday' ? 'persona' : 'business';
 
-      // Call the full generation endpoint with selfieUrl
-      const response = await fetch('/api/admin/social/generate-post', {
+      const response = await fetch('/api/admin/social/generate-from-template', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            selfieUrl,
-            postType,
+        body: JSON.stringify({
+          template_id: EVERGREEN_TEMPLATE_ID,
+          account_type: accountType,
+          variables: {
+            deceased_name: nickname || relationship,
             relationship,
-            nickname: nickname || relationship,
-            hookText: activeHookText,
-            hookStyle: textStyle,
-            platform: platformValue,
-            timePeriod,
-            spouseName: postType === 'wedding_anniversary' ? spouseName : undefined,
-          }),
+            hook: activeHookText,
+            era: timePeriod,
+          },
+        }),
       });
 
       if (!response.ok) {
@@ -320,9 +316,18 @@ export default function CreateSocialPostPage() {
       }
 
       const data = await response.json();
-
-      if (!data.success) {
+      if (!data.post_id) {
         throw new Error(data.error || 'Failed to generate post');
+      }
+
+      const orderedSlides = Array.isArray(data.slides)
+        ? [...data.slides].sort((a, b) => a.order - b.order)
+        : [];
+      const slide1Url = orderedSlides[0]?.url || null;
+      const slide2Url = orderedSlides[1]?.url || null;
+
+      if (!slide1Url || !slide2Url) {
+        throw new Error('Template generation did not return both evergreen slide URLs');
       }
 
       // Update hook usage count if using a preset hook
@@ -340,7 +345,7 @@ export default function CreateSocialPostPage() {
 
       // Redirect to the post detail page
       setTimeout(() => {
-        router.push(`/admin/social/evergreen/${data.post.id}`);
+        router.push(`/admin/social/evergreen/${data.post_id}`);
       }, 1000);
 
     } catch (error) {
