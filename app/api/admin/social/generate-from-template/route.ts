@@ -185,6 +185,7 @@ export async function POST(request: NextRequest) {
 
     const slideResults: Array<{ order: number; url: string; slide_type: SlideType }> = []
     let latestImageUrl: string | null = null
+    let evergreenCardPhotoUrl: string | null = null
 
     for (const slide of slides) {
       let interpolatedPrompt = slide.prompt_recipe
@@ -200,7 +201,18 @@ export async function POST(request: NextRequest) {
       }
 
       if (slide.slide_type === 'heartchime_card') {
-        const cardPhoto = latestImageUrl || ''
+        if (typedTemplate.category === 'evergreen' && !evergreenCardPhotoUrl) {
+          const cardPhotoPrompt = resolveEvergreenLegacyPrompt(
+            typedTemplate.category,
+            'vintage',
+            variables
+          )
+          if (cardPhotoPrompt) {
+            evergreenCardPhotoUrl = await generateAndUploadPhoto(cardPhotoPrompt)
+          }
+        }
+
+        const cardPhoto = evergreenCardPhotoUrl || latestImageUrl || ''
         const cardMessage =
           interpolatedPrompt ||
           variables.card_message ||
