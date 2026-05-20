@@ -499,7 +499,7 @@ export async function renderSlide3(
     const html = generateSlide3HTML(mediaImageUrl, mediaTitle, mediaArtist, year, slide3Type, category, message)
 
     await page.setContent(html, {
-      waitUntil: 'networkidle0', // Wait for fonts and images to load
+      waitUntil: 'load', // Puppeteer-core setContent only supports load/domcontentloaded
     })
 
     // Wait a bit more for fonts to render properly

@@ -244,7 +244,7 @@ export async function renderSocialCard(
     // Generate and load HTML with base64 data URL instead of external URL
     const html = generateHTML(imageDataUrl, message)
     await page.setContent(html, {
-      waitUntil: 'networkidle0', // Wait for fonts to load
+      waitUntil: 'load', // Puppeteer-core setContent only supports load/domcontentloaded
     })
 
     // Wait a bit more for fonts to render properly

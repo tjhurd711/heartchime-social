@@ -292,7 +292,7 @@ export async function renderSlide1(
       : generateCleanHTML(recipientPhotoUrl, hookText, eventDate)
 
     await page.setContent(html, {
-      waitUntil: 'networkidle0', // Wait for fonts and images to load
+      waitUntil: 'load', // Puppeteer-core setContent only supports load/domcontentloaded
     })
 
     // Wait a bit more for fonts to render properly
