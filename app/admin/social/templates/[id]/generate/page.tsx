@@ -15,6 +15,39 @@ type SelfieEmotion = 'neutral' | 'slight smile' | 'bittersweet' | 'sad' | 'hopef
 type SelfieGaze = 'looking at camera' | 'looking away' | 'eyes down' | 'looking off to side'
 type SelfieSetting = 'home' | 'car' | 'outside' | 'office'
 type MotionStyle = 'ai_subtle' | 'kenburns' | 'static_hold'
+type SubjectStatus = 'alive' | 'deceased'
+type SubjectGender = 'male' | 'female'
+type SubjectRelationship =
+  | 'father'
+  | 'mother'
+  | 'son'
+  | 'daughter'
+  | 'husband'
+  | 'wife'
+  | 'brother'
+  | 'sister'
+  | 'grandfather'
+  | 'grandmother'
+  | 'grandson'
+  | 'granddaughter'
+  | 'friend'
+  | 'self'
+type TemplateVariableValue = string | PhotoSubject[] | undefined
+
+interface PhotoSubject {
+  age_decade: string
+  gender: SubjectGender
+  ethnicity: string
+  status: SubjectStatus
+  relationship: SubjectRelationship
+}
+
+interface SubjectsConfig {
+  enabled: boolean
+  min: number
+  max: number
+  require_one_deceased: boolean
+}
 
 interface VariableField {
   name: string
@@ -42,6 +75,7 @@ interface Template {
     motion_style?: MotionStyle
     live_photo_eligible?: boolean
     live_photo_default?: boolean
+    subjects_config?: SubjectsConfig
   }>
 }
 
@@ -90,9 +124,41 @@ const SETTINGS: { value: SelfieSetting; label: string }[] = [
 const CHARACTER_AGE_OPTIONS = ['teens', '20s', '30s', '40s', '50s', '60s', '70s', '80s', '90s']
 const CHARACTER_GENDER_OPTIONS = ['male', 'female']
 const CHARACTER_ETHNICITY_OPTIONS = ['white', 'black', 'hispanic', 'asian', 'middle_eastern', 'mixed']
+const SUBJECT_AGE_OPTIONS = ['0-12', 'teens', '20s', '30s', '40s', '50s', '60s', '70s', '80s', '90s']
+const SUBJECT_RELATIONSHIP_OPTIONS: SubjectRelationship[] = [
+  'father',
+  'mother',
+  'son',
+  'daughter',
+  'husband',
+  'wife',
+  'brother',
+  'sister',
+  'grandfather',
+  'grandmother',
+  'grandson',
+  'granddaughter',
+  'friend',
+  'self',
+]
 
 function formatEthnicityLabel(value: string): string {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function getStringVariable(variables: Record<string, TemplateVariableValue>, name: string): string {
+  const value = variables[name]
+  return typeof value === 'string' ? value : ''
+}
+
+function createDefaultSubject(index: number): PhotoSubject {
+  return {
+    age_decade: index === 0 ? '30s' : '0-12',
+    gender: index === 0 ? 'male' : 'female',
+    ethnicity: 'white',
+    status: index === 0 ? 'deceased' : 'alive',
+    relationship: index === 0 ? 'father' : 'daughter',
+  }
 }
 
 export default function GenerateFromTemplatePage() {
@@ -101,7 +167,7 @@ export default function GenerateFromTemplatePage() {
   const templateId = params.id
 
   const [template, setTemplate] = useState<Template | null>(null)
-  const [variables, setVariables] = useState<Record<string, string>>({})
+  const [variables, setVariables] = useState<Record<string, TemplateVariableValue>>({})
   const [accountType, setAccountType] = useState<AccountType>('business')
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -170,6 +236,25 @@ export default function GenerateFromTemplatePage() {
 
   const variablesSchema = useMemo(() => template?.variables_schema || [], [template])
   const schemaFieldNames = useMemo(() => new Set(variablesSchema.map((field) => field.name)), [variablesSchema])
+  const subjectSlides = useMemo(
+    () => (template?.slides || []).filter((slide) => slide.subjects_config?.enabled === true),
+    [template]
+  )
+  const subjectDrivenDemographicFields = useMemo(() => {
+    const fields = new Set<string>()
+    for (const slide of subjectSlides) {
+      for (const character of slide.characters || []) {
+        fields.add(`${character}_age`)
+        fields.add(`${character}_gender`)
+        fields.add(`${character}_ethnicity`)
+      }
+    }
+    return fields
+  }, [subjectSlides])
+  const visibleVariablesSchema = useMemo(
+    () => variablesSchema.filter((field) => !subjectDrivenDemographicFields.has(field.name)),
+    [variablesSchema, subjectDrivenDemographicFields]
+  )
   const livePhotoSlides = useMemo(
     () => (template?.slides || []).filter((slide) => slide.live_photo_eligible === true),
     [template]
@@ -179,11 +264,11 @@ export default function GenerateFromTemplatePage() {
     [template]
   )
   const needsAliveDemographics = useMemo(
-    () => !!template?.slides?.some((slide) => (slide?.characters || []).includes('alive')),
+    () => !!template?.slides?.some((slide) => !slide.subjects_config?.enabled && (slide?.characters || []).includes('alive')),
     [template]
   )
   const needsDeceasedDemographics = useMemo(
-    () => !!template?.slides?.some((slide) => (slide?.characters || []).includes('deceased')),
+    () => !!template?.slides?.some((slide) => !slide.subjects_config?.enabled && (slide?.characters || []).includes('deceased')),
     [template]
   )
   const needsAliveDemographicInputs = needsAliveDemographics && (
@@ -202,22 +287,38 @@ export default function GenerateFromTemplatePage() {
     if (!shouldShowCharacterInputs) return false
 
     const aliveMissing = needsAliveDemographicInputs && (
-      !variables.alive_age?.trim() ||
-      !variables.alive_gender?.trim() ||
-      !variables.alive_ethnicity?.trim()
+      !getStringVariable(variables, 'alive_age').trim() ||
+      !getStringVariable(variables, 'alive_gender').trim() ||
+      !getStringVariable(variables, 'alive_ethnicity').trim()
     )
     const deceasedMissing = needsDeceasedDemographicInputs && (
-      !variables.deceased_age?.trim() ||
-      !variables.deceased_gender?.trim() ||
-      !variables.deceased_ethnicity?.trim()
+      !getStringVariable(variables, 'deceased_age').trim() ||
+      !getStringVariable(variables, 'deceased_gender').trim() ||
+      !getStringVariable(variables, 'deceased_ethnicity').trim()
     )
     return aliveMissing || deceasedMissing
   }, [shouldShowCharacterInputs, needsAliveDemographicInputs, needsDeceasedDemographicInputs, variables])
 
   const requiredMissing = useMemo(() => {
-    return variablesSchema.some((field) => field.required && !variables[field.name]?.trim())
-  }, [variablesSchema, variables])
-  const selfieMissing = hasSelfieSlide && !variables.selfie_url
+    return visibleVariablesSchema.some((field) => field.required && !getStringVariable(variables, field.name).trim())
+  }, [visibleVariablesSchema, variables])
+  const subjectsMissing = useMemo(() => {
+    return subjectSlides.some((slide) => {
+      const config = slide.subjects_config
+      const subjects = variables[`slide_${slide.order}_subjects`]
+      if (!config?.enabled || !Array.isArray(subjects)) return true
+      if (subjects.length < config.min || subjects.length > config.max) return true
+      if (config.require_one_deceased && subjects.filter((subject) => subject.status === 'deceased').length !== 1) return true
+      return subjects.some((subject) => (
+        !subject.age_decade ||
+        !subject.gender ||
+        !subject.ethnicity ||
+        !subject.status ||
+        !subject.relationship
+      ))
+    })
+  }, [subjectSlides, variables])
+  const selfieMissing = hasSelfieSlide && !getStringVariable(variables, 'selfie_url')
   const personaMissing = accountType === 'persona' && !selectedPersonaId
 
   const accountTypeOptions = useMemo(() => {
@@ -240,6 +341,28 @@ export default function GenerateFromTemplatePage() {
 
     setSelectedLivePhotoSlideOrders(defaultLivePhotoOrders)
   }, [livePhotoSlides])
+
+  useEffect(() => {
+    if (subjectSlides.length === 0) return
+
+    setVariables((prev) => {
+      const next = { ...prev }
+      let changed = false
+
+      for (const slide of subjectSlides) {
+        if (typeof slide.order !== 'number') continue
+
+        const key = `slide_${slide.order}_subjects`
+        if (Array.isArray(next[key])) continue
+
+        const count = slide.subjects_config?.min || 1
+        next[key] = Array.from({ length: count }, (_item, index) => createDefaultSubject(index))
+        changed = true
+      }
+
+      return changed ? next : prev
+    })
+  }, [subjectSlides])
 
   const handleUploadPhoto = async (fieldName: string, file: File) => {
     setUploadingField(fieldName)
@@ -294,10 +417,59 @@ export default function GenerateFromTemplatePage() {
     }
   }
 
+  const setSubjectCount = (slideOrder: number, count: number) => {
+    const key = `slide_${slideOrder}_subjects`
+    setVariables((prev) => {
+      const current = Array.isArray(prev[key]) ? prev[key] : []
+      const nextSubjects = Array.from({ length: count }, (_item, index) => current[index] || createDefaultSubject(index))
+      const hasDeceased = nextSubjects.some((subject) => subject.status === 'deceased')
+      if (!hasDeceased && nextSubjects[0]) {
+        nextSubjects[0] = { ...nextSubjects[0], status: 'deceased' }
+      }
+      return { ...prev, [key]: nextSubjects }
+    })
+  }
+
+  const updateSubject = (
+    slideOrder: number,
+    subjectIndex: number,
+    field: keyof PhotoSubject,
+    value: PhotoSubject[keyof PhotoSubject],
+    requireOneDeceased: boolean
+  ) => {
+    const key = `slide_${slideOrder}_subjects`
+    setVariables((prev) => {
+      const current = Array.isArray(prev[key]) ? prev[key] : [createDefaultSubject(0)]
+      const nextSubjects = current.map((subject, index) => {
+        if (field === 'status' && value === 'deceased' && requireOneDeceased) {
+          return {
+            ...subject,
+            status: index === subjectIndex ? 'deceased' : 'alive',
+          }
+        }
+
+        if (index !== subjectIndex) {
+          return subject
+        }
+
+        if (field === 'status' && value === 'alive' && requireOneDeceased) {
+          const deceasedCount = current.filter((item) => item.status === 'deceased').length
+          if (subject.status === 'deceased' && deceasedCount === 1) {
+            return subject
+          }
+        }
+
+        return { ...subject, [field]: value }
+      })
+
+      return { ...prev, [key]: nextSubjects }
+    })
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!template) return
-    if (requiredMissing || selfieMissing || personaMissing || demographicsMissing) {
+    if (requiredMissing || selfieMissing || personaMissing || demographicsMissing || subjectsMissing) {
       setError('Please fill all required fields.')
       return
     }
@@ -427,6 +599,108 @@ export default function GenerateFromTemplatePage() {
           </div>
           )}
 
+          {subjectSlides.map((slide) => {
+            if (typeof slide.order !== 'number' || !slide.subjects_config?.enabled) return null
+
+            const config = slide.subjects_config
+            const subjectsKey = `slide_${slide.order}_subjects`
+            const subjects = Array.isArray(variables[subjectsKey])
+              ? variables[subjectsKey]
+              : []
+            const counts = Array.from({ length: config.max - config.min + 1 }, (_item, index) => config.min + index)
+
+            return (
+              <div key={subjectsKey} className="border border-gray-700/60 rounded-xl p-4 space-y-4">
+                <div>
+                  <h2 className="text-white font-semibold">People in this photo</h2>
+                  <p className="text-xs text-gray-400 mt-1">Slide {slide.order} can include {config.min}-{config.max} people.</p>
+                </div>
+
+                <div className="flex gap-2">
+                  {counts.map((count) => (
+                    <button
+                      key={count}
+                      type="button"
+                      onClick={() => setSubjectCount(slide.order as number, count)}
+                      className={`px-3 py-1 rounded-full text-sm font-medium ${
+                        subjects.length === count
+                          ? 'bg-amber-500 text-white'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                    >
+                      {count}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="space-y-4">
+                  {subjects.map((subject, subjectIndex) => (
+                    <div key={`${subjectsKey}-${subjectIndex}`} className="rounded-xl bg-gray-800/70 border border-gray-700/60 p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-medium text-amber-300">Person {subjectIndex + 1}</h3>
+                        <div className="flex gap-3 text-xs text-gray-300">
+                          {(['alive', 'deceased'] as SubjectStatus[]).map((status) => (
+                            <label key={status} className="flex items-center gap-1 cursor-pointer">
+                              <input
+                                type="radio"
+                                name={`${subjectsKey}-${subjectIndex}-status`}
+                                checked={subject.status === status}
+                                onChange={() => updateSubject(slide.order as number, subjectIndex, 'status', status, config.require_one_deceased)}
+                                className="text-amber-500 focus:ring-amber-500"
+                              />
+                              {status}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <select
+                          value={subject.age_decade}
+                          onChange={(e) => updateSubject(slide.order as number, subjectIndex, 'age_decade', e.target.value, config.require_one_deceased)}
+                          className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                        >
+                          {SUBJECT_AGE_OPTIONS.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+
+                        <select
+                          value={subject.gender}
+                          onChange={(e) => updateSubject(slide.order as number, subjectIndex, 'gender', e.target.value as SubjectGender, config.require_one_deceased)}
+                          className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                        >
+                          <option value="male">Male</option>
+                          <option value="female">Female</option>
+                        </select>
+
+                        <select
+                          value={subject.ethnicity}
+                          onChange={(e) => updateSubject(slide.order as number, subjectIndex, 'ethnicity', e.target.value, config.require_one_deceased)}
+                          className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                        >
+                          {CHARACTER_ETHNICITY_OPTIONS.map((option) => (
+                            <option key={option} value={option}>{formatEthnicityLabel(option)}</option>
+                          ))}
+                        </select>
+
+                        <select
+                          value={subject.relationship}
+                          onChange={(e) => updateSubject(slide.order as number, subjectIndex, 'relationship', e.target.value as SubjectRelationship, config.require_one_deceased)}
+                          className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                        >
+                          {SUBJECT_RELATIONSHIP_OPTIONS.map((option) => (
+                            <option key={option} value={option}>{formatEthnicityLabel(option)}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+
           {hasSelfieSlide && (
           <div className="border border-gray-700/60 rounded-xl p-4 space-y-3">
             <h2 className="text-white font-semibold">Generate Selfie (Slide 1)</h2>
@@ -453,9 +727,9 @@ export default function GenerateFromTemplatePage() {
               {SETTINGS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </select>
             <button type="button" onClick={handleGenerateSelfie} disabled={isGeneratingSelfie} className={`px-4 py-2 rounded-lg font-medium ${isGeneratingSelfie ? 'bg-gray-700 text-gray-500' : 'bg-purple-600 text-white hover:bg-purple-500'}`}>
-              {isGeneratingSelfie ? 'Generating Selfie...' : variables.selfie_url ? 'Regenerate Selfie' : 'Generate Selfie'}
+              {isGeneratingSelfie ? 'Generating Selfie...' : getStringVariable(variables, 'selfie_url') ? 'Regenerate Selfie' : 'Generate Selfie'}
             </button>
-            {variables.selfie_url && <p className="text-xs text-green-300 break-all">Selfie URL set.</p>}
+            {getStringVariable(variables, 'selfie_url') && <p className="text-xs text-green-300 break-all">Selfie URL set.</p>}
           </div>
           )}
 
@@ -468,7 +742,7 @@ export default function GenerateFromTemplatePage() {
                 <h3 className="text-sm font-medium text-amber-300">Alive Person</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <select
-                    value={variables.alive_age || ''}
+                    value={getStringVariable(variables, 'alive_age')}
                     onChange={(e) => setVariables((prev) => ({ ...prev, alive_age: e.target.value }))}
                     className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
                   >
@@ -478,7 +752,7 @@ export default function GenerateFromTemplatePage() {
                     ))}
                   </select>
                   <select
-                    value={variables.alive_gender || ''}
+                    value={getStringVariable(variables, 'alive_gender')}
                     onChange={(e) => setVariables((prev) => ({ ...prev, alive_gender: e.target.value }))}
                     className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
                   >
@@ -488,7 +762,7 @@ export default function GenerateFromTemplatePage() {
                     ))}
                   </select>
                   <select
-                    value={variables.alive_ethnicity || ''}
+                    value={getStringVariable(variables, 'alive_ethnicity')}
                     onChange={(e) => setVariables((prev) => ({ ...prev, alive_ethnicity: e.target.value }))}
                     className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
                   >
@@ -506,7 +780,7 @@ export default function GenerateFromTemplatePage() {
                 <h3 className="text-sm font-medium text-amber-300">Deceased Person</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <select
-                    value={variables.deceased_age || ''}
+                    value={getStringVariable(variables, 'deceased_age')}
                     onChange={(e) => setVariables((prev) => ({ ...prev, deceased_age: e.target.value }))}
                     className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
                   >
@@ -516,7 +790,7 @@ export default function GenerateFromTemplatePage() {
                     ))}
                   </select>
                   <select
-                    value={variables.deceased_gender || ''}
+                    value={getStringVariable(variables, 'deceased_gender')}
                     onChange={(e) => setVariables((prev) => ({ ...prev, deceased_gender: e.target.value }))}
                     className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
                   >
@@ -526,7 +800,7 @@ export default function GenerateFromTemplatePage() {
                     ))}
                   </select>
                   <select
-                    value={variables.deceased_ethnicity || ''}
+                    value={getStringVariable(variables, 'deceased_ethnicity')}
                     onChange={(e) => setVariables((prev) => ({ ...prev, deceased_ethnicity: e.target.value }))}
                     className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
                   >
@@ -541,7 +815,7 @@ export default function GenerateFromTemplatePage() {
           </div>
           )}
 
-          {variablesSchema.map((field) => (
+          {visibleVariablesSchema.map((field) => (
             <div key={field.name}>
             <label className="block text-sm text-gray-300 mb-2">
               {field.label}
@@ -551,7 +825,7 @@ export default function GenerateFromTemplatePage() {
             {field.type === 'text' && (
               <input
                 type="text"
-                value={variables[field.name] || ''}
+                value={getStringVariable(variables, field.name)}
                 onChange={(e) => setVariables((prev) => ({ ...prev, [field.name]: e.target.value }))}
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-amber-400"
               />
@@ -560,7 +834,7 @@ export default function GenerateFromTemplatePage() {
             {field.type === 'textarea' && (
               <textarea
                 rows={3}
-                value={variables[field.name] || ''}
+                value={getStringVariable(variables, field.name)}
                 onChange={(e) => setVariables((prev) => ({ ...prev, [field.name]: e.target.value }))}
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-amber-400"
               />
@@ -568,7 +842,7 @@ export default function GenerateFromTemplatePage() {
 
             {field.type === 'select' && (
               <select
-                value={variables[field.name] || ''}
+                value={getStringVariable(variables, field.name)}
                 onChange={(e) => setVariables((prev) => ({ ...prev, [field.name]: e.target.value }))}
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-amber-400"
               >
@@ -597,8 +871,8 @@ export default function GenerateFromTemplatePage() {
                 {uploadingField === field.name && (
                   <p className="text-sm text-amber-300">Uploading photo...</p>
                 )}
-                {variables[field.name] && (
-                  <p className="text-xs text-green-300 break-all">Uploaded: {variables[field.name]}</p>
+                {getStringVariable(variables, field.name) && (
+                  <p className="text-xs text-green-300 break-all">Uploaded: {getStringVariable(variables, field.name)}</p>
                 )}
               </div>
             )}
@@ -609,9 +883,9 @@ export default function GenerateFromTemplatePage() {
 
           <button
             type="submit"
-            disabled={submitting || requiredMissing || selfieMissing || personaMissing || demographicsMissing || !!uploadingField}
+            disabled={submitting || requiredMissing || selfieMissing || personaMissing || demographicsMissing || subjectsMissing || !!uploadingField}
             className={`w-full py-3 rounded-xl font-semibold transition-all ${
-              !submitting && !requiredMissing && !demographicsMissing && !uploadingField
+              !submitting && !requiredMissing && !demographicsMissing && !subjectsMissing && !uploadingField
                 ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-400 hover:to-orange-400'
                 : 'bg-gray-700 text-gray-500 cursor-not-allowed'
             }`}

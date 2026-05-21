@@ -31,10 +31,44 @@ type LegacyEvergreenPostType = 'birthday' | 'passing_anniversary' | 'wedding_ann
 type CharacterKey = 'alive' | 'deceased'
 type PhotoSource = 'generated' | 'variable' | 'variable_or_generated'
 type MotionStyle = 'ai_subtle' | 'kenburns' | 'static_hold'
+type SubjectStatus = 'alive' | 'deceased'
+type SubjectGender = 'male' | 'female'
+type SubjectRelationship =
+  | 'father'
+  | 'mother'
+  | 'son'
+  | 'daughter'
+  | 'husband'
+  | 'wife'
+  | 'brother'
+  | 'sister'
+  | 'grandfather'
+  | 'grandmother'
+  | 'grandson'
+  | 'granddaughter'
+  | 'friend'
+  | 'self'
+type TemplateVariableValue = string | TemplateSubject[] | undefined
+type TemplateVariables = Record<string, TemplateVariableValue>
+
+interface TemplateSubject {
+  age_decade: string
+  gender: SubjectGender
+  ethnicity: string
+  status: SubjectStatus
+  relationship: SubjectRelationship
+}
+
+interface SubjectsConfig {
+  enabled: boolean
+  min: number
+  max: number
+  require_one_deceased: boolean
+}
 
 interface GenerateFromTemplateRequest {
   template_id: string
-  variables: Record<string, string>
+  variables: TemplateVariables
   account_type: RequestAccountType
   persona_id?: string
   generate_live_photos?: boolean
@@ -51,6 +85,7 @@ interface PostTemplateSlide {
   motion_style?: MotionStyle
   live_photo_eligible?: boolean
   live_photo_default?: boolean
+  subjects_config?: SubjectsConfig
   characters?: CharacterKey[]
   photo_source?: PhotoSource
   photo_variable?: string
@@ -91,14 +126,44 @@ interface PostTemplateRow {
 const TRANSPARENT_PX =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlAbQAAAABJRU5ErkJggg=='
 
-function interpolatePrompt(recipe: string, variables: Record<string, string>): string {
+const SUBJECT_RELATIONSHIPS = new Set<SubjectRelationship>([
+  'father',
+  'mother',
+  'son',
+  'daughter',
+  'husband',
+  'wife',
+  'brother',
+  'sister',
+  'grandfather',
+  'grandmother',
+  'grandson',
+  'granddaughter',
+  'friend',
+  'self',
+])
+
+function getStringVariable(variables: TemplateVariables, key: string): string {
+  const value = variables[key]
+  return typeof value === 'string' ? value : ''
+}
+
+function getStringRecordValue(values: Record<string, unknown>, key: string): string {
+  const value = values[key]
+  return typeof value === 'string' ? value : ''
+}
+
+function interpolatePrompt(recipe: string, variables: Record<string, unknown>): string {
   return recipe.replace(/\{([^}]+)\}/g, (_full, rawKey: string) => {
     const key = rawKey.trim()
     const value = variables[key]
     if (value === undefined || value === null || value === '') {
       throw new Error(`Missing template variable: ${key}`)
     }
-    return value
+    if (typeof value !== 'string' && typeof value !== 'number') {
+      throw new Error(`Template variable ${key} must be a string`)
+    }
+    return String(value)
   })
 }
 
@@ -129,15 +194,15 @@ function genderToNoun(value: string): string {
 
 function buildCharacterDescriptions(
   slide: PostTemplateSlide,
-  variables: Record<string, string>
+  variables: TemplateVariables
 ): Record<string, string> {
   const interpolationContext: Record<string, string> = {}
   const characters = slide.characters || []
 
   for (const character of characters) {
-    const age = variables[`${character}_age`]
-    const gender = variables[`${character}_gender`]
-    const ethnicity = variables[`${character}_ethnicity`]
+    const age = getStringVariable(variables, `${character}_age`)
+    const gender = getStringVariable(variables, `${character}_gender`)
+    const ethnicity = getStringVariable(variables, `${character}_ethnicity`)
 
     if (age && gender && ethnicity) {
       interpolationContext[`${character}_description`] =
@@ -148,13 +213,124 @@ function buildCharacterDescriptions(
   return interpolationContext
 }
 
+function getSlideSubjectsVariableName(slide: PostTemplateSlide): string {
+  return `slide_${slide.order}_subjects`
+}
+
+function getSlideSubjects(slide: PostTemplateSlide, variables: TemplateVariables): TemplateSubject[] {
+  const value = variables[getSlideSubjectsVariableName(slide)]
+  return Array.isArray(value) ? value : []
+}
+
+function ageDecadeToPromptAge(value: string): string {
+  if (value === '0-12') return 'young'
+  if (value === 'teens') return 'teenage'
+
+  const decade = value.match(/^(\d+)s$/)
+  if (decade) {
+    return `${decade[1]}-year-old`
+  }
+
+  return value
+}
+
+function subjectPronoun(subject: TemplateSubject): 'his' | 'her' {
+  return subject.gender === 'female' ? 'her' : 'his'
+}
+
+function describeAnchorSubject(subject: TemplateSubject): string {
+  return `A ${ageDecadeToPromptAge(subject.age_decade)} ${normalizeEthnicity(subject.ethnicity)} ${genderToNoun(subject.gender)}`
+}
+
+function describeRelatedSubject(subject: TemplateSubject): string {
+  const age = ageDecadeToPromptAge(subject.age_decade)
+  const agePrefix = age === 'young' || age === 'teenage' ? age : `${age} ${normalizeEthnicity(subject.ethnicity)}`
+  return `${agePrefix} ${subject.relationship}`
+}
+
+function buildSubjectsDescription(subjects: TemplateSubject[]): string {
+  const deceasedSubject = subjects.find((subject) => subject.status === 'deceased') || subjects[0]
+  const relatedSubjects = subjects.filter((subject) => subject !== deceasedSubject)
+  const anchorDescription = describeAnchorSubject(deceasedSubject)
+  const pronoun = subjectPronoun(deceasedSubject)
+
+  if (relatedSubjects.length === 0) {
+    return anchorDescription
+  }
+
+  if (relatedSubjects.length === 1) {
+    return `${anchorDescription} standing next to ${pronoun} ${describeRelatedSubject(relatedSubjects[0])}`
+  }
+
+  const relatedDescriptions = relatedSubjects.map((subject) => `${pronoun} ${describeRelatedSubject(subject)}`)
+  const lastDescription = relatedDescriptions.pop()
+  return `${anchorDescription} with ${relatedDescriptions.join(', ')} and ${lastDescription}`
+}
+
+function buildSubjectsContext(
+  slide: PostTemplateSlide,
+  variables: TemplateVariables
+): Record<string, string> {
+  if (!slide.subjects_config?.enabled) {
+    return {}
+  }
+
+  return {
+    subjects_description: buildSubjectsDescription(getSlideSubjects(slide, variables)),
+  }
+}
+
+function validateSlideSubjects(slide: PostTemplateSlide, variables: TemplateVariables): string | null {
+  const config = slide.subjects_config
+  if (!config?.enabled) {
+    return null
+  }
+
+  const subjects = getSlideSubjects(slide, variables)
+  const variableName = getSlideSubjectsVariableName(slide)
+
+  if (subjects.length < config.min || subjects.length > config.max) {
+    return `${variableName} must include between ${config.min} and ${config.max} subject(s)`
+  }
+
+  for (const [index, subject] of subjects.entries()) {
+    if (
+      !subject.age_decade ||
+      !subject.gender ||
+      !subject.ethnicity ||
+      !subject.status ||
+      !subject.relationship
+    ) {
+      return `${variableName}[${index}] is missing required subject fields`
+    }
+    if (subject.status !== 'alive' && subject.status !== 'deceased') {
+      return `${variableName}[${index}].status must be alive or deceased`
+    }
+    if (subject.gender !== 'male' && subject.gender !== 'female') {
+      return `${variableName}[${index}].gender must be male or female`
+    }
+    if (!SUBJECT_RELATIONSHIPS.has(subject.relationship)) {
+      return `${variableName}[${index}].relationship is not supported`
+    }
+  }
+
+  if (config.require_one_deceased) {
+    const deceasedCount = subjects.filter((subject) => subject.status === 'deceased').length
+    if (deceasedCount !== 1) {
+      return `${variableName} must include exactly one deceased subject`
+    }
+  }
+
+  return null
+}
+
 function resolvePhotoVariableName(slide: PostTemplateSlide): string | null {
   return slide.photo_variable || slide.photo_variable_name || slide.variable_name || null
 }
 
 function resolveOverlayText(
   slide: PostTemplateSlide,
-  variables: Record<string, string>,
+  variables: Record<string, unknown>,
   interpolatedPrompt?: string
 ): string | null {
   const style = slide.overlay_style ?? 'none'
@@ -163,7 +339,7 @@ function resolveOverlayText(
   }
 
   if (style === 'hook') {
-    return variables.hook || (slide.text_overlay ? interpolatePrompt(slide.text_overlay, variables) : null)
+    return getStringRecordValue(variables, 'hook') || (slide.text_overlay ? interpolatePrompt(slide.text_overlay, variables) : null)
   }
 
   if (slide.text_overlay) {
@@ -181,16 +357,16 @@ function overlayStyleToTextStyle(style: OverlayStyle | undefined): TextStyle {
 function resolveEvergreenLegacyPrompt(
   templateCategory: TemplateCategory,
   slideType: SlideType,
-  variables: Record<string, string>
+  variables: TemplateVariables
 ): string | null {
   if (templateCategory !== 'evergreen') return null
   if (slideType !== 'selfie' && slideType !== 'vintage') return null
 
-  const relationship = variables.relationship
-  const era = variables.era
+  const relationship = getStringVariable(variables, 'relationship')
+  const era = getStringVariable(variables, 'era')
   if (!relationship || !era) return null
 
-  const requestedPostType = variables.post_type as LegacyEvergreenPostType | undefined
+  const requestedPostType = getStringVariable(variables, 'post_type') as LegacyEvergreenPostType | ''
   const postType: LegacyEvergreenPostType =
     requestedPostType && ['birthday', 'passing_anniversary', 'wedding_anniversary', 'user_birthday'].includes(requestedPostType)
       ? requestedPostType
@@ -251,18 +427,40 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const missingVariables = (typedTemplate.variables_needed || []).filter((name) => {
-      const value = variables[name]
-      return value === undefined || value === null || value === ''
-    })
-
     const slides = parseSlides(typedTemplate.slides)
+    const subjectDrivenDemographicFields = new Set<string>()
+    for (const slide of slides) {
+      if (!slide.subjects_config?.enabled) {
+        continue
+      }
+
+      for (const character of slide.characters || []) {
+        subjectDrivenDemographicFields.add(`${character}_age`)
+        subjectDrivenDemographicFields.add(`${character}_gender`)
+        subjectDrivenDemographicFields.add(`${character}_ethnicity`)
+      }
+    }
+
+    const missingVariables = (typedTemplate.variables_needed || [])
+      .filter((name) => !subjectDrivenDemographicFields.has(name))
+      .filter((name) => {
+        const value = variables[name]
+        return typeof value !== 'string' || value.trim() === ''
+      })
+
     const slideDerivedMissing = new Set<string>()
     for (const slide of slides) {
-      for (const character of slide.characters || []) {
-        slideDerivedMissing.add(`${character}_age`)
-        slideDerivedMissing.add(`${character}_gender`)
-        slideDerivedMissing.add(`${character}_ethnicity`)
+      const subjectValidationError = validateSlideSubjects(slide, variables)
+      if (subjectValidationError) {
+        return NextResponse.json({ error: subjectValidationError }, { status: 400 })
+      }
+
+      if (!slide.subjects_config?.enabled) {
+        for (const character of slide.characters || []) {
+          slideDerivedMissing.add(`${character}_age`)
+          slideDerivedMissing.add(`${character}_gender`)
+          slideDerivedMissing.add(`${character}_ethnicity`)
+        }
       }
 
       if (slide.photo_source === 'variable' || slide.slide_type === 'photo_upload_display') {
@@ -287,7 +485,7 @@ export async function POST(request: NextRequest) {
 
     const allMissingVariables = [...new Set([...missingVariables, ...slideDerivedMissing])].filter((name) => {
       const value = variables[name]
-      return value === undefined || value === null || value === ''
+      return typeof value !== 'string' || value.trim() === ''
     })
 
     if (allMissingVariables.length > 0) {
@@ -305,6 +503,7 @@ export async function POST(request: NextRequest) {
       const interpolationContext = {
         ...variables,
         ...buildCharacterDescriptions(slide, variables),
+        ...buildSubjectsContext(slide, variables),
       }
 
       let interpolatedPrompt = slide.prompt_recipe
@@ -332,27 +531,27 @@ export async function POST(request: NextRequest) {
         }
 
         const photoVariableName = slide.photo_source === 'variable' ? resolvePhotoVariableName(slide) : null
-        const variablePhoto = photoVariableName ? interpolationContext[photoVariableName] : null
+        const variablePhoto = photoVariableName ? getStringRecordValue(interpolationContext, photoVariableName) : null
         const cardPhoto = variablePhoto || evergreenCardPhotoUrl || latestImageUrl || ''
         const cardMessage =
           interpolatedPrompt ||
-          variables.card_message ||
-          `Remembering ${variables.deceased_name || 'your loved one'} with love.`
+          getStringVariable(variables, 'card_message') ||
+          `Remembering ${getStringVariable(variables, 'deceased_name') || 'your loved one'} with love.`
         const cardUrl = await renderAndUploadSocialCard(cardPhoto, cardMessage)
         slideResults.push({ order: slide.order, url: cardUrl, slide_type: slide.slide_type })
         latestImageUrl = cardUrl
         continue
       }
 
-      if (slide.slide_type === 'selfie' && variables.selfie_url) {
+      if (slide.slide_type === 'selfie' && getStringVariable(variables, 'selfie_url')) {
         const overlayText = resolveOverlayText(slide, interpolationContext, interpolatedPrompt)
         const selfieUrl = overlayText && overlayText.trim()
           ? await renderAndUploadSlide1(
-              variables.selfie_url,
+              getStringVariable(variables, 'selfie_url'),
               overlayText,
               overlayStyleToTextStyle(slide.overlay_style)
             )
-          : variables.selfie_url
+          : getStringVariable(variables, 'selfie_url')
 
         slideResults.push({ order: slide.order, url: selfieUrl, slide_type: slide.slide_type })
         latestImageUrl = selfieUrl
@@ -377,7 +576,7 @@ export async function POST(request: NextRequest) {
           throw new Error(`Slide order ${slide.order} (photo_upload_display) is missing photo variable name`)
         }
 
-        const sourcePhotoUrl = interpolationContext[photoVariableName]
+        const sourcePhotoUrl = getStringRecordValue(interpolationContext, photoVariableName)
         if (!sourcePhotoUrl) {
           throw new Error(`Slide order ${slide.order} is missing required photo variable: ${photoVariableName}`)
         }
@@ -396,10 +595,10 @@ export async function POST(request: NextRequest) {
       let baseImageUrl: string | null = null
       if (slide.photo_source === 'variable') {
         const photoVariableName = resolvePhotoVariableName(slide)
-        baseImageUrl = photoVariableName ? interpolationContext[photoVariableName] : null
+        baseImageUrl = photoVariableName ? getStringRecordValue(interpolationContext, photoVariableName) : null
       } else if (slide.photo_source === 'variable_or_generated') {
         const photoVariableName = resolvePhotoVariableName(slide)
-        const variablePhoto = photoVariableName ? interpolationContext[photoVariableName] : null
+        const variablePhoto = photoVariableName ? getStringRecordValue(interpolationContext, photoVariableName) : null
         baseImageUrl = variablePhoto || await generateAndUploadPhoto(interpolatedPrompt)
       } else {
         baseImageUrl = await generateAndUploadPhoto(interpolatedPrompt)
@@ -542,11 +741,11 @@ export async function POST(request: NextRequest) {
       slide_1_url: orderedUrls[0] || null,
       slide_2_url: orderedUrls[1] || null,
       slide_3_url: orderedUrls[2] || null,
-      hook_text: variables.hook || null,
+      hook_text: getStringVariable(variables, 'hook') || null,
       text_style: 'snapchat',
-      deceased_nickname: variables.deceased_name || null,
-      deceased_relationship: variables.relationship || 'loved one',
-      time_period: variables.era || '1990s',
+      deceased_nickname: getStringVariable(variables, 'deceased_name') || null,
+      deceased_relationship: getStringVariable(variables, 'relationship') || 'loved one',
+      time_period: getStringVariable(variables, 'era') || '1990s',
       live_photo_urls: livePhotos.length > 0 ? livePhotos : null,
       is_live_photo: isLivePhoto,
     }

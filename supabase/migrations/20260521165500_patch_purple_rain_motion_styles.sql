@@ -6,7 +6,14 @@ set slides = (
         slide || jsonb_build_object(
           'motion_style', 'ai_subtle',
           'live_photo_eligible', true,
-          'live_photo_default', true
+          'live_photo_default', true,
+          'subjects_config', jsonb_build_object(
+            'enabled', true,
+            'min', 1,
+            'max', 3,
+            'require_one_deceased', true
+          ),
+          'prompt_recipe', 'Authentic vintage photograph from the {era}. {subjects_description} together in a candid family/personal photo. Shot by a family member, amateur framing, natural imperfect lighting, slight motion blur acceptable. Looks like a photo pulled from a shoebox or phone camera roll. No watermarks, no text overlays, no AI artifacts.'
         )
       when (slide->>'order')::int = 2 then
         slide || jsonb_build_object(
