@@ -681,7 +681,7 @@ export async function POST(request: NextRequest) {
               },
               body: JSON.stringify({
                 image_url: staticSlideUrl,
-                motion_style: slide.motion_style || 'ai_subtle',
+                motion_style: 'ai_subtle',
                 motion_hint: interpolatedMotionHint,
                 output_orientation: 'vertical',
                 framing_mode: 'fill',

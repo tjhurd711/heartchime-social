@@ -17,7 +17,7 @@ set slides = (
         )
       when (slide->>'order')::int = 2 then
         slide || jsonb_build_object(
-          'motion_style', 'kenburns',
+          'motion_style', 'ai_subtle',
           'motion_hint', 'Slow zoom-in on the memorial photo. No AI motion. Respectful, still.',
           'live_photo_eligible', true,
           'live_photo_default', false

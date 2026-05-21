@@ -573,6 +573,7 @@ export default function GenerateFromTemplatePage() {
           {template.live_photo_supported && livePhotoSlides.length > 0 && (
           <div className="border border-gray-700/60 rounded-xl p-4 space-y-2">
             <h2 className="text-white font-semibold">Live Photo Slides</h2>
+            <p className="text-xs text-gray-400">Choose which slides should become Live Photos.</p>
             {livePhotoSlides.map((slide, index) => (
               <label
                 key={`${slide.order || index}-${slide.slide_type || 'slide'}`}
@@ -592,7 +593,7 @@ export default function GenerateFromTemplatePage() {
                   className="w-4 h-4 rounded bg-gray-700 border-gray-600 text-amber-500 focus:ring-amber-500"
                 />
                 <span>
-                  Slide {slide.order || index + 1} ({slide.slide_type || 'unknown'}) — animate with {slide.motion_style || 'ai_subtle'} motion
+                  Slide {slide.order || index + 1} — make this photo a Live Photo
                 </span>
               </label>
             ))}
