@@ -27,6 +27,13 @@ function isVideoUrl(url: string | null | undefined): boolean {
   return /\.(mp4|webm|mov)(\?.*)?$/i.test(url)
 }
 
+function toRenderableUrl(rawUrl: string): string {
+  if (/\.amazonaws\.com\//i.test(rawUrl)) {
+    return `/api/admin/social/templates/reference-media?url=${encodeURIComponent(rawUrl)}`
+  }
+  return rawUrl
+}
+
 function ReferenceMedia({
   url,
   label,
@@ -37,12 +44,13 @@ function ReferenceMedia({
   const [forceImage, setForceImage] = useState(false)
   const [imageFailed, setImageFailed] = useState(false)
   const renderVideo = isVideoUrl(url) && !forceImage
+  const displayUrl = toRenderableUrl(url)
 
   return (
     <div className="relative w-full aspect-[9/16] rounded-lg overflow-hidden border border-gray-700 bg-black">
       {renderVideo ? (
         <video
-          src={url}
+          src={displayUrl}
           autoPlay
           muted
           loop
@@ -58,7 +66,7 @@ function ReferenceMedia({
         <>
           {!imageFailed && (
             <img
-              src={url}
+              src={displayUrl}
               alt={label}
               onError={() => {
                 console.error('[reference-panel] image failed to load', { url, label })

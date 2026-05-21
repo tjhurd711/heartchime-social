@@ -18,6 +18,13 @@ interface TemplateEditPayload {
   reference_photos: TemplateReferencePhoto[] | null
 }
 
+function toRenderableUrl(rawUrl: string): string {
+  if (/\.amazonaws\.com\//i.test(rawUrl)) {
+    return `/api/admin/social/templates/reference-media?url=${encodeURIComponent(rawUrl)}`
+  }
+  return rawUrl
+}
+
 export default function EditTemplatePage() {
   const params = useParams<{ id: string }>()
   const templateId = params.id
@@ -287,9 +294,9 @@ export default function EditTemplatePage() {
           </div>
           {referenceVideoUrl && (
             isReferenceVideo ? (
-              <video src={referenceVideoUrl} controls autoPlay muted loop playsInline className="w-full max-w-[320px] rounded-lg border border-gray-700" />
+              <video src={toRenderableUrl(referenceVideoUrl)} controls autoPlay muted loop playsInline className="w-full max-w-[320px] rounded-lg border border-gray-700" />
             ) : (
-              <img src={referenceVideoUrl} alt="Reference media" className="w-full max-w-[320px] rounded-lg border border-gray-700 object-cover" />
+              <img src={toRenderableUrl(referenceVideoUrl)} alt="Reference media" className="w-full max-w-[320px] rounded-lg border border-gray-700 object-cover" />
             )
           )}
         </section>
@@ -325,7 +332,7 @@ export default function EditTemplatePage() {
             <div className="space-y-3">
               {referencePhotos.map((photo, index) => (
                 <div key={`${photo.url}-${index}`} className="flex items-center gap-3 bg-gray-800/50 p-3 rounded-lg">
-                  <img src={photo.url} alt={photo.label || `Reference ${index + 1}`} className="w-16 h-16 object-cover rounded border border-gray-700" />
+                  <img src={toRenderableUrl(photo.url)} alt={photo.label || `Reference ${index + 1}`} className="w-16 h-16 object-cover rounded border border-gray-700" />
                   <div className="flex-1 space-y-2">
                     <p className="text-xs text-gray-400">Photo {index + 1}</p>
                     <input
