@@ -85,23 +85,45 @@ export async function POST(
       )
     }
 
+    console.info('[template-reference-upload] incoming file', {
+      templateId: id,
+      kind,
+      fileName: file.name,
+      fileType: file.type,
+      fileSize: file.size,
+      detectedIsImage: isImageFile(file),
+      detectedIsVideo: isVideoFile(file),
+    })
+
     const fallbackExt = isVideoFile(file) ? 'mp4' : 'png'
     const safeName = sanitizeFileName(file.name || `${kind}.${fallbackExt}`)
-    const key = `template-references/${id}/${safeName}`
+    const key = `social-template-inputs/template-references/${id}/${safeName}`
     const body = Buffer.from(await file.arrayBuffer())
+    const contentType = inferContentType(file, isVideoFile(file) ? 'video/mp4' : 'image/png')
 
     await s3Client.send(
       new PutObjectCommand({
         Bucket: BUCKET,
         Key: key,
         Body: body,
-        ContentType: inferContentType(file, isVideoFile(file) ? 'video/mp4' : 'image/png'),
+        ContentType: contentType,
       })
     )
 
     const url = `https://${BUCKET}.s3.${REGION}.amazonaws.com/${key}`
+    console.info('[template-reference-upload] uploaded', {
+      templateId: id,
+      kind,
+      key,
+      contentType,
+      url,
+    })
     return NextResponse.json({ url, key })
   } catch (error) {
+    console.error('[template-reference-upload] failed', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    })
     return NextResponse.json(
       {
         error: 'Failed to upload reference media',

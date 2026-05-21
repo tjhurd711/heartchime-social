@@ -48,7 +48,10 @@ function ReferenceMedia({
           loop
           playsInline
           controls
-          onError={() => setForceImage(true)}
+          onError={() => {
+            console.error('[reference-panel] video failed to load, falling back to image', { url, label })
+            setForceImage(true)
+          }}
           className="w-full h-full object-cover"
         />
       ) : (
@@ -57,7 +60,10 @@ function ReferenceMedia({
             <img
               src={url}
               alt={label}
-              onError={() => setImageFailed(true)}
+              onError={() => {
+                console.error('[reference-panel] image failed to load', { url, label })
+                setImageFailed(true)
+              }}
               className="w-full h-full object-cover"
             />
           )}

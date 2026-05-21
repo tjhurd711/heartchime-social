@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import heic2any from 'heic2any'
 import { TemplateReferencePhoto } from '../../_components/reference-panel'
 
 const MAX_REFERENCE_PHOTOS = 8
@@ -67,6 +68,13 @@ export default function EditTemplatePage() {
   }, [templateId])
 
   const uploadReferenceFile = async (file: File, kind: 'video' | 'photo' | 'media') => {
+    console.info('[template-reference-upload-client] starting', {
+      templateId,
+      kind,
+      fileName: file.name,
+      fileType: file.type,
+      fileSize: file.size,
+    })
     const formData = new FormData()
     formData.append('file', file)
     formData.append('kind', kind)
@@ -77,9 +85,38 @@ export default function EditTemplatePage() {
     })
     const data = await res.json()
     if (!res.ok) {
+      console.error('[template-reference-upload-client] failed response', {
+        status: res.status,
+        body: data,
+      })
       throw new Error(data?.error || 'Upload failed')
     }
+    console.info('[template-reference-upload-client] success', {
+      url: data.url,
+      key: data.key,
+    })
     return data.url as string
+  }
+
+  const normalizeImageForUpload = async (file: File): Promise<File> => {
+    const isHeicLike =
+      file.type === 'image/heic' ||
+      file.type === 'image/heif' ||
+      /\.hei(c|f)$/i.test(file.name)
+
+    if (!isHeicLike) {
+      return file
+    }
+
+    const converted = await heic2any({
+      blob: file,
+      toType: 'image/jpeg',
+      quality: 0.92,
+    })
+
+    const convertedBlob = Array.isArray(converted) ? converted[0] : converted
+    const nextName = file.name.replace(/\.hei(c|f)$/i, '.jpg')
+    return new File([convertedBlob], nextName, { type: 'image/jpeg' })
   }
 
   const handleReferenceMediaUpload = async (file: File) => {
@@ -87,10 +124,14 @@ export default function EditTemplatePage() {
     setError(null)
     setSuccess(null)
     try {
-      const url = await uploadReferenceFile(file, 'media')
+      const fileToUpload = file.type.startsWith('image/')
+        ? await normalizeImageForUpload(file)
+        : file
+      const url = await uploadReferenceFile(fileToUpload, 'media')
       setReferenceVideoUrl(url)
       setSuccess('Reference media uploaded.')
     } catch (err) {
+      console.error('[template-reference-upload-client] reference media upload failed', err)
       setError(err instanceof Error ? err.message : 'Reference media upload failed')
     } finally {
       setUploadingVideo(false)
@@ -111,7 +152,10 @@ export default function EditTemplatePage() {
     try {
       const capacity = MAX_REFERENCE_PHOTOS - referencePhotos.length
       const nextBatch = incoming.slice(0, capacity)
-      const uploadedUrls = await Promise.all(nextBatch.map((file) => uploadReferenceFile(file, 'photo')))
+      const normalizedFiles = await Promise.all(
+        nextBatch.map((file) => normalizeImageForUpload(file))
+      )
+      const uploadedUrls = await Promise.all(normalizedFiles.map((file) => uploadReferenceFile(file, 'photo')))
       setReferencePhotos((prev) => [
         ...prev,
         ...uploadedUrls.map((url, index) => ({
@@ -122,6 +166,7 @@ export default function EditTemplatePage() {
       ])
       setSuccess('Reference photos uploaded.')
     } catch (err) {
+      console.error('[template-reference-upload-client] reference photos upload failed', err)
       setError(err instanceof Error ? err.message : 'Photo upload failed')
     } finally {
       setUploadingPhoto(false)
