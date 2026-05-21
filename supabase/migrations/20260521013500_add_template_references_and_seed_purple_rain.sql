@@ -38,11 +38,10 @@ select
     ),
     jsonb_build_object(
       'order', 2,
-      'slide_type', 'photo_upload_display',
+      'slide_type', 'ai_generated',
       'characters', jsonb_build_array(),
-      'photo_source', 'variable',
-      'photo_variable', 'memorial_photo_url',
-      'prompt_recipe', '',
+      'photo_source', 'generated',
+      'prompt_recipe', 'Respectful vertical memorial/headstone photograph in a cemetery or small roadside memorial. A simple headstone, flowers, candles, and soft natural light. Somber documentary phone-photo feel, realistic environment, shallow depth of field, no readable names or dates, no text overlays, no watermarks, no AI artifacts.',
       'text_overlay', '{cause_of_death}',
       'overlay_style', 'lyric',
       'motion_hint', 'Gentle wind moves through trees in background. Candle flames flicker softly. Otherwise everything still. Camera locked off.'
@@ -55,8 +54,7 @@ select
     'deceased_ethnicity',
     'era',
     'roles_list',
-    'cause_of_death',
-    'memorial_photo_url'
+    'cause_of_death'
   ],
   jsonb_build_array(
     jsonb_build_object(
@@ -110,15 +108,9 @@ select
       'label', 'Optional: real photo of deceased (slide 1)',
       'type', 'photo_upload',
       'required', false
-    ),
-    jsonb_build_object(
-      'name', 'memorial_photo_url',
-      'label', 'REQUIRED: photo of memorial / funeral setup (slide 2)',
-      'type', 'photo_upload',
-      'required', true
     )
   ),
-  'Two-slide trend. Slide 1 is the deceased while alive with their roles listed. Slide 2 is the memorial with a stark cause-of-death overlay. Audience hook: the contrast between who they were and what took them.',
+  'Two-slide trend. Slide 1 is the deceased while alive with their roles listed. Slide 2 is an AI-generated memorial/headstone image with a stark cause-of-death overlay. Audience hook: the contrast between who they were and what took them.',
   true
 where not exists (
   select 1
