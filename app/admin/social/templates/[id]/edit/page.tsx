@@ -66,7 +66,7 @@ export default function EditTemplatePage() {
     }
   }, [templateId])
 
-  const uploadReferenceFile = async (file: File, kind: 'video' | 'photo') => {
+  const uploadReferenceFile = async (file: File, kind: 'video' | 'photo' | 'media') => {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('kind', kind)
