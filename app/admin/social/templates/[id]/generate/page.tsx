@@ -420,8 +420,8 @@ export default function GenerateFromTemplatePage() {
   const setSubjectCount = (slideOrder: number, count: number) => {
     const key = `slide_${slideOrder}_subjects`
     setVariables((prev) => {
-      const current = Array.isArray(prev[key]) ? prev[key] : []
-      const nextSubjects = Array.from({ length: count }, (_item, index) => current[index] || createDefaultSubject(index))
+      const current: PhotoSubject[] = Array.isArray(prev[key]) ? prev[key] : []
+      const nextSubjects: PhotoSubject[] = Array.from({ length: count }, (_item, index) => current[index] || createDefaultSubject(index))
       const hasDeceased = nextSubjects.some((subject) => subject.status === 'deceased')
       if (!hasDeceased && nextSubjects[0]) {
         nextSubjects[0] = { ...nextSubjects[0], status: 'deceased' }
@@ -439,8 +439,8 @@ export default function GenerateFromTemplatePage() {
   ) => {
     const key = `slide_${slideOrder}_subjects`
     setVariables((prev) => {
-      const current = Array.isArray(prev[key]) ? prev[key] : [createDefaultSubject(0)]
-      const nextSubjects = current.map((subject, index) => {
+      const current: PhotoSubject[] = Array.isArray(prev[key]) ? prev[key] : [createDefaultSubject(0)]
+      const nextSubjects: PhotoSubject[] = current.map((subject, index) => {
         if (field === 'status' && value === 'deceased' && requireOneDeceased) {
           return {
             ...subject,
