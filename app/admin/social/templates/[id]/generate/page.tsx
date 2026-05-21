@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
+import ReferencePanel, { TemplateReferencePhoto } from '../../_components/reference-panel'
 
 type AccountType = 'business' | 'persona'
 type FieldType = 'text' | 'textarea' | 'select' | 'photo_upload'
@@ -28,6 +29,8 @@ interface Template {
   description: string | null
   account_type: 'business' | 'persona' | 'both'
   live_photo_supported?: boolean
+  reference_video_url?: string | null
+  reference_photos?: TemplateReferencePhoto[] | null
   variables_schema: VariableField[] | null
   slides?: Array<{ order?: number; slide_type?: string; characters?: CharacterKey[]; motion_hint?: string }>
 }
@@ -156,6 +159,7 @@ export default function GenerateFromTemplatePage() {
   }, [accountType, personas.length])
 
   const variablesSchema = useMemo(() => template?.variables_schema || [], [template])
+  const schemaFieldNames = useMemo(() => new Set(variablesSchema.map((field) => field.name)), [variablesSchema])
   const livePhotoSlides = useMemo(
     () => (template?.slides || []).filter((slide) => !!slide.motion_hint),
     [template]
@@ -173,23 +177,33 @@ export default function GenerateFromTemplatePage() {
     () => !!template?.slides?.some((slide) => (slide?.characters || []).includes('deceased')),
     [template]
   )
-  const shouldShowCharacterInputs = accountType === 'business' && (needsAliveDemographics || needsDeceasedDemographics)
+  const needsAliveDemographicInputs = needsAliveDemographics && (
+    !schemaFieldNames.has('alive_age') ||
+    !schemaFieldNames.has('alive_gender') ||
+    !schemaFieldNames.has('alive_ethnicity')
+  )
+  const needsDeceasedDemographicInputs = needsDeceasedDemographics && (
+    !schemaFieldNames.has('deceased_age') ||
+    !schemaFieldNames.has('deceased_gender') ||
+    !schemaFieldNames.has('deceased_ethnicity')
+  )
+  const shouldShowCharacterInputs = accountType === 'business' && (needsAliveDemographicInputs || needsDeceasedDemographicInputs)
 
   const demographicsMissing = useMemo(() => {
     if (!shouldShowCharacterInputs) return false
 
-    const aliveMissing = needsAliveDemographics && (
+    const aliveMissing = needsAliveDemographicInputs && (
       !variables.alive_age?.trim() ||
       !variables.alive_gender?.trim() ||
       !variables.alive_ethnicity?.trim()
     )
-    const deceasedMissing = needsDeceasedDemographics && (
+    const deceasedMissing = needsDeceasedDemographicInputs && (
       !variables.deceased_age?.trim() ||
       !variables.deceased_gender?.trim() ||
       !variables.deceased_ethnicity?.trim()
     )
     return aliveMissing || deceasedMissing
-  }, [shouldShowCharacterInputs, needsAliveDemographics, needsDeceasedDemographics, variables])
+  }, [shouldShowCharacterInputs, needsAliveDemographicInputs, needsDeceasedDemographicInputs, variables])
 
   const requiredMissing = useMemo(() => {
     return variablesSchema.some((field) => field.required && !variables[field.name]?.trim())
@@ -312,15 +326,26 @@ export default function GenerateFromTemplatePage() {
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
-      <div>
-        <Link
-          href="/admin/social/templates"
-          className="text-gray-400 hover:text-white text-sm flex items-center gap-1 mb-2"
-        >
-          ← Back to Template Gallery
-        </Link>
-        <h1 className="text-3xl font-bold text-white">{template.name}</h1>
-        <p className="text-gray-400 mt-1">{template.description || 'Generate a post from this template.'}</p>
+      <div className="flex items-start justify-between gap-6">
+        <div>
+          <Link
+            href="/admin/social/templates"
+            className="text-gray-400 hover:text-white text-sm flex items-center gap-1 mb-2"
+          >
+            ← Back to Template Gallery
+          </Link>
+          <h1 className="text-3xl font-bold text-white">{template.name}</h1>
+          <p className="text-gray-400 mt-1">{template.description || 'Generate a post from this template.'}</p>
+          <Link href={`/admin/social/templates/${template.id}/edit`} className="inline-flex mt-3 text-sm text-amber-300 hover:text-amber-200">
+            Edit template details →
+          </Link>
+        </div>
+
+        <ReferencePanel
+          templateId={template.id}
+          referenceVideoUrl={template.reference_video_url}
+          referencePhotos={template.reference_photos}
+        />
       </div>
 
       <form onSubmit={handleSubmit} className="bg-[#1a1f2e] rounded-2xl p-6 border border-gray-800/50 space-y-5">
@@ -426,7 +451,7 @@ export default function GenerateFromTemplatePage() {
           <div className="border border-gray-700/60 rounded-xl p-4 space-y-4">
             <h2 className="text-white font-semibold">Character Demographics</h2>
 
-            {needsAliveDemographics && (
+            {needsAliveDemographicInputs && (
               <div className="space-y-3">
                 <h3 className="text-sm font-medium text-amber-300">Alive Person</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -464,7 +489,7 @@ export default function GenerateFromTemplatePage() {
               </div>
             )}
 
-            {needsDeceasedDemographics && (
+            {needsDeceasedDemographicInputs && (
               <div className="space-y-3">
                 <h3 className="text-sm font-medium text-amber-300">Deceased Person</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

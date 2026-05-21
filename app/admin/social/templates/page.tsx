@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import ReferencePanel, { TemplateReferencePhoto } from './_components/reference-panel'
 
 interface TemplateCard {
   id: string
@@ -10,6 +11,8 @@ interface TemplateCard {
   account_type: 'business' | 'persona' | 'both'
   slide_count: number
   description: string | null
+  reference_video_url: string | null
+  reference_photos: TemplateReferencePhoto[] | null
 }
 
 function categoryStyles(category: TemplateCard['category']) {
@@ -73,16 +76,25 @@ export default function TemplatesGalleryPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {templates.map((template) => (
-            <Link
+            <div
               key={template.id}
-              href={`/admin/social/templates/${template.id}/generate`}
               className="bg-[#1a1f2e] rounded-2xl p-5 border border-gray-800/50 hover:border-amber-400/40 transition-all"
             >
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <h2 className="text-white font-bold text-lg leading-tight">{template.name}</h2>
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${categoryStyles(template.category)}`}>
-                  {template.category}
-                </span>
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div>
+                  <h2 className="text-white font-bold text-lg leading-tight">{template.name}</h2>
+                  <div className="mt-2">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${categoryStyles(template.category)}`}>
+                      {template.category}
+                    </span>
+                  </div>
+                </div>
+                <ReferencePanel
+                  templateId={template.id}
+                  referenceVideoUrl={template.reference_video_url}
+                  referencePhotos={template.reference_photos}
+                  compact
+                />
               </div>
 
               <div className="flex items-center gap-2 mb-3">
@@ -95,7 +107,13 @@ export default function TemplatesGalleryPage() {
               <p className="text-sm text-gray-400">
                 {template.description || 'No description provided.'}
               </p>
-            </Link>
+              <Link
+                href={`/admin/social/templates/${template.id}/generate`}
+                className="inline-flex mt-4 text-sm text-amber-300 hover:text-amber-200"
+              >
+                Open template →
+              </Link>
+            </div>
           ))}
         </div>
       )}

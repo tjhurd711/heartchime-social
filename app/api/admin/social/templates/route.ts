@@ -10,7 +10,7 @@ export async function GET() {
   try {
     const { data, error } = await supabase
       .from('post_templates')
-      .select('id, name, category, account_type, slide_count, description, variables_schema')
+      .select('id, name, category, account_type, slide_count, description, variables_schema, reference_video_url, reference_photos')
       .eq('is_active', true)
       .order('category', { ascending: true })
       .order('name', { ascending: true })

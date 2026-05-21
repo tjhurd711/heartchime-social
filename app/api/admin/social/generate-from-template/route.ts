@@ -16,7 +16,7 @@ const supabase = createClient(
 type TemplateCategory = 'evergreen' | 'trend'
 type TemplateAccountType = 'business' | 'persona' | 'both'
 type RequestAccountType = 'business' | 'persona'
-type OverlayStyle = 'hook' | 'caption' | 'none'
+type OverlayStyle = 'hook' | 'caption' | 'lyric' | 'none'
 type SlideType =
   | 'selfie'
   | 'vintage'
@@ -25,10 +25,11 @@ type SlideType =
   | 'ai_generated'
   | 'text_card'
   | 'heartchime_card'
+  | 'photo_upload_display'
   | 'before_after'
 type LegacyEvergreenPostType = 'birthday' | 'passing_anniversary' | 'wedding_anniversary' | 'user_birthday'
 type CharacterKey = 'alive' | 'deceased'
-type PhotoSource = 'generated' | 'variable'
+type PhotoSource = 'generated' | 'variable' | 'variable_or_generated'
 
 interface GenerateFromTemplateRequest {
   template_id: string
@@ -159,6 +160,7 @@ function resolveOverlayText(
 }
 
 function overlayStyleToTextStyle(style: OverlayStyle | undefined): TextStyle {
+  if (style === 'lyric') return 'lyric'
   return style === 'caption' ? 'clean' : 'snapchat'
 }
 
@@ -242,7 +244,7 @@ export async function POST(request: NextRequest) {
         slideDerivedMissing.add(`${character}_ethnicity`)
       }
 
-      if (slide.photo_source === 'variable') {
+      if (slide.photo_source === 'variable' || slide.slide_type === 'photo_upload_display') {
         const photoVariableName = resolvePhotoVariableName(slide)
         if (!photoVariableName) {
           return NextResponse.json(
@@ -251,6 +253,14 @@ export async function POST(request: NextRequest) {
           )
         }
         slideDerivedMissing.add(photoVariableName)
+      } else if (slide.photo_source === 'variable_or_generated') {
+        const photoVariableName = resolvePhotoVariableName(slide)
+        if (!photoVariableName) {
+          return NextResponse.json(
+            { error: `Slide order ${slide.order} uses photo_source=variable_or_generated but is missing photo variable name` },
+            { status: 400 }
+          )
+        }
       }
     }
 
@@ -340,10 +350,36 @@ export async function POST(request: NextRequest) {
         continue
       }
 
+      if (slide.slide_type === 'photo_upload_display') {
+        const photoVariableName = resolvePhotoVariableName(slide)
+        if (!photoVariableName) {
+          throw new Error(`Slide order ${slide.order} (photo_upload_display) is missing photo variable name`)
+        }
+
+        const sourcePhotoUrl = interpolationContext[photoVariableName]
+        if (!sourcePhotoUrl) {
+          throw new Error(`Slide order ${slide.order} is missing required photo variable: ${photoVariableName}`)
+        }
+
+        const overlayText = resolveOverlayText(slide, interpolationContext, interpolatedPrompt)
+        const finalUrl =
+          overlayText && overlayText.trim()
+            ? await renderAndUploadSlide1(sourcePhotoUrl, overlayText, overlayStyleToTextStyle(slide.overlay_style))
+            : sourcePhotoUrl
+
+        slideResults.push({ order: slide.order, url: finalUrl, slide_type: slide.slide_type })
+        latestImageUrl = finalUrl
+        continue
+      }
+
       let baseImageUrl: string | null = null
       if (slide.photo_source === 'variable') {
         const photoVariableName = resolvePhotoVariableName(slide)
         baseImageUrl = photoVariableName ? interpolationContext[photoVariableName] : null
+      } else if (slide.photo_source === 'variable_or_generated') {
+        const photoVariableName = resolvePhotoVariableName(slide)
+        const variablePhoto = photoVariableName ? interpolationContext[photoVariableName] : null
+        baseImageUrl = variablePhoto || await generateAndUploadPhoto(interpolatedPrompt)
       } else {
         baseImageUrl = await generateAndUploadPhoto(interpolatedPrompt)
       }

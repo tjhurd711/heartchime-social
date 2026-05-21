@@ -34,7 +34,7 @@ const S3_BUCKET = process.env.AWS_S3_BUCKET || 'heartbeat-photos-prod'
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════
 
-export type TextStyle = 'snapchat' | 'clean'
+export type TextStyle = 'snapchat' | 'clean' | 'lyric'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HTML TEMPLATES
@@ -254,6 +254,84 @@ function generateCleanHTML(photoUrl: string, hookText: string, eventDate?: strin
 `
 }
 
+function generateLyricHTML(photoUrl: string, hookText: string): string {
+  const escapedText = hookText
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@800&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: ${CANVAS_WIDTH}px;
+      height: ${CANVAS_HEIGHT}px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .photo {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, 0.18) 0%,
+        rgba(0, 0, 0, 0.24) 40%,
+        rgba(0, 0, 0, 0.32) 100%
+      );
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 120px 80px;
+    }
+
+    .lyric-text {
+      width: 100%;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 108px;
+      line-height: 1.1;
+      font-weight: 800;
+      color: #ffffff;
+      text-align: center;
+      white-space: pre-wrap;
+      word-break: break-word;
+      text-shadow:
+        0 6px 18px rgba(0, 0, 0, 0.85),
+        0 0 2px rgba(0, 0, 0, 0.8);
+    }
+  </style>
+</head>
+<body>
+  <img class="photo" src="${photoUrl}" alt="Slide" />
+  <div class="overlay">
+    <p class="lyric-text">${escapedText}</p>
+  </div>
+</body>
+</html>
+`
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN RENDER FUNCTION
 // ═══════════════════════════════════════════════════════════════════════════
@@ -287,9 +365,11 @@ export async function renderSlide1(
     })
 
     // Generate HTML based on style
-    const html = style === 'snapchat' 
+    const html = style === 'snapchat'
       ? generateSnapchatHTML(recipientPhotoUrl, hookText, eventDate)
-      : generateCleanHTML(recipientPhotoUrl, hookText, eventDate)
+      : style === 'lyric'
+        ? generateLyricHTML(recipientPhotoUrl, hookText)
+        : generateCleanHTML(recipientPhotoUrl, hookText, eventDate)
 
     await page.setContent(html, {
       waitUntil: 'load', // Puppeteer-core setContent only supports load/domcontentloaded
