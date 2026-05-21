@@ -41,7 +41,7 @@ select
       'slide_type', 'ai_generated',
       'characters', jsonb_build_array(),
       'photo_source', 'generated',
-      'prompt_recipe', 'Respectful vertical memorial/headstone photograph in a cemetery or small roadside memorial. A simple headstone, flowers, candles, and soft natural light. Somber documentary phone-photo feel, realistic environment, shallow depth of field, no readable names or dates, no text overlays, no watermarks, no AI artifacts.',
+      'prompt_recipe', 'Respectful vertical memorial/headstone photograph in a cemetery or small roadside memorial. A simple headstone, flowers, candles, and soft natural light. {memorial_attendees_description}. Somber documentary phone-photo feel, realistic environment, shallow depth of field, no readable names or dates, no text overlays, no watermarks, no AI artifacts.',
       'text_overlay', '{cause_of_death}',
       'overlay_style', 'lyric',
       'motion_hint', 'Gentle wind moves through trees in background. Candle flames flicker softly. Otherwise everything still. Camera locked off.'

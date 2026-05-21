@@ -125,6 +125,7 @@ interface PostTemplateRow {
 
 const TRANSPARENT_PX =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlAbQAAAABJRU5ErkJggg=='
+const CURRENT_YEAR = 2026
 
 const SUBJECT_RELATIONSHIPS = new Set<SubjectRelationship>([
   'father',
@@ -277,6 +278,74 @@ function buildSubjectsContext(
 
   return {
     subjects_description: buildSubjectsDescription(getSlideSubjects(slide, variables)),
+  }
+}
+
+function parseEraStartYear(value: string): number | null {
+  const match = value.match(/^(\d{4})s$/)
+  return match ? Number(match[1]) : null
+}
+
+function estimateSubjectAgeInPhoto(ageDecade: string): number | null {
+  if (ageDecade === '0-12') return 4
+  if (ageDecade === 'teens') return 16
+
+  const decade = ageDecade.match(/^(\d+)s$/)
+  if (decade) {
+    return Number(decade[1]) + 5
+  }
+
+  const parsed = Number.parseInt(ageDecade, 10)
+  return Number.isNaN(parsed) ? null : parsed
+}
+
+function pluralizePeople(count: number): string {
+  if (count === 1) return 'one person'
+  if (count === 2) return 'two people'
+  if (count === 3) return 'three people'
+  return `${count} people`
+}
+
+function describeMemorialAttendee(subject: TemplateSubject, yearsSincePhoto: number): string {
+  const estimatedPhotoAge = estimateSubjectAgeInPhoto(subject.age_decade)
+  const currentAge = estimatedPhotoAge === null ? null : estimatedPhotoAge + yearsSincePhoto
+  const ageDescription = currentAge === null ? '' : `, now around ${currentAge} years old`
+
+  return `a ${normalizeEthnicity(subject.ethnicity)} ${subject.relationship}${ageDescription}`
+}
+
+function buildMemorialAttendeesDescription(
+  slide: PostTemplateSlide,
+  variables: TemplateVariables
+): string {
+  const requestedCount = Number.parseInt(getStringVariable(variables, `slide_${slide.order}_memorial_attendee_count`) || '0', 10)
+  const attendeeCount = Number.isNaN(requestedCount) ? 0 : requestedCount
+
+  if (attendeeCount <= 0) {
+    return 'No people are visible; only the memorial/headstone, flowers, candles, and quiet surroundings are shown'
+  }
+
+  const slideOneSubjects = getSlideSubjects({ ...slide, order: 1 }, variables)
+  const eligibleSubjects = slideOneSubjects.filter((subject) => subject.status !== 'deceased')
+  const selectedSubjects = eligibleSubjects.slice(0, attendeeCount)
+
+  if (selectedSubjects.length === 0) {
+    return 'No people are visible; only the memorial/headstone, flowers, candles, and quiet surroundings are shown'
+  }
+
+  const eraStartYear = parseEraStartYear(getStringVariable(variables, 'era')) ?? CURRENT_YEAR
+  const yearsSincePhoto = Math.max(0, CURRENT_YEAR - eraStartYear)
+  const attendeeDescriptions = selectedSubjects.map((subject) => describeMemorialAttendee(subject, yearsSincePhoto))
+
+  return `${pluralizePeople(selectedSubjects.length)} from the earlier photo are present at the memorial: ${attendeeDescriptions.join(', ')}. Their faces must not be visible; show backs turned, hands placing flowers, shoulders cropped below the face, silhouettes, or a blurred side/back view only`
+}
+
+function buildMemorialContext(
+  slide: PostTemplateSlide,
+  variables: TemplateVariables
+): Record<string, string> {
+  return {
+    memorial_attendees_description: buildMemorialAttendeesDescription(slide, variables),
   }
 }
 
@@ -504,6 +573,7 @@ export async function POST(request: NextRequest) {
         ...variables,
         ...buildCharacterDescriptions(slide, variables),
         ...buildSubjectsContext(slide, variables),
+        ...buildMemorialContext(slide, variables),
       }
 
       let interpolatedPrompt = slide.prompt_recipe

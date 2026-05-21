@@ -70,6 +70,7 @@ interface Template {
   slides?: Array<{
     order?: number
     slide_type?: string
+    prompt_recipe?: string
     characters?: CharacterKey[]
     motion_hint?: string
     motion_style?: MotionStyle
@@ -259,6 +260,14 @@ export default function GenerateFromTemplatePage() {
     () => (template?.slides || []).filter((slide) => slide.live_photo_eligible === true),
     [template]
   )
+  const memorialAttendeeSlides = useMemo(
+    () => (template?.slides || []).filter((slide) => (
+      typeof slide.order === 'number' &&
+      typeof slide.prompt_recipe === 'string' &&
+      slide.prompt_recipe.includes('{memorial_attendees_description}')
+    )),
+    [template]
+  )
   const hasSelfieSlide = useMemo(
     () => !!template?.slides?.some((slide) => slide?.slide_type === 'selfie'),
     [template]
@@ -363,6 +372,37 @@ export default function GenerateFromTemplatePage() {
       return changed ? next : prev
     })
   }, [subjectSlides])
+
+  useEffect(() => {
+    if (memorialAttendeeSlides.length === 0) return
+
+    setVariables((prev) => {
+      const next = { ...prev }
+      let changed = false
+      const slideOneSubjects: PhotoSubject[] = Array.isArray(next.slide_1_subjects) ? next.slide_1_subjects : []
+      const maxAttendees = slideOneSubjects.filter((subject) => subject.status !== 'deceased').length
+
+      for (const slide of memorialAttendeeSlides) {
+        if (typeof slide.order !== 'number') continue
+
+        const key = `slide_${slide.order}_memorial_attendee_count`
+        const currentValue = getStringVariable(next, key)
+        if (!currentValue) {
+          next[key] = '0'
+          changed = true
+          continue
+        }
+
+        const currentCount = Number.parseInt(currentValue, 10)
+        if (!Number.isNaN(currentCount) && currentCount > maxAttendees) {
+          next[key] = String(maxAttendees)
+          changed = true
+        }
+      }
+
+      return changed ? next : prev
+    })
+  }, [memorialAttendeeSlides, variables.slide_1_subjects])
 
   const handleUploadPhoto = async (fieldName: string, file: File) => {
     setUploadingField(fieldName)
@@ -698,6 +738,42 @@ export default function GenerateFromTemplatePage() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )
+          })}
+
+          {memorialAttendeeSlides.map((slide) => {
+            if (typeof slide.order !== 'number') return null
+
+            const key = `slide_${slide.order}_memorial_attendee_count`
+            const slideOneSubjects: PhotoSubject[] = Array.isArray(variables.slide_1_subjects) ? variables.slide_1_subjects : []
+            const eligibleSubjects = slideOneSubjects.filter((subject) => subject.status !== 'deceased')
+            const options = Array.from({ length: eligibleSubjects.length + 1 }, (_item, index) => index)
+
+            return (
+              <div key={key} className="border border-gray-700/60 rounded-xl p-4 space-y-3">
+                <div>
+                  <h2 className="text-white font-semibold">People at Memorial</h2>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Slide {slide.order} can include non-deceased people from Slide 1, always with faces hidden.
+                  </p>
+                </div>
+                <select
+                  value={getStringVariable(variables, key) || '0'}
+                  onChange={(e) => setVariables((prev) => ({ ...prev, [key]: e.target.value }))}
+                  className="w-full max-w-xs px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-amber-400"
+                >
+                  {options.map((count) => (
+                    <option key={count} value={count}>
+                      {count === 0 ? 'Nobody in memorial photo' : `${count} from Slide 1`}
+                    </option>
+                  ))}
+                </select>
+                {eligibleSubjects.length === 0 && (
+                  <p className="text-xs text-gray-500">
+                    Add an alive person to Slide 1 if you want someone to appear at the memorial.
+                  </p>
+                )}
               </div>
             )
           })}

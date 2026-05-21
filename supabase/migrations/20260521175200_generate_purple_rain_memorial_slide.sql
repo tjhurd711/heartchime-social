@@ -7,7 +7,7 @@ set
           (slide - 'photo_variable' - 'photo_variable_name' - 'variable_name') || jsonb_build_object(
             'slide_type', 'ai_generated',
             'photo_source', 'generated',
-            'prompt_recipe', 'Respectful vertical memorial/headstone photograph in a cemetery or small roadside memorial. A simple headstone, flowers, candles, and soft natural light. Somber documentary phone-photo feel, realistic environment, shallow depth of field, no readable names or dates, no text overlays, no watermarks, no AI artifacts.',
+            'prompt_recipe', 'Respectful vertical memorial/headstone photograph in a cemetery or small roadside memorial. A simple headstone, flowers, candles, and soft natural light. {memorial_attendees_description}. Somber documentary phone-photo feel, realistic environment, shallow depth of field, no readable names or dates, no text overlays, no watermarks, no AI artifacts.',
             'text_overlay', '{cause_of_death}',
             'overlay_style', 'lyric',
             'motion_style', 'ai_subtle',
