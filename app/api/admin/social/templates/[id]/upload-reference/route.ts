@@ -36,22 +36,31 @@ export async function POST(
     if (!(file instanceof File)) {
       return NextResponse.json({ error: 'file is required' }, { status: 400 })
     }
-    if (!['video', 'photo'].includes(kind)) {
-      return NextResponse.json({ error: 'kind must be video or photo' }, { status: 400 })
+    if (!['video', 'photo', 'media'].includes(kind)) {
+      return NextResponse.json({ error: 'kind must be media, video, or photo' }, { status: 400 })
     }
 
     const allowedPhotoTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
+    const allowedVideoTypes = ['video/mp4']
+
     if (kind === 'photo' && !allowedPhotoTypes.includes(file.type)) {
       return NextResponse.json(
         { error: 'Invalid photo type. Allowed: png, jpeg, jpg, webp' },
         { status: 400 }
       )
     }
-    if (kind === 'video' && file.type !== 'video/mp4') {
+    if (kind === 'video' && !allowedVideoTypes.includes(file.type)) {
       return NextResponse.json({ error: 'Invalid video type. Only mp4 allowed' }, { status: 400 })
     }
+    if (kind === 'media' && !allowedPhotoTypes.includes(file.type) && !allowedVideoTypes.includes(file.type)) {
+      return NextResponse.json(
+        { error: 'Invalid media type. Allowed: mp4, png, jpeg, jpg, webp' },
+        { status: 400 }
+      )
+    }
 
-    const safeName = sanitizeFileName(file.name || `${kind}.${kind === 'video' ? 'mp4' : 'png'}`)
+    const fallbackExt = file.type === 'video/mp4' ? 'mp4' : 'png'
+    const safeName = sanitizeFileName(file.name || `${kind}.${fallbackExt}`)
     const key = `template-references/${id}/${safeName}`
     const body = Buffer.from(await file.arrayBuffer())
 

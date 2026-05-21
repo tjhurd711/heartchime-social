@@ -36,6 +36,8 @@ export default function EditTemplatePage() {
   const videoInputRef = useRef<HTMLInputElement | null>(null)
   const photoInputRef = useRef<HTMLInputElement | null>(null)
 
+  const isReferenceVideo = /\.(mp4|webm|mov)(\?.*)?$/i.test(referenceVideoUrl)
+
   useEffect(() => {
     const loadTemplate = async () => {
       setLoading(true)
@@ -80,16 +82,16 @@ export default function EditTemplatePage() {
     return data.url as string
   }
 
-  const handleVideoUpload = async (file: File) => {
+  const handleReferenceMediaUpload = async (file: File) => {
     setUploadingVideo(true)
     setError(null)
     setSuccess(null)
     try {
-      const url = await uploadReferenceFile(file, 'video')
+      const url = await uploadReferenceFile(file, 'media')
       setReferenceVideoUrl(url)
-      setSuccess('Reference video uploaded.')
+      setSuccess('Reference media uploaded.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Video upload failed')
+      setError(err instanceof Error ? err.message : 'Reference media upload failed')
     } finally {
       setUploadingVideo(false)
     }
@@ -209,16 +211,16 @@ export default function EditTemplatePage() {
         </div>
 
         <section className="space-y-3">
-          <h2 className="text-white font-semibold">Reference Video (MP4)</h2>
+          <h2 className="text-white font-semibold">Reference Media (Photo or MP4)</h2>
           <input
             ref={videoInputRef}
             type="file"
-            accept="video/mp4"
+            accept="video/mp4,image/png,image/jpeg,image/jpg,image/webp"
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0]
               if (file) {
-                void handleVideoUpload(file)
+                void handleReferenceMediaUpload(file)
               }
             }}
           />
@@ -228,16 +230,22 @@ export default function EditTemplatePage() {
               e.preventDefault()
               const file = e.dataTransfer.files?.[0]
               if (file) {
-                void handleVideoUpload(file)
+                void handleReferenceMediaUpload(file)
               }
             }}
             onClick={() => videoInputRef.current?.click()}
             className="border border-dashed border-gray-600 rounded-xl p-6 text-center cursor-pointer hover:border-amber-400/60"
           >
-            <p className="text-sm text-gray-300">{uploadingVideo ? 'Uploading...' : 'Drag & drop MP4 or click to upload'}</p>
+            <p className="text-sm text-gray-300">
+              {uploadingVideo ? 'Uploading...' : 'Drag & drop a photo/MP4 or click to upload'}
+            </p>
           </div>
           {referenceVideoUrl && (
-            <video src={referenceVideoUrl} controls autoPlay muted loop playsInline className="w-full max-w-[320px] rounded-lg border border-gray-700" />
+            isReferenceVideo ? (
+              <video src={referenceVideoUrl} controls autoPlay muted loop playsInline className="w-full max-w-[320px] rounded-lg border border-gray-700" />
+            ) : (
+              <img src={referenceVideoUrl} alt="Reference media" className="w-full max-w-[320px] rounded-lg border border-gray-700 object-cover" />
+            )
           )}
         </section>
 

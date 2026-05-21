@@ -21,6 +21,11 @@ function sortedPhotos(referencePhotos: TemplateReferencePhoto[] | null | undefin
   return photos.sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
 }
 
+function isVideoUrl(url: string | null | undefined): boolean {
+  if (!url) return false
+  return /\.(mp4|webm|mov)(\?.*)?$/i.test(url)
+}
+
 export default function ReferencePanel({
   templateId,
   referenceVideoUrl,
@@ -49,15 +54,23 @@ export default function ReferencePanel({
       ) : (
         <div className="space-y-2">
           {referenceVideoUrl && (
-            <video
-              src={referenceVideoUrl}
-              autoPlay
-              muted
-              loop
-              playsInline
-              controls
-              className="w-full max-w-[200px] rounded-md border border-gray-700 bg-black"
-            />
+            isVideoUrl(referenceVideoUrl) ? (
+              <video
+                src={referenceVideoUrl}
+                autoPlay
+                muted
+                loop
+                playsInline
+                controls
+                className="w-full max-w-[200px] rounded-md border border-gray-700 bg-black"
+              />
+            ) : (
+              <img
+                src={referenceVideoUrl}
+                alt="Reference media"
+                className="w-full max-w-[200px] h-auto rounded-md border border-gray-700 object-cover"
+              />
+            )
           )}
 
           {photos.length > 0 && (
