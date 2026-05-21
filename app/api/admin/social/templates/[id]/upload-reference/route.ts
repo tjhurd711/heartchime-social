@@ -12,14 +12,43 @@ const s3Client = new S3Client({
 const BUCKET = process.env.S3_BUCKET_NAME || 'heartbeat-photos-prod'
 const REGION = process.env.AWS_REGION || 'us-east-2'
 
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'webp', 'heic', 'heif', 'avif'])
+const VIDEO_EXTENSIONS = new Set(['mp4', 'mov', 'm4v', 'webm'])
+
 function sanitizeFileName(fileName: string): string {
   return fileName.replace(/[^a-zA-Z0-9._-]/g, '_')
+}
+
+function getExtension(fileName: string): string {
+  const raw = fileName.split('.').pop() || ''
+  return raw.toLowerCase()
+}
+
+function isImageFile(file: File): boolean {
+  if (file.type.startsWith('image/')) return true
+  return IMAGE_EXTENSIONS.has(getExtension(file.name))
+}
+
+function isVideoFile(file: File): boolean {
+  if (file.type.startsWith('video/')) return true
+  return VIDEO_EXTENSIONS.has(getExtension(file.name))
 }
 
 function inferContentType(file: File, fallback: string): string {
   if (file.type && file.type.trim().length > 0) {
     return file.type
   }
+  const extension = getExtension(file.name)
+  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg'
+  if (extension === 'png') return 'image/png'
+  if (extension === 'webp') return 'image/webp'
+  if (extension === 'heic') return 'image/heic'
+  if (extension === 'heif') return 'image/heif'
+  if (extension === 'avif') return 'image/avif'
+  if (extension === 'mp4') return 'video/mp4'
+  if (extension === 'mov') return 'video/quicktime'
+  if (extension === 'm4v') return 'video/x-m4v'
+  if (extension === 'webm') return 'video/webm'
   return fallback
 }
 
@@ -40,26 +69,23 @@ export async function POST(
       return NextResponse.json({ error: 'kind must be media, video, or photo' }, { status: 400 })
     }
 
-    const allowedPhotoTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
-    const allowedVideoTypes = ['video/mp4']
-
-    if (kind === 'photo' && !allowedPhotoTypes.includes(file.type)) {
+    if (kind === 'photo' && !isImageFile(file)) {
       return NextResponse.json(
-        { error: 'Invalid photo type. Allowed: png, jpeg, jpg, webp' },
+        { error: 'Invalid photo type. Allowed: image files (png/jpeg/webp/heic/heif/avif)' },
         { status: 400 }
       )
     }
-    if (kind === 'video' && !allowedVideoTypes.includes(file.type)) {
-      return NextResponse.json({ error: 'Invalid video type. Only mp4 allowed' }, { status: 400 })
+    if (kind === 'video' && !isVideoFile(file)) {
+      return NextResponse.json({ error: 'Invalid video type. Allowed: mp4/mov/m4v/webm' }, { status: 400 })
     }
-    if (kind === 'media' && !allowedPhotoTypes.includes(file.type) && !allowedVideoTypes.includes(file.type)) {
+    if (kind === 'media' && !isImageFile(file) && !isVideoFile(file)) {
       return NextResponse.json(
-        { error: 'Invalid media type. Allowed: mp4, png, jpeg, jpg, webp' },
+        { error: 'Invalid media type. Allowed: image files or mp4/mov/m4v/webm' },
         { status: 400 }
       )
     }
 
-    const fallbackExt = file.type === 'video/mp4' ? 'mp4' : 'png'
+    const fallbackExt = isVideoFile(file) ? 'mp4' : 'png'
     const safeName = sanitizeFileName(file.name || `${kind}.${fallbackExt}`)
     const key = `template-references/${id}/${safeName}`
     const body = Buffer.from(await file.arrayBuffer())
@@ -69,7 +95,7 @@ export async function POST(
         Bucket: BUCKET,
         Key: key,
         Body: body,
-        ContentType: inferContentType(file, kind === 'video' ? 'video/mp4' : 'image/png'),
+        ContentType: inferContentType(file, isVideoFile(file) ? 'video/mp4' : 'image/png'),
       })
     )
 

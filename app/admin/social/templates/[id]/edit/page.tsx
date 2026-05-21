@@ -215,7 +215,7 @@ export default function EditTemplatePage() {
           <input
             ref={videoInputRef}
             type="file"
-            accept="video/mp4,image/png,image/jpeg,image/jpg,image/webp"
+            accept="video/*,image/*"
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0]
@@ -255,7 +255,7 @@ export default function EditTemplatePage() {
             ref={photoInputRef}
             type="file"
             multiple
-            accept="image/png,image/jpeg,image/jpg,image/webp"
+            accept="image/*"
             className="hidden"
             onChange={(e) => {
               const files = e.target.files

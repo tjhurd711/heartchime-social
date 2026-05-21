@@ -35,6 +35,7 @@ function ReferenceMedia({
   label: string
 }) {
   const [forceImage, setForceImage] = useState(false)
+  const [imageFailed, setImageFailed] = useState(false)
   const renderVideo = isVideoUrl(url) && !forceImage
 
   return (
@@ -51,14 +52,21 @@ function ReferenceMedia({
           className="w-full h-full object-cover"
         />
       ) : (
-        <img
-          src={url}
-          alt={label}
-          onError={(event) => {
-            event.currentTarget.style.display = 'none'
-          }}
-          className="w-full h-full object-cover"
-        />
+        <>
+          {!imageFailed && (
+            <img
+              src={url}
+              alt={label}
+              onError={() => setImageFailed(true)}
+              className="w-full h-full object-cover"
+            />
+          )}
+          {imageFailed && (
+            <div className="w-full h-full flex items-center justify-center px-3 text-center text-xs text-red-300 bg-black/60">
+              Failed to load reference media
+            </div>
+          )}
+        </>
       )}
       <div className="absolute inset-x-0 bottom-0 px-2 py-1 bg-gradient-to-t from-black/85 to-transparent">
         <p className="text-[10px] text-white font-medium truncate">{label}</p>
