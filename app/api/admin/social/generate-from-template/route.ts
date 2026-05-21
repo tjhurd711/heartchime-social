@@ -314,20 +314,24 @@ function describeMemorialAttendee(subject: TemplateSubject, yearsSincePhoto: num
   return `a ${normalizeEthnicity(subject.ethnicity)} ${subject.relationship}${ageDescription}`
 }
 
+function parseSelectedMemorialSubjectIndexes(value: string): number[] {
+  return value
+    .split(',')
+    .map((index) => Number.parseInt(index.trim(), 10))
+    .filter((index) => !Number.isNaN(index))
+}
+
 function buildMemorialAttendeesDescription(
   slide: PostTemplateSlide,
   variables: TemplateVariables
 ): string {
-  const requestedCount = Number.parseInt(getStringVariable(variables, `slide_${slide.order}_memorial_attendee_count`) || '0', 10)
-  const attendeeCount = Number.isNaN(requestedCount) ? 0 : requestedCount
-
-  if (attendeeCount <= 0) {
-    return 'No people are visible; only the memorial/headstone, flowers, candles, and quiet surroundings are shown'
-  }
-
   const slideOneSubjects = getSlideSubjects({ ...slide, order: 1 }, variables)
-  const eligibleSubjects = slideOneSubjects.filter((subject) => subject.status !== 'deceased')
-  const selectedSubjects = eligibleSubjects.slice(0, attendeeCount)
+  const selectedIndexes = parseSelectedMemorialSubjectIndexes(
+    getStringVariable(variables, `slide_${slide.order}_memorial_attendee_indices`)
+  )
+  const selectedSubjects = selectedIndexes
+    .map((index) => slideOneSubjects[index])
+    .filter((subject): subject is TemplateSubject => !!subject && subject.status !== 'deceased')
 
   if (selectedSubjects.length === 0) {
     return 'No people are visible; only the memorial/headstone, flowers, candles, and quiet surroundings are shown'

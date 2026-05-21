@@ -162,6 +162,17 @@ function createDefaultSubject(index: number): PhotoSubject {
   }
 }
 
+function parseSelectedSubjectIndexes(value: string): number[] {
+  return value
+    .split(',')
+    .map((index) => Number.parseInt(index.trim(), 10))
+    .filter((index) => !Number.isNaN(index))
+}
+
+function serializeSelectedSubjectIndexes(indexes: number[]): string {
+  return [...new Set(indexes)].sort((a, b) => a - b).join(',')
+}
+
 export default function GenerateFromTemplatePage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
@@ -380,22 +391,30 @@ export default function GenerateFromTemplatePage() {
       const next = { ...prev }
       let changed = false
       const slideOneSubjects: PhotoSubject[] = Array.isArray(next.slide_1_subjects) ? next.slide_1_subjects : []
-      const maxAttendees = slideOneSubjects.filter((subject) => subject.status !== 'deceased').length
+      const eligibleIndexes = new Set(
+        slideOneSubjects
+          .map((subject, index) => ({ subject, index }))
+          .filter(({ subject }) => subject.status !== 'deceased')
+          .map(({ index }) => index)
+      )
 
       for (const slide of memorialAttendeeSlides) {
         if (typeof slide.order !== 'number') continue
 
-        const key = `slide_${slide.order}_memorial_attendee_count`
+        const key = `slide_${slide.order}_memorial_attendee_indices`
         const currentValue = getStringVariable(next, key)
-        if (!currentValue) {
-          next[key] = '0'
+        if (!Object.prototype.hasOwnProperty.call(next, key)) {
+          next[key] = ''
           changed = true
           continue
         }
 
-        const currentCount = Number.parseInt(currentValue, 10)
-        if (!Number.isNaN(currentCount) && currentCount > maxAttendees) {
-          next[key] = String(maxAttendees)
+        if (!currentValue) continue
+
+        const validIndexes = parseSelectedSubjectIndexes(currentValue).filter((index) => eligibleIndexes.has(index))
+        const nextValue = serializeSelectedSubjectIndexes(validIndexes)
+        if (nextValue !== currentValue) {
+          next[key] = nextValue
           changed = true
         }
       }
@@ -745,10 +764,13 @@ export default function GenerateFromTemplatePage() {
           {memorialAttendeeSlides.map((slide) => {
             if (typeof slide.order !== 'number') return null
 
-            const key = `slide_${slide.order}_memorial_attendee_count`
+            const key = `slide_${slide.order}_memorial_attendee_indices`
             const slideOneSubjects: PhotoSubject[] = Array.isArray(variables.slide_1_subjects) ? variables.slide_1_subjects : []
-            const eligibleSubjects = slideOneSubjects.filter((subject) => subject.status !== 'deceased')
-            const options = Array.from({ length: eligibleSubjects.length + 1 }, (_item, index) => index)
+            const eligibleSubjects = slideOneSubjects
+              .map((subject, index) => ({ subject, index }))
+              .filter(({ subject }) => subject.status !== 'deceased')
+            const selectedIndexes = parseSelectedSubjectIndexes(getStringVariable(variables, key))
+            const selectedIndexSet = new Set(selectedIndexes)
 
             return (
               <div key={key} className="border border-gray-700/60 rounded-xl p-4 space-y-3">
@@ -758,17 +780,33 @@ export default function GenerateFromTemplatePage() {
                     Slide {slide.order} can include non-deceased people from Slide 1, always with faces hidden.
                   </p>
                 </div>
-                <select
-                  value={getStringVariable(variables, key) || '0'}
-                  onChange={(e) => setVariables((prev) => ({ ...prev, [key]: e.target.value }))}
-                  className="w-full max-w-xs px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-amber-400"
-                >
-                  {options.map((count) => (
-                    <option key={count} value={count}>
-                      {count === 0 ? 'Nobody in memorial photo' : `${count} from Slide 1`}
-                    </option>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-3 cursor-pointer text-sm text-gray-200">
+                    <input
+                      type="checkbox"
+                      checked={selectedIndexes.length === 0}
+                      onChange={() => setVariables((prev) => ({ ...prev, [key]: '' }))}
+                      className="w-4 h-4 rounded bg-gray-700 border-gray-600 text-amber-500 focus:ring-amber-500"
+                    />
+                    Nobody in memorial photo
+                  </label>
+                  {eligibleSubjects.map(({ subject, index }) => (
+                    <label key={`${key}-${index}`} className="flex items-center gap-3 cursor-pointer text-sm text-gray-200">
+                      <input
+                        type="checkbox"
+                        checked={selectedIndexSet.has(index)}
+                        onChange={(e) => {
+                          const nextIndexes = e.target.checked
+                            ? [...selectedIndexes, index]
+                            : selectedIndexes.filter((selectedIndex) => selectedIndex !== index)
+                          setVariables((prev) => ({ ...prev, [key]: serializeSelectedSubjectIndexes(nextIndexes) }))
+                        }}
+                        className="w-4 h-4 rounded bg-gray-700 border-gray-600 text-amber-500 focus:ring-amber-500"
+                      />
+                      Person {index + 1}: {formatEthnicityLabel(subject.relationship)}, {subject.age_decade}, {formatEthnicityLabel(subject.ethnicity)}
+                    </label>
                   ))}
-                </select>
+                </div>
                 {eligibleSubjects.length === 0 && (
                   <p className="text-xs text-gray-500">
                     Add an alive person to Slide 1 if you want someone to appear at the memorial.
