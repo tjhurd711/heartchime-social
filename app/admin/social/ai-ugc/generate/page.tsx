@@ -47,7 +47,7 @@ export default function PhotoGeneratorPage() {
       setPersonas(data.personas || [])
       
       // Set preselected persona
-      if (preselectedPersona && data.personas?.some((p: any) => p.id === preselectedPersona)) {
+      if (preselectedPersona && (data.personas as AiUgcPersonaWithLovedOne[] | undefined)?.some((p) => p.id === preselectedPersona)) {
         setSelectedPersonaId(preselectedPersona)
       }
     } catch (err) {
@@ -178,7 +178,7 @@ export default function PhotoGeneratorPage() {
               {selectedPersona && (
                 <div className="mt-4 flex items-center gap-4 bg-[#0d1117] rounded-lg p-3">
                   <img
-                    src={selectedPersona.master_photo_url}
+                    src={selectedPersona.profile_picture_url || selectedPersona.master_photo_url}
                     alt={selectedPersona.name}
                     className="w-12 h-12 rounded-lg object-cover"
                   />

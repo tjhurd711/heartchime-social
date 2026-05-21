@@ -78,46 +78,64 @@ export type Database = {
         Row: {
           age_at_death: number
           birth_year: number
+          cause_of_death: string | null
           created_at: string | null
           death_year: number
+          ethnicity: string | null
           gender: string | null
+          hometown: string | null
           id: string
           keywords: string[] | null
           master_photo_url: string
           name: string
+          occupation: string | null
           persona_id: string | null
+          personality: string | null
           personality_traits: string[] | null
           relationship: string
+          roles: string[] | null
           updated_at: string | null
         }
         Insert: {
           age_at_death: number
           birth_year: number
+          cause_of_death?: string | null
           created_at?: string | null
           death_year: number
+          ethnicity?: string | null
           gender?: string | null
+          hometown?: string | null
           id?: string
           keywords?: string[] | null
           master_photo_url: string
           name: string
+          occupation?: string | null
           persona_id?: string | null
+          personality?: string | null
           personality_traits?: string[] | null
           relationship: string
+          roles?: string[] | null
           updated_at?: string | null
         }
         Update: {
           age_at_death?: number
           birth_year?: number
+          cause_of_death?: string | null
           created_at?: string | null
           death_year?: number
+          ethnicity?: string | null
           gender?: string | null
+          hometown?: string | null
           id?: string
           keywords?: string[] | null
           master_photo_url?: string
           name?: string
+          occupation?: string | null
           persona_id?: string | null
+          personality?: string | null
           personality_traits?: string[] | null
           relationship?: string
+          roles?: string[] | null
           updated_at?: string | null
         }
         Relationships: [
@@ -144,6 +162,7 @@ export type Database = {
           location: string | null
           master_photo_url: string
           name: string
+          profile_picture_url: string | null
           tiktok_handle: string | null
           updated_at: string | null
           vibe: string | null
@@ -161,6 +180,7 @@ export type Database = {
           location?: string | null
           master_photo_url: string
           name: string
+          profile_picture_url?: string | null
           tiktok_handle?: string | null
           updated_at?: string | null
           vibe?: string | null
@@ -178,6 +198,7 @@ export type Database = {
           location?: string | null
           master_photo_url?: string
           name?: string
+          profile_picture_url?: string | null
           tiktok_handle?: string | null
           updated_at?: string | null
           vibe?: string | null

@@ -17,6 +17,7 @@ export interface AiUgcPersona {
   job: string | null
   vibe: string | null
   master_photo_url: string
+  profile_picture_url: string | null
   elevenlabs_voice_id: string | null
   instagram_handle: string | null
   tiktok_handle: string | null
@@ -30,9 +31,15 @@ export interface AiUgcLovedOne {
   name: string
   relationship: string
   gender: string | null
+  ethnicity: string | null
   age_at_death: number
   birth_year: number
   death_year: number
+  cause_of_death: string | null
+  occupation: string | null
+  personality: string | null
+  roles: string[] | null
+  hometown: string | null
   master_photo_url: string
   keywords: string[] | null
   personality_traits: string[] | null

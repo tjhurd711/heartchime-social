@@ -162,7 +162,7 @@ function PersonaCard({
       {/* Persona Photo Header */}
       <div className="relative h-48 bg-gradient-to-br from-violet-900/30 to-fuchsia-900/30">
         <img
-          src={persona.master_photo_url}
+          src={persona.profile_picture_url || persona.master_photo_url}
           alt={persona.name}
           className="w-full h-full object-cover"
           onError={(e) => {
@@ -445,7 +445,7 @@ function AddPersonaModal({
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="Linda Martinez"
+                    placeholder="Eleanor Louverette"
                     className="w-full bg-[#0d1117] border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:border-violet-500 focus:outline-none"
                   />
                 </div>

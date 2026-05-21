@@ -30,6 +30,7 @@ type SlideType =
 type LegacyEvergreenPostType = 'birthday' | 'passing_anniversary' | 'wedding_anniversary' | 'user_birthday'
 type CharacterKey = 'alive' | 'deceased'
 type PhotoSource = 'generated' | 'variable' | 'variable_or_generated'
+type MotionStyle = 'ai_subtle' | 'kenburns' | 'static_hold'
 
 interface GenerateFromTemplateRequest {
   template_id: string
@@ -37,6 +38,7 @@ interface GenerateFromTemplateRequest {
   account_type: RequestAccountType
   persona_id?: string
   generate_live_photos?: boolean
+  live_photo_slide_orders?: number[]
 }
 
 interface PostTemplateSlide {
@@ -46,6 +48,9 @@ interface PostTemplateSlide {
   text_overlay?: string
   overlay_style?: OverlayStyle
   motion_hint?: string
+  motion_style?: MotionStyle
+  live_photo_eligible?: boolean
+  live_photo_default?: boolean
   characters?: CharacterKey[]
   photo_source?: PhotoSource
   photo_variable?: string
@@ -58,6 +63,15 @@ interface LivePhotoResult {
   pvt_zip_url: string
   photo_url: string
   video_url: string
+}
+
+interface LivePhotoResponse {
+  slide_order: number
+  urls: {
+    pvt_zip_url: string
+    photo_url: string
+    video_url: string
+  }
 }
 
 interface PostTemplateRow {
@@ -189,7 +203,14 @@ function resolveEvergreenLegacyPrompt(
 export async function POST(request: NextRequest) {
   try {
     const body: GenerateFromTemplateRequest = await request.json()
-    const { template_id, variables, account_type, persona_id, generate_live_photos = false } = body
+    const {
+      template_id,
+      variables,
+      account_type,
+      persona_id,
+      generate_live_photos = false,
+      live_photo_slide_orders,
+    } = body
 
     if (!template_id) {
       return NextResponse.json({ error: 'Missing required field: template_id' }, { status: 400 })
@@ -223,7 +244,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-    if (generate_live_photos && !typedTemplate.live_photo_supported) {
+    if ((generate_live_photos || (live_photo_slide_orders && live_photo_slide_orders.length > 0)) && !typedTemplate.live_photo_supported) {
       return NextResponse.json(
         { error: 'This template does not support live photo generation' },
         { status: 400 }
@@ -403,8 +424,12 @@ export async function POST(request: NextRequest) {
     const livePhotoResults: LivePhotoResult[] = []
     const livePhotoWarnings: string[] = []
     let isLivePhoto = false
+    const eligibleLivePhotoOrders = slides
+      .filter((slide) => slide.live_photo_eligible)
+      .map((slide) => slide.order)
+    const requestedLivePhotoOrders = live_photo_slide_orders ?? (generate_live_photos ? eligibleLivePhotoOrders : [])
 
-    if (generate_live_photos) {
+    if (requestedLivePhotoOrders.length > 0) {
       const livePhotoServerUrl = process.env.LIVE_PHOTO_SERVER_URL
       const livePhotoApiKey = process.env.LIVE_PHOTO_API_KEY
 
@@ -417,6 +442,12 @@ export async function POST(request: NextRequest) {
         }
 
         for (const slide of slides) {
+          if (!slide.live_photo_eligible) {
+            continue
+          }
+          if (!requestedLivePhotoOrders.includes(slide.order)) {
+            continue
+          }
           if (!slide.motion_hint) {
             continue
           }
@@ -451,7 +482,7 @@ export async function POST(request: NextRequest) {
               },
               body: JSON.stringify({
                 image_url: staticSlideUrl,
-                motion_style: 'ai_subtle',
+                motion_style: slide.motion_style || 'ai_subtle',
                 motion_hint: interpolatedMotionHint,
                 output_orientation: 'vertical',
                 framing_mode: 'fill',
@@ -487,6 +518,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const livePhotos: LivePhotoResponse[] = livePhotoResults
+      .sort((a, b) => a.order - b.order)
+      .map((result) => ({
+        slide_order: result.order,
+        urls: {
+          pvt_zip_url: result.pvt_zip_url,
+          photo_url: result.photo_url,
+          video_url: result.video_url,
+        },
+      }))
+
     const postInsert = {
       status: 'draft',
       platform: 'both',
@@ -505,7 +547,7 @@ export async function POST(request: NextRequest) {
       deceased_nickname: variables.deceased_name || null,
       deceased_relationship: variables.relationship || 'loved one',
       time_period: variables.era || '1990s',
-      live_photo_urls: livePhotoResults.length > 0 ? livePhotoResults : null,
+      live_photo_urls: livePhotos.length > 0 ? livePhotos : null,
       is_live_photo: isLivePhoto,
     }
 
@@ -526,7 +568,8 @@ export async function POST(request: NextRequest) {
       post_id: post.id,
       slides: orderedSlides,
       is_live_photo: isLivePhoto,
-      live_photo_urls: livePhotoResults.length > 0 ? livePhotoResults.sort((a, b) => a.order - b.order) : undefined,
+      live_photo_urls: livePhotos.length > 0 ? livePhotos : undefined,
+      live_photos: livePhotos.length > 0 ? livePhotos : undefined,
       live_photo_warning: livePhotoWarnings.length > 0 ? livePhotoWarnings.join(' ') : undefined,
     })
   } catch (error) {

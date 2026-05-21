@@ -49,10 +49,16 @@ interface SocialPost {
   created_at: string;
   is_live_photo?: boolean;
   live_photo_urls?: Array<{
-    order: number;
-    pvt_zip_url: string;
-    photo_url: string;
-    video_url: string;
+    order?: number;
+    pvt_zip_url?: string;
+    photo_url?: string;
+    video_url?: string;
+    slide_order?: number;
+    urls?: {
+      pvt_zip_url: string;
+      photo_url: string;
+      video_url: string;
+    };
   }> | null;
   recipient?: Recipient;
   hook?: Hook;
@@ -438,7 +444,13 @@ export default function SocialPostDetailPage() {
 
   const postTypeInfo = POST_TYPE_LABELS[post.post_type] || { label: 'Unknown', emoji: '❓' };
   const captionChanged = caption !== originalCaption;
-  const livePhotoEntries = (post.live_photo_urls || []).slice().sort((a, b) => a.order - b.order);
+  const livePhotoEntries = (post.live_photo_urls || [])
+    .map((entry) => ({
+      order: entry.slide_order ?? entry.order ?? 0,
+      pvt_zip_url: entry.urls?.pvt_zip_url ?? entry.pvt_zip_url ?? '',
+    }))
+    .filter((entry) => entry.pvt_zip_url)
+    .sort((a, b) => a.order - b.order);
 
   return (
     <div className="min-h-screen bg-gray-900 p-6">

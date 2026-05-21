@@ -14,6 +14,7 @@ type SelfieAngle = 'from below' | 'straight on' | 'from above' | 'side tilt'
 type SelfieEmotion = 'neutral' | 'slight smile' | 'bittersweet' | 'sad' | 'hopeful' | 'tired' | 'peaceful'
 type SelfieGaze = 'looking at camera' | 'looking away' | 'eyes down' | 'looking off to side'
 type SelfieSetting = 'home' | 'car' | 'outside' | 'office'
+type MotionStyle = 'ai_subtle' | 'kenburns' | 'static_hold'
 
 interface VariableField {
   name: string
@@ -33,7 +34,15 @@ interface Template {
   reference_video_url?: string | null
   reference_photos?: TemplateReferencePhoto[] | null
   variables_schema: VariableField[] | null
-  slides?: Array<{ order?: number; slide_type?: string; characters?: CharacterKey[]; motion_hint?: string }>
+  slides?: Array<{
+    order?: number
+    slide_type?: string
+    characters?: CharacterKey[]
+    motion_hint?: string
+    motion_style?: MotionStyle
+    live_photo_eligible?: boolean
+    live_photo_default?: boolean
+  }>
 }
 
 interface PersonaOption {
@@ -102,7 +111,7 @@ export default function GenerateFromTemplatePage() {
   const [selectedPersonaId, setSelectedPersonaId] = useState('')
   const [loadingPersonas, setLoadingPersonas] = useState(false)
   const [isGeneratingSelfie, setIsGeneratingSelfie] = useState(false)
-  const [generateLivePhotos, setGenerateLivePhotos] = useState(false)
+  const [selectedLivePhotoSlideOrders, setSelectedLivePhotoSlideOrders] = useState<number[]>([])
   const [selfieAge, setSelfieAge] = useState(35)
   const [selfieGender, setSelfieGender] = useState<SelfieGender>('female')
   const [selfieEthnicity, setSelfieEthnicity] = useState<SelfieEthnicity>('white')
@@ -162,10 +171,9 @@ export default function GenerateFromTemplatePage() {
   const variablesSchema = useMemo(() => template?.variables_schema || [], [template])
   const schemaFieldNames = useMemo(() => new Set(variablesSchema.map((field) => field.name)), [variablesSchema])
   const livePhotoSlides = useMemo(
-    () => (template?.slides || []).filter((slide) => !!slide.motion_hint),
+    () => (template?.slides || []).filter((slide) => slide.live_photo_eligible === true),
     [template]
   )
-  const hasAnimatedSlides = livePhotoSlides.length > 0
   const hasSelfieSlide = useMemo(
     () => !!template?.slides?.some((slide) => slide?.slide_type === 'selfie'),
     [template]
@@ -223,6 +231,15 @@ export default function GenerateFromTemplatePage() {
       setAccountType(accountTypeOptions[0] || 'business')
     }
   }, [accountTypeOptions, accountType])
+
+  useEffect(() => {
+    const defaultLivePhotoOrders = livePhotoSlides
+      .filter((slide) => slide.live_photo_default ?? true)
+      .map((slide) => slide.order)
+      .filter((order): order is number => typeof order === 'number')
+
+    setSelectedLivePhotoSlideOrders(defaultLivePhotoOrders)
+  }, [livePhotoSlides])
 
   const handleUploadPhoto = async (fieldName: string, file: File) => {
     setUploadingField(fieldName)
@@ -296,7 +313,7 @@ export default function GenerateFromTemplatePage() {
           account_type: accountType,
           persona_id: accountType === 'persona' ? selectedPersonaId : undefined,
           variables,
-          generate_live_photos: generateLivePhotos,
+          live_photo_slide_orders: selectedLivePhotoSlideOrders,
         }),
       })
 
@@ -381,30 +398,31 @@ export default function GenerateFromTemplatePage() {
             </div>
           )}
 
-          {template.live_photo_supported && (
+          {template.live_photo_supported && livePhotoSlides.length > 0 && (
           <div className="border border-gray-700/60 rounded-xl p-4 space-y-2">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={generateLivePhotos}
-                onChange={(e) => setGenerateLivePhotos(e.target.checked)}
-                className="w-4 h-4 rounded bg-gray-700 border-gray-600 text-amber-500 focus:ring-amber-500"
-              />
-              <span className="text-white font-medium">Generate as Live Photo</span>
-            </label>
-            <p className="text-xs text-gray-400">
-              Uses the external Live Photo server after static slide generation.
-            </p>
-          </div>
-          )}
-
-          {template.live_photo_supported && hasAnimatedSlides && (
-          <div className="border border-gray-700/60 rounded-xl p-4 space-y-2">
-            <h2 className="text-white font-semibold">Live Photo Animated Slides</h2>
+            <h2 className="text-white font-semibold">Live Photo Slides</h2>
             {livePhotoSlides.map((slide, index) => (
-              <p key={`${slide.order || index}-${slide.slide_type || 'slide'}`} className="text-xs text-amber-300">
-                Slide {slide.order || index + 1} ({slide.slide_type || 'unknown'}) - this slide will animate.
-              </p>
+              <label
+                key={`${slide.order || index}-${slide.slide_type || 'slide'}`}
+                className="flex items-center gap-3 cursor-pointer text-sm text-gray-200"
+              >
+                <input
+                  type="checkbox"
+                  checked={typeof slide.order === 'number' && selectedLivePhotoSlideOrders.includes(slide.order)}
+                  onChange={(e) => {
+                    if (typeof slide.order !== 'number') return
+                    setSelectedLivePhotoSlideOrders((prev) => (
+                      e.target.checked
+                        ? [...new Set([...prev, slide.order as number])]
+                        : prev.filter((order) => order !== slide.order)
+                    ))
+                  }}
+                  className="w-4 h-4 rounded bg-gray-700 border-gray-600 text-amber-500 focus:ring-amber-500"
+                />
+                <span>
+                  Slide {slide.order || index + 1} ({slide.slide_type || 'unknown'}) — animate with {slide.motion_style || 'ai_subtle'} motion
+                </span>
+              </label>
             ))}
           </div>
           )}

@@ -10,6 +10,9 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+const VALID_GENDERS = ['male', 'female'] as const
+const VALID_ETHNICITIES = ['white', 'black', 'hispanic', 'asian', 'middle_eastern', 'mixed'] as const
+
 // ═══════════════════════════════════════════════════════════════════════════
 // GET /api/admin/social/ai-ugc/loved-ones
 // List loved ones (optionally filtered by persona)
@@ -59,6 +62,12 @@ export async function POST(request: NextRequest) {
       name,
       relationship,
       gender,
+      ethnicity,
+      cause_of_death,
+      occupation,
+      personality,
+      roles,
+      hometown,
       age_at_death,
       birth_year,
       death_year,
@@ -75,6 +84,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (gender && !VALID_GENDERS.includes(gender)) {
+      return NextResponse.json({ error: 'Invalid gender' }, { status: 400 })
+    }
+
+    if (ethnicity && !VALID_ETHNICITIES.includes(ethnicity)) {
+      return NextResponse.json({ error: 'Invalid ethnicity' }, { status: 400 })
+    }
+
     const { data: lovedOne, error } = await supabase
       .from('ai_ugc_loved_ones')
       .insert({
@@ -82,6 +99,12 @@ export async function POST(request: NextRequest) {
         name,
         relationship,
         gender: gender || 'female',
+        ethnicity,
+        cause_of_death,
+        occupation,
+        personality,
+        roles: roles || [],
+        hometown,
         age_at_death,
         birth_year,
         death_year,
@@ -119,6 +142,14 @@ export async function PATCH(request: NextRequest) {
 
     if (!id) {
       return NextResponse.json({ error: 'Missing loved one ID' }, { status: 400 })
+    }
+
+    if (updates.gender && !VALID_GENDERS.includes(updates.gender)) {
+      return NextResponse.json({ error: 'Invalid gender' }, { status: 400 })
+    }
+
+    if (updates.ethnicity && !VALID_ETHNICITIES.includes(updates.ethnicity)) {
+      return NextResponse.json({ error: 'Invalid ethnicity' }, { status: 400 })
     }
 
     const { data: lovedOne, error } = await supabase

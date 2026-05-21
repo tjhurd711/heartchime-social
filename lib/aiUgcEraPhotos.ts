@@ -56,9 +56,9 @@ const photoAgeRanges: PersonPhotoRanges = {
   ],
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // LINDA (Persona) - Born 1978
+  // ELEANOR LOUVERETTE (Persona) - Born 1972
   // ═══════════════════════════════════════════════════════════════════════════
-  'Linda': [
+  'Eleanor Louverette': [
     { file: 'Linda_1970s.png', minAge: 0, maxAge: 11 },
     { file: 'Linda_1980s.png', minAge: 12, maxAge: 17 },
     { file: 'Linda_1990s.png', minAge: 18, maxAge: 28 },
@@ -67,9 +67,9 @@ const photoAgeRanges: PersonPhotoRanges = {
   ],
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // LINDA'S MOM (Loved One) - Born 1950, Died 2018
+  // ELEANOR LOUVERETTE'S MOM (Loved One) - Born 1950, Died 2018
   // ═══════════════════════════════════════════════════════════════════════════
-  'Linda-mom': [
+  'Eleanor Louverette-mom': [
     { file: 'Linda-Mom_1960s.png', minAge: 0, maxAge: 14 },
     { file: 'Linda-Mom_1970s.png', minAge: 15, maxAge: 25 },
     { file: 'Linda-Mom_1980s.png', minAge: 26, maxAge: 34 },
@@ -79,18 +79,18 @@ const photoAgeRanges: PersonPhotoRanges = {
   ],
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // JENNA (Persona) - Born 1998
+  // CAMILLE BEAUMONT (Persona) - Born 1997
   // ═══════════════════════════════════════════════════════════════════════════
-  'Jenna': [
+  'Camille Beaumont': [
     { file: 'Jenna_2000s.png', minAge: 0, maxAge: 12 },
     { file: 'Jenna_2010s.png', minAge: 13, maxAge: 23 },
     { file: 'Jenna-v2.jpg', minAge: 24, maxAge: 999 },
   ],
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // JENNA'S DAD (Loved One) - Born 1965, Died 2018
+  // CAMILLE BEAUMONT'S DAD (Loved One) - Born 1965, Died 2018
   // ═══════════════════════════════════════════════════════════════════════════
-  'Jennas-Dad': [
+  'Camille Beaumont-dad': [
     { file: 'Jenna-Dad_1980s.png', minAge: 0, maxAge: 26 },
     { file: 'Jenna-Dad_1990s.png', minAge: 27, maxAge: 38 },
     { file: 'Jenna-Dad_2010s.png', minAge: 39, maxAge: 53 },
@@ -153,14 +153,14 @@ export function wasAliveInYear(
 /**
  * Get the appropriate reference photo URL for a person at a specific year.
  * 
- * @param personName - The name key in photoAgeRanges (e.g., 'Mike', 'Linda-mom')
+ * @param personName - The name key in photoAgeRanges (e.g., 'Mike', 'Eleanor Louverette-mom')
  * @param birthYear - The person's birth year
  * @param targetYear - The year of the photo we're generating
  * @returns The full S3 URL to the reference photo, or null if person wasn't born
  * 
  * @example
- * // Get photo of Linda at age 8 (1986)
- * getEraPhotoUrl('Linda', 1978, 1986) 
+ * // Get photo of Eleanor Louverette at age 8 (1986)
+ * getEraPhotoUrl('Eleanor Louverette', 1978, 1986)
  * // Returns: https://heartbeat-photos-prod.s3.amazonaws.com/ai-ugc-personas/Linda_1980s.png
  * 
  * @example
@@ -304,12 +304,12 @@ export function mapLovedOneToKey(personaName: string, relationship: string): str
   if (relKey === 'grandmother') relKey = 'grandma'
   if (relKey === 'grandfather') relKey = 'grandpa'
   
-  // Try common patterns (including possessive forms like "Jennas-Dad")
+  // Try common patterns (including possessive forms like "Mikes-dad")
   const patterns = [
     `${personaName}-${relKey}`,
     `${personaName}_${relKey}`,
     `${personaName}${relKey}`,
-    `${personaName}s-${relKey}`,  // Possessive: Jennas-Dad
+    `${personaName}s-${relKey}`,
     `${personaName}s_${relKey}`,
   ]
   

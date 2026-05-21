@@ -223,7 +223,7 @@ export async function GET() {
     },
     example: {
       personaId: 'uuid',
-      description: '4 slide carousel. Slide 1: Linda selfie in kitchen. Slide 2: pot of pasta. Slide 3: old photo of Linda and mom cooking in the 90s. Slide 4: HeartChime card.',
+      description: '4 slide carousel. Slide 1: Eleanor Louverette selfie in kitchen. Slide 2: pot of pasta. Slide 3: old photo of Eleanor Louverette and mom cooking in the 90s. Slide 4: HeartChime card.',
     },
   })
 }

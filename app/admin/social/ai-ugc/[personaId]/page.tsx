@@ -19,6 +19,10 @@ import type {
 
 type Tab = 'profile' | 'assets' | 'posts'
 
+type AiUgcPersonaWithLovedOnes = AiUgcPersona & {
+  loved_ones?: AiUgcLovedOne[]
+}
+
 export default function PersonaDetailPage() {
   const params = useParams()
   const personaId = params.personaId as string
@@ -39,7 +43,7 @@ export default function PersonaDetailPage() {
       const personaRes = await fetch('/api/admin/social/ai-ugc/personas')
       const personaData = await personaRes.json()
       
-      const foundPersona = personaData.personas?.find((p: any) => p.id === personaId)
+      const foundPersona = (personaData.personas as AiUgcPersonaWithLovedOnes[] | undefined)?.find((p) => p.id === personaId)
       if (!foundPersona) {
         throw new Error('Persona not found')
       }
@@ -117,7 +121,7 @@ export default function PersonaDetailPage() {
             {/* Persona Photo */}
             <div className="w-32 h-32 rounded-xl overflow-hidden flex-shrink-0 bg-gradient-to-br from-violet-900/30 to-fuchsia-900/30">
               <img
-                src={persona.master_photo_url}
+                src={persona.profile_picture_url || persona.master_photo_url}
                 alt={persona.name}
                 className="w-full h-full object-cover"
               />
@@ -270,6 +274,7 @@ function ProfileTab({
           <Field label="Location" value={persona.location || 'Not set'} />
           <Field label="Job" value={persona.job || 'Not set'} />
           <Field label="Vibe" value={persona.vibe || 'Not set'} />
+          <Field label="Profile Picture URL" value={persona.profile_picture_url || 'Not set'} />
           <Field label="Instagram" value={persona.instagram_handle ? `@${persona.instagram_handle}` : 'Not set'} />
           <Field label="TikTok" value={persona.tiktok_handle ? `@${persona.tiktok_handle}` : 'Not set'} />
           <Field label="Voice ID" value={persona.elevenlabs_voice_id || 'Not set'} />
@@ -297,9 +302,29 @@ function ProfileTab({
             <Field label="Name" value={lovedOne.name} />
             <Field label="Relationship" value={lovedOne.relationship} />
             <Field label="Gender" value={lovedOne.gender || 'Not set'} />
+            <Field label="Ethnicity" value={lovedOne.ethnicity || 'Not set'} />
             <Field label="Birth Year" value={String(lovedOne.birth_year)} />
             <Field label="Death Year" value={String(lovedOne.death_year)} />
             <Field label="Age at Death" value={`${lovedOne.age_at_death} years old`} />
+            <Field label="Cause of Death" value={lovedOne.cause_of_death || 'Not set'} />
+            <Field label="Occupation" value={lovedOne.occupation || 'Not set'} />
+            <Field label="Personality" value={lovedOne.personality || 'Not set'} />
+            <Field label="Hometown" value={lovedOne.hometown || 'Not set'} />
+
+            {lovedOne.roles && lovedOne.roles.length > 0 ? (
+              <div>
+                <label className="text-sm text-gray-400 mb-2 block">Roles</label>
+                <div className="flex flex-wrap gap-2">
+                  {lovedOne.roles.map((role, i) => (
+                    <span key={i} className="text-sm bg-amber-500/20 text-amber-300 px-3 py-1 rounded-lg">
+                      {role}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <Field label="Roles" value="Not set" />
+            )}
             
             {lovedOne.keywords && lovedOne.keywords.length > 0 && (
               <div>

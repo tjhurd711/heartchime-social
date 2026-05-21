@@ -10,6 +10,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+const VALID_PERSONA_ETHNICITIES = ['white', 'black', 'hispanic', 'asian', 'middle_eastern', 'mixed'] as const
+
 // ═══════════════════════════════════════════════════════════════════════════
 // GET /api/admin/social/ai-ugc/personas
 // List all personas with their loved ones and stats
@@ -96,6 +98,7 @@ export async function POST(request: NextRequest) {
       job,
       vibe,
       master_photo_url,
+      profile_picture_url,
       elevenlabs_voice_id,
       instagram_handle,
       tiktok_handle,
@@ -107,6 +110,10 @@ export async function POST(request: NextRequest) {
         { error: 'Missing required fields: name, age, birth_year, master_photo_url' },
         { status: 400 }
       )
+    }
+
+    if (ethnicity && !VALID_PERSONA_ETHNICITIES.includes(ethnicity)) {
+      return NextResponse.json({ error: 'Invalid ethnicity' }, { status: 400 })
     }
 
     const { data: persona, error } = await supabase
@@ -121,6 +128,7 @@ export async function POST(request: NextRequest) {
         job,
         vibe,
         master_photo_url,
+        profile_picture_url,
         elevenlabs_voice_id,
         instagram_handle,
         tiktok_handle,
@@ -155,6 +163,10 @@ export async function PATCH(request: NextRequest) {
 
     if (!id) {
       return NextResponse.json({ error: 'Missing persona ID' }, { status: 400 })
+    }
+
+    if (updates.ethnicity && !VALID_PERSONA_ETHNICITIES.includes(updates.ethnicity)) {
+      return NextResponse.json({ error: 'Invalid ethnicity' }, { status: 400 })
     }
 
     const { data: persona, error } = await supabase

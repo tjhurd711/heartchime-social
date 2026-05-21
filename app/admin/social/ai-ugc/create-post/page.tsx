@@ -131,7 +131,7 @@ export default function CreatePostPage() {
       const data = await res.json()
       setPersonas(data.personas || [])
       
-      if (preselectedPersona && data.personas?.some((p: any) => p.id === preselectedPersona)) {
+      if (preselectedPersona && (data.personas as AiUgcPersonaWithLovedOne[] | undefined)?.some((p) => p.id === preselectedPersona)) {
         setSelectedPersonaId(preselectedPersona)
       }
     } catch (err) {
@@ -696,7 +696,7 @@ export default function CreatePostPage() {
                 {selectedPersona && (
                   <div className="mt-4 flex items-center gap-4 bg-[#0d1117] rounded-lg p-3">
                     <img
-                      src={selectedPersona.master_photo_url}
+                      src={selectedPersona.profile_picture_url || selectedPersona.master_photo_url}
                       alt={selectedPersona.name}
                       className="w-12 h-12 rounded-lg object-cover"
                     />
@@ -787,7 +787,7 @@ export default function CreatePostPage() {
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder={`Example: Slide 2: old photo of ${selectedPersona?.name || 'Linda'} and ${selectedLovedOne?.name || 'dad'} cooking together in the 90s. Slide 3: pot of pasta on stove. Slide 4: HeartChime card "Why do I still make enough pasta for two?" (Slide 1 selfie is auto-generated above)`}
+                  placeholder={`Example: Slide 2: old photo of ${selectedPersona?.name || 'Eleanor Louverette'} and ${selectedLovedOne?.name || 'mom'} cooking together in the 90s. Slide 3: pot of pasta on stove. Slide 4: HeartChime card "Why do I still make enough pasta for two?" (Slide 1 selfie is auto-generated above)`}
                   rows={6}
                   disabled={currentStep !== 'input'}
                   className="w-full bg-[#0d1117] border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-violet-500 focus:outline-none resize-none disabled:opacity-50"
