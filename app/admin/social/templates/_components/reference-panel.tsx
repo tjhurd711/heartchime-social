@@ -1,6 +1,7 @@
 'use client'
 /* eslint-disable @next/next/no-img-element */
 
+import { useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 
 export interface TemplateReferencePhoto {
@@ -26,6 +27,46 @@ function isVideoUrl(url: string | null | undefined): boolean {
   return /\.(mp4|webm|mov)(\?.*)?$/i.test(url)
 }
 
+function ReferenceMedia({
+  url,
+  label,
+}: {
+  url: string
+  label: string
+}) {
+  const [forceImage, setForceImage] = useState(false)
+  const renderVideo = isVideoUrl(url) && !forceImage
+
+  return (
+    <div className="relative w-full aspect-[9/16] rounded-lg overflow-hidden border border-gray-700 bg-black">
+      {renderVideo ? (
+        <video
+          src={url}
+          autoPlay
+          muted
+          loop
+          playsInline
+          controls
+          onError={() => setForceImage(true)}
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <img
+          src={url}
+          alt={label}
+          onError={(event) => {
+            event.currentTarget.style.display = 'none'
+          }}
+          className="w-full h-full object-cover"
+        />
+      )}
+      <div className="absolute inset-x-0 bottom-0 px-2 py-1 bg-gradient-to-t from-black/85 to-transparent">
+        <p className="text-[10px] text-white font-medium truncate">{label}</p>
+      </div>
+    </div>
+  )
+}
+
 export default function ReferencePanel({
   templateId,
   referenceVideoUrl,
@@ -33,7 +74,45 @@ export default function ReferencePanel({
   compact = false,
 }: ReferencePanelProps) {
   const photos = sortedPhotos(referencePhotos)
-  const hasMedia = !!referenceVideoUrl || photos.length > 0
+  const slides = useMemo(() => {
+    const photoSlides = photos.map((photo, index) => ({
+      url: photo.url,
+      label: photo.label || `Slide ${index + 1}`,
+    }))
+
+    if (photoSlides.length > 0) return photoSlides
+    if (!referenceVideoUrl) return []
+    return [
+      {
+        url: referenceVideoUrl,
+        label: 'Reference',
+      },
+    ]
+  }, [photos, referenceVideoUrl])
+  const hasMedia = slides.length > 0
+  const scrollerRef = useRef<HTMLDivElement | null>(null)
+  const [activeIndex, setActiveIndex] = useState(0)
+
+  const goToSlide = (targetIndex: number) => {
+    const container = scrollerRef.current
+    if (!container) return
+    const bounded = Math.max(0, Math.min(targetIndex, slides.length - 1))
+    const nextChild = container.children.item(bounded) as HTMLElement | null
+    if (!nextChild) return
+    nextChild.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' })
+    setActiveIndex(bounded)
+  }
+
+  const handleScroll = () => {
+    const container = scrollerRef.current
+    if (!container) return
+    const width = container.clientWidth || 1
+    const index = Math.round(container.scrollLeft / width)
+    const bounded = Math.max(0, Math.min(index, slides.length - 1))
+    if (bounded !== activeIndex) {
+      setActiveIndex(bounded)
+    }
+  }
 
   return (
     <aside className={`border border-gray-700/60 rounded-xl bg-[#141826] ${compact ? 'p-3 w-[220px]' : 'p-4 w-[240px]'}`}>
@@ -53,38 +132,47 @@ export default function ReferencePanel({
         </Link>
       ) : (
         <div className="space-y-2">
-          {referenceVideoUrl && (
-            isVideoUrl(referenceVideoUrl) ? (
-              <video
-                src={referenceVideoUrl}
-                autoPlay
-                muted
-                loop
-                playsInline
-                controls
-                className="w-full max-w-[200px] rounded-md border border-gray-700 bg-black"
-              />
-            ) : (
-              <img
-                src={referenceVideoUrl}
-                alt="Reference media"
-                className="w-full max-w-[200px] h-auto rounded-md border border-gray-700 object-cover"
-              />
-            )
-          )}
+          <div
+            ref={scrollerRef}
+            onScroll={handleScroll}
+            className="flex overflow-x-auto snap-x snap-mandatory gap-2 scroll-smooth"
+          >
+            {slides.map((slide, index) => (
+              <div key={`${slide.url}-${index}`} className="snap-start shrink-0 w-full">
+                <ReferenceMedia url={slide.url} label={slide.label} />
+              </div>
+            ))}
+          </div>
 
-          {photos.length > 0 && (
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {photos.map((photo, index) => (
-                <div key={`${photo.url}-${index}`} className="min-w-[72px] space-y-1">
-                  <img
-                    src={photo.url}
-                    alt={photo.label || `Reference ${index + 1}`}
-                    className="w-[72px] h-[72px] object-cover rounded border border-gray-700"
+          {slides.length > 1 && (
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => goToSlide(activeIndex - 1)}
+                className="px-2 py-1 rounded bg-gray-700/80 text-[11px] text-gray-200 disabled:opacity-40"
+                disabled={activeIndex <= 0}
+              >
+                Prev
+              </button>
+              <div className="flex items-center gap-1">
+                {slides.map((slide, index) => (
+                  <button
+                    key={`${slide.url}-dot-${index}`}
+                    type="button"
+                    onClick={() => goToSlide(index)}
+                    className={`w-2 h-2 rounded-full ${activeIndex === index ? 'bg-amber-300' : 'bg-gray-600'}`}
+                    aria-label={`Go to slide ${index + 1}`}
                   />
-                  <p className="text-[10px] text-gray-300 leading-tight">{photo.label || `Slide ${index + 1}`}</p>
-                </div>
-              ))}
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => goToSlide(activeIndex + 1)}
+                className="px-2 py-1 rounded bg-gray-700/80 text-[11px] text-gray-200 disabled:opacity-40"
+                disabled={activeIndex >= slides.length - 1}
+              >
+                Next
+              </button>
             </div>
           )}
         </div>
