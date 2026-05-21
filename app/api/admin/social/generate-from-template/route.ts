@@ -559,7 +559,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (slide.slide_type === 'text_card') {
-        const textBody = interpolatedPrompt || slide.text_overlay || interpolationContext.hook || 'HeartChime'
+        const textBody = interpolatedPrompt || slide.text_overlay || getStringRecordValue(interpolationContext, 'hook') || 'HeartChime'
         const textCardUrl = await renderAndUploadSlide1(
           TRANSPARENT_PX,
           textBody,
