@@ -5,7 +5,7 @@ import { renderAndUploadSocialCard } from '@/lib/socialCardRenderer'
 import { renderAndUploadSlide1, TextStyle } from '@/lib/socialSlide1Renderer'
 import { buildPhotoPrompt } from '@/lib/socialPhotoPrompt'
 
-export const maxDuration = 60
+export const maxDuration = 300
 export const runtime = 'nodejs'
 
 const supabase = createClient(
@@ -35,6 +35,7 @@ interface GenerateFromTemplateRequest {
   variables: Record<string, string>
   account_type: RequestAccountType
   persona_id?: string
+  generate_live_photos?: boolean
 }
 
 interface PostTemplateSlide {
@@ -43,11 +44,19 @@ interface PostTemplateSlide {
   prompt_recipe?: string
   text_overlay?: string
   overlay_style?: OverlayStyle
+  motion_hint?: string
   characters?: CharacterKey[]
   photo_source?: PhotoSource
   photo_variable?: string
   photo_variable_name?: string
   variable_name?: string
+}
+
+interface LivePhotoResult {
+  order: number
+  pvt_zip_url: string
+  photo_url: string
+  video_url: string
 }
 
 interface PostTemplateRow {
@@ -60,6 +69,7 @@ interface PostTemplateRow {
   slide_count: number
   slides: unknown
   variables_needed: string[]
+  live_photo_supported: boolean
   is_active: boolean
 }
 
@@ -177,7 +187,7 @@ function resolveEvergreenLegacyPrompt(
 export async function POST(request: NextRequest) {
   try {
     const body: GenerateFromTemplateRequest = await request.json()
-    const { template_id, variables, account_type, persona_id } = body
+    const { template_id, variables, account_type, persona_id, generate_live_photos = false } = body
 
     if (!template_id) {
       return NextResponse.json({ error: 'Missing required field: template_id' }, { status: 400 })
@@ -208,6 +218,12 @@ export async function POST(request: NextRequest) {
     if (typedTemplate.account_type !== 'both' && typedTemplate.account_type !== account_type) {
       return NextResponse.json(
         { error: `Template account_type ${typedTemplate.account_type} does not support ${account_type}` },
+        { status: 400 }
+      )
+    }
+    if (generate_live_photos && !typedTemplate.live_photo_supported) {
+      return NextResponse.json(
+        { error: 'This template does not support live photo generation' },
         { status: 400 }
       )
     }
@@ -347,6 +363,93 @@ export async function POST(request: NextRequest) {
     }
 
     const orderedUrls = slideResults.sort((a, b) => a.order - b.order).map((s) => s.url)
+    const orderedSlides = slideResults.sort((a, b) => a.order - b.order)
+    const livePhotoResults: LivePhotoResult[] = []
+    const livePhotoWarnings: string[] = []
+    let isLivePhoto = false
+
+    if (generate_live_photos) {
+      const livePhotoServerUrl = process.env.LIVE_PHOTO_SERVER_URL
+      const livePhotoApiKey = process.env.LIVE_PHOTO_API_KEY
+
+      if (!livePhotoServerUrl || !livePhotoApiKey) {
+        livePhotoWarnings.push('Live Photo server is not configured; generated static slides only.')
+      } else {
+        const slideUrlByOrder = new Map<number, string>()
+        for (const slideResult of orderedSlides) {
+          slideUrlByOrder.set(slideResult.order, slideResult.url)
+        }
+
+        for (const slide of slides) {
+          if (!slide.motion_hint) {
+            continue
+          }
+
+          const staticSlideUrl = slideUrlByOrder.get(slide.order)
+          if (!staticSlideUrl) {
+            livePhotoWarnings.push(`Missing static image URL for slide ${slide.order}; skipped live photo generation.`)
+            continue
+          }
+
+          const interpolationContext = {
+            ...variables,
+            ...buildCharacterDescriptions(slide, variables),
+          }
+
+          let interpolatedMotionHint = slide.motion_hint
+          try {
+            interpolatedMotionHint = interpolatePrompt(slide.motion_hint, interpolationContext)
+          } catch (error) {
+            livePhotoWarnings.push(
+              `Failed to interpolate motion hint for slide ${slide.order}: ${error instanceof Error ? error.message : 'Unknown error'}`
+            )
+            continue
+          }
+
+          try {
+            const response = await fetch(`${livePhotoServerUrl.replace(/\/$/, '')}/generate`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${livePhotoApiKey}`,
+              },
+              body: JSON.stringify({
+                image_url: staticSlideUrl,
+                motion_style: 'ai_subtle',
+                motion_hint: interpolatedMotionHint,
+                output_orientation: 'vertical',
+                framing_mode: 'fill',
+              }),
+            })
+
+            if (!response.ok) {
+              const responseText = await response.text()
+              throw new Error(
+                `Live photo server returned ${response.status}: ${responseText || 'No response body'}`
+              )
+            }
+
+            const data = await response.json()
+            if (!data?.pvt_url || !data?.photo_url || !data?.video_url) {
+              throw new Error('Live photo response missing pvt_url, photo_url, or video_url')
+            }
+
+            livePhotoResults.push({
+              order: slide.order,
+              pvt_zip_url: data.pvt_url,
+              photo_url: data.photo_url,
+              video_url: data.video_url,
+            })
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error'
+            console.error(`Live photo generation failed for slide ${slide.order}:`, error)
+            livePhotoWarnings.push(`Slide ${slide.order} live photo generation failed: ${message}`)
+          }
+        }
+
+        isLivePhoto = livePhotoResults.length > 0 && livePhotoWarnings.length === 0
+      }
+    }
 
     const postInsert = {
       status: 'draft',
@@ -366,6 +469,8 @@ export async function POST(request: NextRequest) {
       deceased_nickname: variables.deceased_name || null,
       deceased_relationship: variables.relationship || 'loved one',
       time_period: variables.era || '1990s',
+      live_photo_urls: livePhotoResults.length > 0 ? livePhotoResults : null,
+      is_live_photo: isLivePhoto,
     }
 
     const { data: post, error: postError } = await supabase
@@ -383,7 +488,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       post_id: post.id,
-      slides: slideResults.sort((a, b) => a.order - b.order),
+      slides: orderedSlides,
+      is_live_photo: isLivePhoto,
+      live_photo_urls: livePhotoResults.length > 0 ? livePhotoResults.sort((a, b) => a.order - b.order) : undefined,
+      live_photo_warning: livePhotoWarnings.length > 0 ? livePhotoWarnings.join(' ') : undefined,
     })
   } catch (error) {
     return NextResponse.json(

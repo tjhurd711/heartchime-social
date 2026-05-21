@@ -47,6 +47,13 @@ interface SocialPost {
   shares: number | null;
   saves: number | null;
   created_at: string;
+  is_live_photo?: boolean;
+  live_photo_urls?: Array<{
+    order: number;
+    pvt_zip_url: string;
+    photo_url: string;
+    video_url: string;
+  }> | null;
   recipient?: Recipient;
   hook?: Hook;
 }
@@ -431,6 +438,7 @@ export default function SocialPostDetailPage() {
 
   const postTypeInfo = POST_TYPE_LABELS[post.post_type] || { label: 'Unknown', emoji: '❓' };
   const captionChanged = caption !== originalCaption;
+  const livePhotoEntries = (post.live_photo_urls || []).slice().sort((a, b) => a.order - b.order);
 
   return (
     <div className="min-h-screen bg-gray-900 p-6">
@@ -986,6 +994,25 @@ export default function SocialPostDetailPage() {
                     📥 Slide 2
                   </a>
                 )}
+              </div>
+            </div>
+          )}
+
+          {post.is_live_photo && livePhotoEntries.length > 0 && (
+            <div className="bg-gray-800 rounded-xl p-4">
+              <h3 className="text-sm font-medium text-white mb-3">Download Live Photos</h3>
+              <div className="space-y-2">
+                {livePhotoEntries.map((entry) => (
+                  <a
+                    key={`${entry.order}-${entry.pvt_zip_url}`}
+                    href={entry.pvt_zip_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full py-2 px-3 bg-gray-700 text-white text-sm rounded-lg hover:bg-gray-600 transition-colors text-center"
+                  >
+                    📸 Download Live Photo (.pvt.zip) - Slide {entry.order}
+                  </a>
+                ))}
               </div>
             </div>
           )}

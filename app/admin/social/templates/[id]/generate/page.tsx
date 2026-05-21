@@ -27,8 +27,9 @@ interface Template {
   name: string
   description: string | null
   account_type: 'business' | 'persona' | 'both'
+  live_photo_supported?: boolean
   variables_schema: VariableField[] | null
-  slides?: Array<{ slide_type?: string; characters?: CharacterKey[] }>
+  slides?: Array<{ order?: number; slide_type?: string; characters?: CharacterKey[]; motion_hint?: string }>
 }
 
 interface PersonaOption {
@@ -97,6 +98,7 @@ export default function GenerateFromTemplatePage() {
   const [selectedPersonaId, setSelectedPersonaId] = useState('')
   const [loadingPersonas, setLoadingPersonas] = useState(false)
   const [isGeneratingSelfie, setIsGeneratingSelfie] = useState(false)
+  const [generateLivePhotos, setGenerateLivePhotos] = useState(false)
   const [selfieAge, setSelfieAge] = useState(35)
   const [selfieGender, setSelfieGender] = useState<SelfieGender>('female')
   const [selfieEthnicity, setSelfieEthnicity] = useState<SelfieEthnicity>('white')
@@ -154,6 +156,11 @@ export default function GenerateFromTemplatePage() {
   }, [accountType, personas.length])
 
   const variablesSchema = useMemo(() => template?.variables_schema || [], [template])
+  const livePhotoSlides = useMemo(
+    () => (template?.slides || []).filter((slide) => !!slide.motion_hint),
+    [template]
+  )
+  const hasAnimatedSlides = livePhotoSlides.length > 0
   const hasSelfieSlide = useMemo(
     () => !!template?.slides?.some((slide) => slide?.slide_type === 'selfie'),
     [template]
@@ -274,6 +281,7 @@ export default function GenerateFromTemplatePage() {
           account_type: accountType,
           persona_id: accountType === 'persona' ? selectedPersonaId : undefined,
           variables,
+          generate_live_photos: generateLivePhotos,
         }),
       })
 
@@ -351,6 +359,34 @@ export default function GenerateFromTemplatePage() {
                 </option>
               ))}
             </select>
+          </div>
+        )}
+
+        {template.live_photo_supported && (
+          <div className="border border-gray-700/60 rounded-xl p-4 space-y-2">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={generateLivePhotos}
+                onChange={(e) => setGenerateLivePhotos(e.target.checked)}
+                className="w-4 h-4 rounded bg-gray-700 border-gray-600 text-amber-500 focus:ring-amber-500"
+              />
+              <span className="text-white font-medium">Generate as Live Photo</span>
+            </label>
+            <p className="text-xs text-gray-400">
+              Uses the external Live Photo server after static slide generation.
+            </p>
+          </div>
+        )}
+
+        {template.live_photo_supported && hasAnimatedSlides && (
+          <div className="border border-gray-700/60 rounded-xl p-4 space-y-2">
+            <h2 className="text-white font-semibold">Live Photo Animated Slides</h2>
+            {livePhotoSlides.map((slide, index) => (
+              <p key={`${slide.order || index}-${slide.slide_type || 'slide'}`} className="text-xs text-amber-300">
+                Slide {slide.order || index + 1} ({slide.slide_type || 'unknown'}) - this slide will animate.
+              </p>
+            ))}
           </div>
         )}
 
