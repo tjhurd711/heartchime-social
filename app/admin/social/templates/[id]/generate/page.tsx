@@ -28,6 +28,7 @@ interface Template {
   name: string
   description: string | null
   account_type: 'business' | 'persona' | 'both'
+  audio_track_url?: string | null
   live_photo_supported?: boolean
   reference_video_url?: string | null
   reference_photos?: TemplateReferencePhoto[] | null
@@ -326,68 +327,61 @@ export default function GenerateFromTemplatePage() {
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
-      <div className="flex items-start justify-between gap-6">
-        <div>
-          <Link
-            href="/admin/social/templates"
-            className="text-gray-400 hover:text-white text-sm flex items-center gap-1 mb-2"
-          >
-            ← Back to Template Gallery
-          </Link>
-          <h1 className="text-3xl font-bold text-white">{template.name}</h1>
-          <p className="text-gray-400 mt-1">{template.description || 'Generate a post from this template.'}</p>
-          <Link href={`/admin/social/templates/${template.id}/edit`} className="inline-flex mt-3 text-sm text-amber-300 hover:text-amber-200">
-            Edit template details →
-          </Link>
-        </div>
-
-        <ReferencePanel
-          templateId={template.id}
-          referenceVideoUrl={template.reference_video_url}
-          referencePhotos={template.reference_photos}
-        />
+      <div>
+        <Link
+          href="/admin/social/templates"
+          className="text-gray-400 hover:text-white text-sm flex items-center gap-1 mb-2"
+        >
+          ← Back to Template Gallery
+        </Link>
+        <h1 className="text-3xl font-bold text-white">{template.name}</h1>
+        <p className="text-gray-400 mt-1">{template.description || 'Generate a post from this template.'}</p>
+        <Link href={`/admin/social/templates/${template.id}/edit`} className="inline-flex mt-3 text-sm text-amber-300 hover:text-amber-200">
+          Edit template details →
+        </Link>
       </div>
 
-      <form onSubmit={handleSubmit} className="bg-[#1a1f2e] rounded-2xl p-6 border border-gray-800/50 space-y-5">
-        <div>
-          <label className="block text-sm text-gray-400 mb-2">Account Type</label>
-          <select
-            value={accountType}
-            onChange={(e) => setAccountType(e.target.value as AccountType)}
-            className="w-full max-w-xs px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-amber-400"
-          >
-            {accountTypeOptions.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {accountType === 'persona' && (
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-6 items-start">
+        <form onSubmit={handleSubmit} className="bg-[#1a1f2e] rounded-2xl p-6 border border-gray-800/50 space-y-5">
           <div>
-            <label className="block text-sm text-gray-300 mb-2">
-              Persona <span className="text-amber-300">*</span>
-            </label>
+            <label className="block text-sm text-gray-400 mb-2">Account Type</label>
             <select
-              value={selectedPersonaId}
-              onChange={(e) => setSelectedPersonaId(e.target.value)}
-              disabled={loadingPersonas}
-              className="w-full max-w-xs px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-amber-400 disabled:opacity-60"
+              value={accountType}
+              onChange={(e) => setAccountType(e.target.value as AccountType)}
+              className="w-full max-w-xs px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-amber-400"
             >
-              <option value="">
-                {loadingPersonas ? 'Loading personas...' : 'Choose a persona...'}
-              </option>
-              {personas.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
+              {accountTypeOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
                 </option>
               ))}
             </select>
           </div>
-        )}
 
-        {template.live_photo_supported && (
+          {accountType === 'persona' && (
+            <div>
+              <label className="block text-sm text-gray-300 mb-2">
+                Persona <span className="text-amber-300">*</span>
+              </label>
+              <select
+                value={selectedPersonaId}
+                onChange={(e) => setSelectedPersonaId(e.target.value)}
+                disabled={loadingPersonas}
+                className="w-full max-w-xs px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-amber-400 disabled:opacity-60"
+              >
+                <option value="">
+                  {loadingPersonas ? 'Loading personas...' : 'Choose a persona...'}
+                </option>
+                {personas.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {template.live_photo_supported && (
           <div className="border border-gray-700/60 rounded-xl p-4 space-y-2">
             <label className="flex items-center gap-3 cursor-pointer">
               <input
@@ -402,9 +396,9 @@ export default function GenerateFromTemplatePage() {
               Uses the external Live Photo server after static slide generation.
             </p>
           </div>
-        )}
+          )}
 
-        {template.live_photo_supported && hasAnimatedSlides && (
+          {template.live_photo_supported && hasAnimatedSlides && (
           <div className="border border-gray-700/60 rounded-xl p-4 space-y-2">
             <h2 className="text-white font-semibold">Live Photo Animated Slides</h2>
             {livePhotoSlides.map((slide, index) => (
@@ -413,9 +407,9 @@ export default function GenerateFromTemplatePage() {
               </p>
             ))}
           </div>
-        )}
+          )}
 
-        {hasSelfieSlide && (
+          {hasSelfieSlide && (
           <div className="border border-gray-700/60 rounded-xl p-4 space-y-3">
             <h2 className="text-white font-semibold">Generate Selfie (Slide 1)</h2>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -445,9 +439,9 @@ export default function GenerateFromTemplatePage() {
             </button>
             {variables.selfie_url && <p className="text-xs text-green-300 break-all">Selfie URL set.</p>}
           </div>
-        )}
+          )}
 
-        {shouldShowCharacterInputs && (
+          {shouldShowCharacterInputs && (
           <div className="border border-gray-700/60 rounded-xl p-4 space-y-4">
             <h2 className="text-white font-semibold">Character Demographics</h2>
 
@@ -527,10 +521,10 @@ export default function GenerateFromTemplatePage() {
               </div>
             )}
           </div>
-        )}
+          )}
 
-        {variablesSchema.map((field) => (
-          <div key={field.name}>
+          {variablesSchema.map((field) => (
+            <div key={field.name}>
             <label className="block text-sm text-gray-300 mb-2">
               {field.label}
               {field.required ? <span className="text-amber-300"> *</span> : null}
@@ -590,23 +584,33 @@ export default function GenerateFromTemplatePage() {
                 )}
               </div>
             )}
-          </div>
-        ))}
+            </div>
+          ))}
 
-        {error && <p className="text-red-400 text-sm">{error}</p>}
+          {error && <p className="text-red-400 text-sm">{error}</p>}
 
-        <button
-          type="submit"
-          disabled={submitting || requiredMissing || selfieMissing || personaMissing || demographicsMissing || !!uploadingField}
-          className={`w-full py-3 rounded-xl font-semibold transition-all ${
-            !submitting && !requiredMissing && !demographicsMissing && !uploadingField
-              ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-400 hover:to-orange-400'
-              : 'bg-gray-700 text-gray-500 cursor-not-allowed'
-          }`}
-        >
-          {submitting ? 'Generating Post...' : 'Generate Post'}
-        </button>
-      </form>
+          <button
+            type="submit"
+            disabled={submitting || requiredMissing || selfieMissing || personaMissing || demographicsMissing || !!uploadingField}
+            className={`w-full py-3 rounded-xl font-semibold transition-all ${
+              !submitting && !requiredMissing && !demographicsMissing && !uploadingField
+                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-400 hover:to-orange-400'
+                : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+            }`}
+          >
+            {submitting ? 'Generating Post...' : 'Generate Post'}
+          </button>
+        </form>
+
+        <div className="xl:sticky xl:top-6">
+          <ReferencePanel
+            templateId={template.id}
+            referenceVideoUrl={template.reference_video_url}
+            referencePhotos={template.reference_photos}
+            audioTrackUrl={template.audio_track_url}
+          />
+        </div>
+      </div>
     </div>
   )
 }

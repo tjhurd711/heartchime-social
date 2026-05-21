@@ -14,6 +14,7 @@ interface ReferencePanelProps {
   templateId: string
   referenceVideoUrl?: string | null
   referencePhotos?: TemplateReferencePhoto[] | null
+  audioTrackUrl?: string | null
   compact?: boolean
 }
 
@@ -93,6 +94,7 @@ export default function ReferencePanel({
   templateId,
   referenceVideoUrl,
   referencePhotos,
+  audioTrackUrl,
   compact = false,
 }: ReferencePanelProps) {
   const photos = sortedPhotos(referencePhotos)
@@ -137,7 +139,7 @@ export default function ReferencePanel({
   }
 
   return (
-    <aside className={`border border-gray-700/60 rounded-xl bg-[#141826] ${compact ? 'p-3 w-[220px]' : 'p-4 w-[240px]'}`}>
+    <aside className={`border border-gray-700/60 rounded-xl bg-[#141826] ${compact ? 'p-3 w-[220px]' : 'p-4 w-[320px]'}`}>
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-xs font-semibold text-gray-200 uppercase tracking-wide">Reference</h3>
         <Link href={`/admin/social/templates/${templateId}/edit`} className="text-[11px] text-amber-300 hover:text-amber-200">
@@ -197,6 +199,19 @@ export default function ReferencePanel({
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {audioTrackUrl && (
+        <div className="mt-3 pt-3 border-t border-gray-700/70">
+          <a
+            href={audioTrackUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex text-xs text-blue-300 hover:text-blue-200"
+          >
+            Open TikTok audio ↗
+          </a>
         </div>
       )}
     </aside>
