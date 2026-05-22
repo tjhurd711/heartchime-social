@@ -1940,6 +1940,7 @@ export type Database = {
           slide_1_url: string | null
           slide_2_url: string | null
           slide_3_url: string | null
+          slide_bundle: Json | null
           slide_count: number
           status: string
           text_style: string
@@ -1986,6 +1987,7 @@ export type Database = {
           slide_1_url?: string | null
           slide_2_url?: string | null
           slide_3_url?: string | null
+          slide_bundle?: Json | null
           slide_count?: number
           status?: string
           text_style?: string
@@ -2032,6 +2034,7 @@ export type Database = {
           slide_1_url?: string | null
           slide_2_url?: string | null
           slide_3_url?: string | null
+          slide_bundle?: Json | null
           slide_count?: number
           status?: string
           text_style?: string

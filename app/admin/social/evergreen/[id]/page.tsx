@@ -33,6 +33,7 @@ interface SocialPost {
   post_type: string;
   slide_1_url: string | null;
   slide_2_url: string | null;
+  slide_bundle?: unknown;
   hook_text: string;
   text_style: string;
   deceased_nickname: string;
@@ -62,6 +63,12 @@ interface SocialPost {
   }> | null;
   recipient?: Recipient;
   hook?: Hook;
+}
+
+interface SendToDeviceResult {
+  imported_count?: number;
+  note_created?: boolean;
+  mac_response?: unknown;
 }
 
 const POST_TYPE_LABELS: Record<string, { label: string; emoji: string }> = {
@@ -110,6 +117,8 @@ export default function SocialPostDetailPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showDangerZone, setShowDangerZone] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [isSendingToDevice, setIsSendingToDevice] = useState(false);
+  const [sendToDeviceResult, setSendToDeviceResult] = useState<SendToDeviceResult | null>(null);
 
   // Regenerate state
   const [regeneratingPhoto, setRegeneratingPhoto] = useState(false);
@@ -349,6 +358,36 @@ export default function SocialPostDetailPage() {
     }
   };
 
+  const handleSendToDevice = async () => {
+    if (!post) return;
+    setIsSendingToDevice(true);
+    setSendToDeviceResult(null);
+    try {
+      const res = await fetch('/api/admin/social/send-to-device', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ post_id: post.id }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to send to iPhone');
+      }
+
+      setSendToDeviceResult({
+        imported_count: data.imported_count,
+        note_created: data.note_created,
+        mac_response: data.mac_response,
+      });
+      showToast('Sent to iPhone!', 'success');
+    } catch (error) {
+      console.error('Failed to send to iPhone:', error);
+      showToast(error instanceof Error ? error.message : 'Failed to send to iPhone', 'error');
+    } finally {
+      setIsSendingToDevice(false);
+    }
+  };
+
   // Regenerate functions
   const regeneratePhoto = async () => {
     if (!post) return;
@@ -431,7 +470,7 @@ export default function SocialPostDetailPage() {
       <div className="min-h-screen bg-gray-900 p-6 flex flex-col items-center justify-center">
         <div className="text-6xl mb-4">😕</div>
         <h1 className="text-2xl font-bold text-white mb-2">Post Not Found</h1>
-        <p className="text-gray-400 mb-6">This post doesn't exist or has been deleted.</p>
+        <p className="text-gray-400 mb-6">This post does not exist or has been deleted.</p>
         <Link 
           href="/admin/social/evergreen"
           className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
@@ -451,6 +490,7 @@ export default function SocialPostDetailPage() {
     }))
     .filter((entry) => entry.pvt_zip_url)
     .sort((a, b) => a.order - b.order);
+  const hasDeviceSlideBundle = Array.isArray(post.slide_bundle) && post.slide_bundle.length > 0;
 
   return (
     <div className="min-h-screen bg-gray-900 p-6">
@@ -552,7 +592,7 @@ export default function SocialPostDetailPage() {
                   <p className="text-white text-sm">
                     {post.deceased_relationship}
                     {post.deceased_nickname && (
-                      <span className="text-gray-400"> "{post.deceased_nickname}"</span>
+                      <span className="text-gray-400"> &quot;{post.deceased_nickname}&quot;</span>
                     )}
                   </p>
                   {post.time_period && (
@@ -565,7 +605,7 @@ export default function SocialPostDetailPage() {
               <div className="flex items-start gap-3">
                 <span className="text-gray-400 text-sm w-24">Hook:</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-white text-sm">"{post.hook_text}"</span>
+                  <span className="text-white text-sm">&quot;{post.hook_text}&quot;</span>
                   {post.text_style && (
                     <span className={`px-2 py-0.5 rounded text-xs ${
                       post.text_style === 'snapchat' ? 'bg-pink-600/30 text-pink-300' : 'bg-slate-600/30 text-slate-300'
@@ -703,7 +743,7 @@ export default function SocialPostDetailPage() {
             <div className="bg-gray-800 rounded-xl p-6">
               <h2 className="text-lg font-semibold text-white mb-2">Mark as Posted</h2>
               <p className="text-gray-400 text-sm mb-4">
-                After you've posted manually in TikTok/Instagram, mark it here to track performance.
+                After you have posted manually in TikTok/Instagram, mark it here to track performance.
               </p>
               
               <div className="mb-4">
@@ -1026,6 +1066,42 @@ export default function SocialPostDetailPage() {
                   </a>
                 ))}
               </div>
+            </div>
+          )}
+
+          {hasDeviceSlideBundle && (
+            <div className="bg-gray-800 rounded-xl p-4">
+              <h3 className="text-sm font-medium text-white mb-2">Send to iPhone</h3>
+              <p className="text-xs text-gray-400 mb-3">
+                Push the generated photos and Note overlay text to the Mac server.
+              </p>
+              <button
+                onClick={handleSendToDevice}
+                disabled={isSendingToDevice}
+                className="w-full py-2 px-3 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSendingToDevice ? 'Sending...' : 'Send to iPhone'}
+              </button>
+              {sendToDeviceResult && (
+                <div className="mt-3 rounded-lg bg-gray-900/80 border border-gray-700 p-3 text-xs text-gray-300 space-y-1">
+                  <p>
+                    Imported:{' '}
+                    <span className="text-white font-medium">
+                      {sendToDeviceResult.imported_count ?? 'unknown'}
+                    </span>
+                  </p>
+                  <p>
+                    Note created:{' '}
+                    <span className="text-white font-medium">
+                      {sendToDeviceResult.note_created === undefined
+                        ? 'unknown'
+                        : sendToDeviceResult.note_created
+                          ? 'yes'
+                          : 'no'}
+                    </span>
+                  </p>
+                </div>
+              )}
             </div>
           )}
 

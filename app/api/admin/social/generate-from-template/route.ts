@@ -91,6 +91,7 @@ interface PostTemplateSlide {
   photo_variable?: string
   photo_variable_name?: string
   variable_name?: string
+  note_overlay_variable?: string
 }
 
 interface LivePhotoResult {
@@ -107,6 +108,15 @@ interface LivePhotoResponse {
     photo_url: string
     video_url: string
   }
+}
+
+interface SlideBundleItem {
+  order: number
+  url: string
+  image_url: string
+  slide_type: SlideType
+  overlay_text: string | null
+  live_photo_pvt_url?: string
 }
 
 interface PostTemplateRow {
@@ -422,6 +432,26 @@ function resolveOverlayText(
   return interpolatedPrompt || null
 }
 
+function resolveNoteOverlayText(slide: PostTemplateSlide, variables: Record<string, unknown>): string | null {
+  if (!slide.note_overlay_variable) {
+    return null
+  }
+
+  return getStringRecordValue(variables, slide.note_overlay_variable) || null
+}
+
+function normalizeLivePhotoDownloadUrl(downloadUrl: string, livePhotoServerUrl: string): string {
+  const baseUrl = livePhotoServerUrl.replace(/\/$/, '')
+
+  try {
+    const parsedDownloadUrl = new URL(downloadUrl)
+    return `${baseUrl}${parsedDownloadUrl.pathname}${parsedDownloadUrl.search}${parsedDownloadUrl.hash}`
+  } catch {
+    const path = downloadUrl.startsWith('/') ? downloadUrl : `/${downloadUrl}`
+    return `${baseUrl}${path}`
+  }
+}
+
 function overlayStyleToTextStyle(style: OverlayStyle | undefined): TextStyle {
   if (style === 'lyric') return 'lyric'
   return style === 'caption' ? 'clean' : 'snapchat'
@@ -568,7 +598,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const slideResults: Array<{ order: number; url: string; slide_type: SlideType }> = []
+    const slideResults: Array<{ order: number; url: string; slide_type: SlideType; overlay_text: string | null }> = []
     let latestImageUrl: string | null = null
     let evergreenCardPhotoUrl: string | null = null
 
@@ -591,6 +621,7 @@ export async function POST(request: NextRequest) {
       if (legacyEvergreenPrompt) {
         interpolatedPrompt = legacyEvergreenPrompt
       }
+      const noteOverlayText = resolveNoteOverlayText(slide, interpolationContext)
 
       if (slide.slide_type === 'heartchime_card') {
         if (typedTemplate.category === 'evergreen' && !evergreenCardPhotoUrl) {
@@ -612,7 +643,7 @@ export async function POST(request: NextRequest) {
           getStringVariable(variables, 'card_message') ||
           `Remembering ${getStringVariable(variables, 'deceased_name') || 'your loved one'} with love.`
         const cardUrl = await renderAndUploadSocialCard(cardPhoto, cardMessage)
-        slideResults.push({ order: slide.order, url: cardUrl, slide_type: slide.slide_type })
+        slideResults.push({ order: slide.order, url: cardUrl, slide_type: slide.slide_type, overlay_text: noteOverlayText })
         latestImageUrl = cardUrl
         continue
       }
@@ -627,7 +658,7 @@ export async function POST(request: NextRequest) {
             )
           : getStringVariable(variables, 'selfie_url')
 
-        slideResults.push({ order: slide.order, url: selfieUrl, slide_type: slide.slide_type })
+        slideResults.push({ order: slide.order, url: selfieUrl, slide_type: slide.slide_type, overlay_text: noteOverlayText })
         latestImageUrl = selfieUrl
         continue
       }
@@ -639,7 +670,7 @@ export async function POST(request: NextRequest) {
           textBody,
           overlayStyleToTextStyle(slide.overlay_style)
         )
-        slideResults.push({ order: slide.order, url: textCardUrl, slide_type: slide.slide_type })
+        slideResults.push({ order: slide.order, url: textCardUrl, slide_type: slide.slide_type, overlay_text: noteOverlayText })
         latestImageUrl = textCardUrl
         continue
       }
@@ -661,7 +692,7 @@ export async function POST(request: NextRequest) {
             ? await renderAndUploadSlide1(sourcePhotoUrl, overlayText, overlayStyleToTextStyle(slide.overlay_style))
             : sourcePhotoUrl
 
-        slideResults.push({ order: slide.order, url: finalUrl, slide_type: slide.slide_type })
+        slideResults.push({ order: slide.order, url: finalUrl, slide_type: slide.slide_type, overlay_text: noteOverlayText })
         latestImageUrl = finalUrl
         continue
       }
@@ -688,12 +719,12 @@ export async function POST(request: NextRequest) {
           ? await renderAndUploadSlide1(baseImageUrl, overlayText, overlayStyleToTextStyle(slide.overlay_style))
           : baseImageUrl
 
-      slideResults.push({ order: slide.order, url: finalUrl, slide_type: slide.slide_type })
+      slideResults.push({ order: slide.order, url: finalUrl, slide_type: slide.slide_type, overlay_text: noteOverlayText })
       latestImageUrl = finalUrl
     }
 
-    const orderedUrls = slideResults.sort((a, b) => a.order - b.order).map((s) => s.url)
     const orderedSlides = slideResults.sort((a, b) => a.order - b.order)
+    const orderedUrls = orderedSlides.map((s) => s.url)
     const livePhotoResults: LivePhotoResult[] = []
     const livePhotoWarnings: string[] = []
     let isLivePhoto = false
@@ -776,7 +807,7 @@ export async function POST(request: NextRequest) {
 
             livePhotoResults.push({
               order: slide.order,
-              pvt_zip_url: data.pvt_url,
+              pvt_zip_url: normalizeLivePhotoDownloadUrl(data.pvt_url, livePhotoServerUrl),
               photo_url: data.photo_url,
               video_url: data.video_url,
             })
@@ -801,6 +832,19 @@ export async function POST(request: NextRequest) {
           video_url: result.video_url,
         },
       }))
+    const livePhotoByOrder = new Map(livePhotoResults.map((result) => [result.order, result]))
+    const slideBundle: SlideBundleItem[] = orderedSlides.map((slide) => {
+      const livePhoto = livePhotoByOrder.get(slide.order)
+
+      return {
+        order: slide.order,
+        url: slide.url,
+        image_url: slide.url,
+        slide_type: slide.slide_type,
+        overlay_text: slide.overlay_text,
+        live_photo_pvt_url: livePhoto?.pvt_zip_url,
+      }
+    })
 
     const postInsert = {
       status: 'draft',
@@ -815,6 +859,7 @@ export async function POST(request: NextRequest) {
       slide_1_url: orderedUrls[0] || null,
       slide_2_url: orderedUrls[1] || null,
       slide_3_url: orderedUrls[2] || null,
+      slide_bundle: slideBundle,
       hook_text: getStringVariable(variables, 'hook') || null,
       text_style: 'snapchat',
       deceased_nickname: getStringVariable(variables, 'deceased_name') || null,
@@ -839,7 +884,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       post_id: post.id,
-      slides: orderedSlides,
+      slides: slideBundle,
+      slide_bundle: slideBundle,
       is_live_photo: isLivePhoto,
       live_photo_urls: livePhotos.length > 0 ? livePhotos : undefined,
       live_photos: livePhotos.length > 0 ? livePhotos : undefined,

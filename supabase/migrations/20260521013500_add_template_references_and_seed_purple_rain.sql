@@ -32,8 +32,7 @@ select
       'photo_source', 'variable_or_generated',
       'photo_variable', 'deceased_photo_url',
       'prompt_recipe', 'Authentic vintage photograph from the {era}. {deceased_description} smiling at the camera, candid family/personal photo. Shot by a family member, amateur framing, natural imperfect lighting, slight motion blur acceptable. Looks like a photo pulled from a shoebox or phone camera roll. No watermarks, no text overlays, no AI artifacts.',
-      'text_overlay', '{roles_list}',
-      'overlay_style', 'lyric',
+      'overlay_style', 'none',
       'motion_hint', 'The subject blinks once slowly. Slight head movement. Slight smile shift. Hair drifts gently. Static camera locked off.'
     ),
     jsonb_build_object(
@@ -42,8 +41,7 @@ select
       'characters', jsonb_build_array(),
       'photo_source', 'generated',
       'prompt_recipe', 'Respectful vertical memorial/headstone photograph in a cemetery or small roadside memorial. A simple headstone, flowers, candles, and soft natural light. {memorial_attendees_description}. Somber documentary phone-photo feel, realistic environment, shallow depth of field, no readable names or dates, no text overlays, no watermarks, no AI artifacts.',
-      'text_overlay', '{cause_of_death}',
-      'overlay_style', 'lyric',
+      'overlay_style', 'none',
       'motion_hint', 'Gentle wind moves through trees in background. Candle flames flicker softly. Otherwise everything still. Camera locked off.'
     )
   ),
@@ -52,9 +50,7 @@ select
     'deceased_age',
     'deceased_gender',
     'deceased_ethnicity',
-    'era',
-    'roles_list',
-    'cause_of_death'
+    'era'
   ],
   jsonb_build_array(
     jsonb_build_object(
@@ -92,25 +88,13 @@ select
       'options', jsonb_build_array('1970s','1980s','1990s','2000s','2010s','2020s')
     ),
     jsonb_build_object(
-      'name', 'roles_list',
-      'label', 'Roles they were (separate with /). Example: father / son / husband / brother / uncle / grandpa',
-      'type', 'textarea',
-      'required', true
-    ),
-    jsonb_build_object(
-      'name', 'cause_of_death',
-      'label', 'How they died (slide 2 caption). Example: ''one snort of that coke''',
-      'type', 'text',
-      'required', true
-    ),
-    jsonb_build_object(
       'name', 'deceased_photo_url',
       'label', 'Optional: real photo of deceased (slide 1)',
       'type', 'photo_upload',
       'required', false
     )
   ),
-  'Two-slide trend. Slide 1 is the deceased while alive with their roles listed. Slide 2 is an AI-generated memorial/headstone image with a stark cause-of-death overlay. Audience hook: the contrast between who they were and what took them.',
+  'Two-slide trend. Slide 1 is the deceased while alive. Slide 2 is an AI-generated memorial/headstone image. Photos are generated clean without text overlays so copy can be added manually.',
   true
 where not exists (
   select 1
