@@ -401,6 +401,7 @@ function buildMemorialSceneDescription(variables: TemplateVariables): string {
   const keepsake = getStringVariable(variables, 'memorial_keepsake')
   const headstoneFlowerDesign = getStringVariable(variables, 'memorial_headstone_flower_design') || 'small rose or lily relief'
   const cameraAngle = getStringVariable(variables, 'memorial_camera_angle') || 'left'
+  const cameraDistance = getStringVariable(variables, 'memorial_camera_distance') || 'far'
 
   const locationDescription: Record<string, string> = {
     cemetery: 'in a quiet cemetery',
@@ -417,26 +418,33 @@ function buildMemorialSceneDescription(variables: TemplateVariables): string {
     right: 'The photo is taken from a clear right-side angle instead of straight-on, with the memorial off-center like an imperfect phone snapshot.',
   }
   const cameraAnglePrompt = cameraAngleDescription[cameraAngle] || cameraAngleDescription.left
+  const cameraDistanceDescription: Record<string, string> = {
+    close: 'Camera distance: close, about 6-10 feet away. The memorial can occupy about 30-40% of the image height.',
+    medium: 'Camera distance: medium, about 12-18 feet away. The memorial should occupy about 20-30% of the image height.',
+    far: 'Camera distance: far, about 20-30 feet away. The memorial should occupy only about 10-20% of the image height, with lots of surrounding environment visible.',
+    'very far': 'Camera distance: very far, about 30-45 feet away. The memorial should be small in the frame, only about 5-12% of the image height, with most of the image showing surrounding environment and open space.',
+  }
+  const cameraDistancePrompt = cameraDistanceDescription[cameraDistance] || cameraDistanceDescription.far
   const keepsakeSentence = keepsake ? ` Include a personal keepsake placed near the memorial: ${keepsake}.` : ''
 
   if (sceneType === 'headstone_rounded') {
-    return `A rounded-top stone headstone ${setting}, fully visible from a wide, amateur documentary phone-photo distance. ${cameraAnglePrompt} The headstone is engraved with exactly this inscription: "${inscription}". The inscription is carved into the stone in an elegant serif script, not printed or overlaid. Add a subtle carved flower design near the inscription: ${headstoneFlowerDesign}. Flowers, unlit candles, grass or path, and surrounding environment are visible.${keepsakeSentence}`
+    return `A rounded-top stone headstone ${setting}, fully visible from an amateur documentary phone-photo distance. ${cameraDistancePrompt} ${cameraAnglePrompt} The headstone is engraved with exactly this inscription: "${inscription}". The inscription is carved into the stone in an elegant serif script, not printed or overlaid. Add a subtle carved flower design near the inscription: ${headstoneFlowerDesign}. Flowers, unlit candles, grass or path, and surrounding environment are visible.${keepsakeSentence}`
   }
 
   if (sceneType === 'headstone_flat') {
-    return `A low flat grave marker or beveled stone memorial ${setting}, photographed from a wide, amateur documentary phone-photo distance. ${cameraAnglePrompt} The marker is engraved with exactly this inscription: "${inscription}". The inscription is carved into the stone in an elegant serif script, not printed or overlaid. Add a subtle carved flower design on the stone: ${headstoneFlowerDesign}. Flowers, unlit candles, grass or path, and surrounding environment are visible.${keepsakeSentence}`
+    return `A low flat grave marker or beveled stone memorial ${setting}, photographed from an amateur documentary phone-photo distance. ${cameraDistancePrompt} ${cameraAnglePrompt} The marker is engraved with exactly this inscription: "${inscription}". The inscription is carved into the stone in an elegant serif script, not printed or overlaid. Add a subtle carved flower design on the stone: ${headstoneFlowerDesign}. Flowers, unlit candles, grass or path, and surrounding environment are visible.${keepsakeSentence}`
   }
 
   if (sceneType === 'urn') {
-    return `A respectful urn memorial ${setting}, photographed from a wide, amateur documentary phone-photo distance. ${cameraAnglePrompt} The urn is ${urnColor}, placed on a small table, stone base, or memorial cloth with flowers and unlit candles around it. A small tasteful card or plaque may be present, but any writing is too small or too far away to read. No readable names, dates, or inscriptions.`
+    return `A respectful urn memorial ${setting}, photographed from an amateur documentary phone-photo distance. ${cameraDistancePrompt} ${cameraAnglePrompt} The urn is ${urnColor}, placed on a small table, stone base, or memorial cloth with flowers and unlit candles around it. A small tasteful card or plaque may be present, but any writing is too small or too far away to read. No readable names, dates, or inscriptions.`
   }
 
   if (sceneType === 'bouquet') {
     const bouquetKeepsake = keepsake ? `, with a personal keepsake beside them: ${keepsake}` : ''
-    return `A bouquet-of-flowers memorial ${setting}, photographed from a wide, amateur documentary phone-photo distance. ${cameraAnglePrompt} Fresh flowers are arranged as the main memorial, with unlit candles${bouquetKeepsake}. A small tasteful card or ribbon may be present, but any writing is too small or too far away to read. Frame the bouquet memorial and open surroundings only; no headstones, grave markers, cemetery stones, or stone monuments anywhere in the image, including the background. No readable names, dates, or inscriptions.`
+    return `A bouquet-of-flowers memorial ${setting}, photographed from an amateur documentary phone-photo distance. ${cameraDistancePrompt} ${cameraAnglePrompt} Fresh flowers are arranged as the main memorial, with unlit candles${bouquetKeepsake}. A small tasteful card or ribbon may be present, but any writing is too small or too far away to read. Frame the bouquet memorial and open surroundings only; no headstones, grave markers, cemetery stones, or stone monuments anywhere in the image, including the background. No readable names, dates, or inscriptions.`
   }
 
-  return `A classic upright stone headstone ${setting}, fully visible from a wide, amateur documentary phone-photo distance. ${cameraAnglePrompt} The headstone is engraved with exactly this inscription: "${inscription}". The inscription is carved into the stone in an elegant serif script, not printed or overlaid. Add a subtle carved flower design on the headstone beside the inscription: ${headstoneFlowerDesign}. Flowers, unlit candles, grass or path, and surrounding environment are visible.${keepsakeSentence}`
+  return `A classic upright stone headstone ${setting}, fully visible from an amateur documentary phone-photo distance. ${cameraDistancePrompt} ${cameraAnglePrompt} The headstone is engraved with exactly this inscription: "${inscription}". The inscription is carved into the stone in an elegant serif script, not printed or overlaid. Add a subtle carved flower design on the headstone beside the inscription: ${headstoneFlowerDesign}. Flowers, unlit candles, grass or path, and surrounding environment are visible.${keepsakeSentence}`
 }
 
 function buildMemorialContext(
