@@ -16,8 +16,8 @@ type SelfieGaze = 'looking at camera' | 'looking away' | 'eyes down' | 'looking 
 type SelfieSetting = 'home' | 'car' | 'outside' | 'office'
 type MotionStyle = 'ai_subtle' | 'kenburns' | 'static_hold'
 type LivePhotoOutputOrientation = 'vertical' | 'horizontal'
-type LivePhotoFramingMode = 'fill' | 'contain'
-type LivePhotoFramingChoice = 'vertical_fill' | 'landscape_contain'
+type LivePhotoFramingMode = 'fill' | 'fit' | 'blur' | 'contain'
+type LivePhotoFramingChoice = 'vertical_fill' | 'landscape_fit'
 type SubjectStatus = 'alive' | 'deceased'
 type SubjectGender = 'male' | 'female'
 type SubjectRelationship =
@@ -155,7 +155,7 @@ const LIVE_PHOTO_FRAMING_OPTIONS: Array<{ value: LivePhotoFramingChoice; label: 
     description: 'Best for 9:16 images. Crops if the source is horizontal.',
   },
   {
-    value: 'landscape_contain',
+    value: 'landscape_fit',
     label: 'Landscape photo - fit full photo',
     description: 'Best for horizontal images. Keeps the full image inside the iPhone frame.',
   },
@@ -192,17 +192,17 @@ function serializeSelectedSubjectIndexes(indexes: number[]): string {
 }
 
 function getDefaultLivePhotoFramingChoice(slide: NonNullable<Template['slides']>[number]): LivePhotoFramingChoice {
-  return slide.live_photo_framing_mode === 'contain' ? 'landscape_contain' : 'vertical_fill'
+  return slide.live_photo_framing_mode === 'fit' || slide.live_photo_framing_mode === 'contain' ? 'landscape_fit' : 'vertical_fill'
 }
 
 function getLivePhotoSettings(choice: LivePhotoFramingChoice): {
   output_orientation: LivePhotoOutputOrientation
-  framing_mode: LivePhotoFramingMode
+  framing_mode: Exclude<LivePhotoFramingMode, 'contain'>
 } {
-  if (choice === 'landscape_contain') {
+  if (choice === 'landscape_fit') {
     return {
       output_orientation: 'vertical',
-      framing_mode: 'contain',
+      framing_mode: 'fit',
     }
   }
 
