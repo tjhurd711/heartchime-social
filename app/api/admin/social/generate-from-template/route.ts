@@ -433,7 +433,7 @@ function buildMemorialSceneDescription(variables: TemplateVariables): string {
 
   if (sceneType === 'bouquet') {
     const bouquetKeepsake = keepsake ? `, with a personal keepsake beside them: ${keepsake}` : ''
-    return `A bouquet-of-flowers memorial ${setting}, photographed from a wide, amateur documentary phone-photo distance. ${cameraAnglePrompt} Fresh flowers are arranged as the main memorial, with unlit candles${bouquetKeepsake}. A small tasteful card or ribbon may be present, but any writing is too small or too far away to read. No headstone is visible unless it is far in the background. No readable names, dates, or inscriptions.`
+    return `A bouquet-of-flowers memorial ${setting}, photographed from a wide, amateur documentary phone-photo distance. ${cameraAnglePrompt} Fresh flowers are arranged as the main memorial, with unlit candles${bouquetKeepsake}. A small tasteful card or ribbon may be present, but any writing is too small or too far away to read. Frame the bouquet memorial and open surroundings only; no headstones, grave markers, cemetery stones, or stone monuments anywhere in the image, including the background. No readable names, dates, or inscriptions.`
   }
 
   return `A classic upright stone headstone ${setting}, fully visible from a wide, amateur documentary phone-photo distance. ${cameraAnglePrompt} The headstone is engraved with exactly this inscription: "${inscription}". The inscription is carved into the stone in an elegant serif script, not printed or overlaid. Add a subtle carved flower design on the headstone beside the inscription: ${headstoneFlowerDesign}. Flowers, unlit candles, grass or path, and surrounding environment are visible.${keepsakeSentence}`
