@@ -362,12 +362,48 @@ function buildMemorialAttendeesDescription(
   return `${pluralizePeople(selectedSubjects.length)} from the earlier photo are present at the memorial: ${attendeeDescriptions.join(', ')}. Their faces must not be visible; show backs turned, hands placing flowers, shoulders cropped below the face, silhouettes, or a blurred side/back view only`
 }
 
+function buildMemorialSceneDescription(variables: TemplateVariables): string {
+  const sceneType = getStringVariable(variables, 'memorial_scene_type') || 'headstone_classic'
+  const location = getStringVariable(variables, 'memorial_location') || 'cemetery'
+  const inscription = getStringVariable(variables, 'memorial_inscription') || 'Love you forever, Jimmy'
+  const urnColor = getStringVariable(variables, 'memorial_urn_color') || 'deep navy blue ceramic with subtle gold accents'
+  const keepsake = getStringVariable(variables, 'memorial_keepsake') || 'Chicago Cubs hat'
+
+  const locationDescription: Record<string, string> = {
+    cemetery: 'in a quiet cemetery',
+    backyard: 'in a peaceful backyard memorial area',
+    roadside: 'at a small roadside memorial',
+    park: 'in a quiet park memorial area',
+    home_garden: 'in a small home garden memorial area',
+  }
+  const setting = locationDescription[location] || location.replace(/_/g, ' ')
+
+  if (sceneType === 'headstone_rounded') {
+    return `A rounded-top stone headstone ${setting}, fully visible from a wide documentary phone-photo distance. The headstone is engraved with exactly this inscription: "${inscription}". The inscription is carved into the stone in an elegant serif script, not printed or overlaid. Add a subtle carved rose or lily relief near the inscription. Flowers, candles, grass or path, and surrounding environment are visible.`
+  }
+
+  if (sceneType === 'headstone_flat') {
+    return `A low flat grave marker or beveled stone memorial ${setting}, photographed from a wide documentary phone-photo distance. The marker is engraved with exactly this inscription: "${inscription}". The inscription is carved into the stone in an elegant serif script, not printed or overlaid. Add a subtle carved flower design on the stone. Flowers, candles, grass or path, and surrounding environment are visible.`
+  }
+
+  if (sceneType === 'urn') {
+    return `A respectful urn memorial ${setting}, photographed from a wide documentary phone-photo distance. The urn is ${urnColor}, placed on a small table, stone base, or memorial cloth with flowers and candles around it. Include a small tasteful card or plaque with exactly this inscription: "${inscription}" in elegant serif lettering. No other readable names or dates.`
+  }
+
+  if (sceneType === 'bouquet') {
+    return `A bouquet-of-flowers memorial ${setting}, photographed from a wide documentary phone-photo distance. Fresh flowers are arranged as the main memorial, with candles and a personal keepsake beside them: ${keepsake}. Include a small tasteful card or ribbon with exactly this inscription: "${inscription}" in elegant serif lettering. No headstone is visible unless it is far in the background. No other readable names or dates.`
+  }
+
+  return `A classic upright stone headstone ${setting}, fully visible from a wide documentary phone-photo distance. The headstone is engraved with exactly this inscription: "${inscription}". The inscription is carved into the stone in an elegant serif script, not printed or overlaid. Add a subtle carved flower design on the headstone, such as a small rose or lily relief beside the inscription. Flowers, candles, grass or path, and surrounding environment are visible.`
+}
+
 function buildMemorialContext(
   slide: PostTemplateSlide,
   variables: TemplateVariables
 ): Record<string, string> {
   return {
     memorial_attendees_description: buildMemorialAttendeesDescription(slide, variables),
+    memorial_scene_description: buildMemorialSceneDescription(variables),
   }
 }
 
