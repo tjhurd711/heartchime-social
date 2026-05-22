@@ -497,6 +497,7 @@ export async function POST(request: NextRequest) {
       persona_id,
       generate_live_photos = false,
       live_photo_slide_orders,
+      live_photo_settings,
     } = body
 
     if (!template_id) {
