@@ -15,6 +15,9 @@ type SelfieEmotion = 'neutral' | 'slight smile' | 'bittersweet' | 'sad' | 'hopef
 type SelfieGaze = 'looking at camera' | 'looking away' | 'eyes down' | 'looking off to side'
 type SelfieSetting = 'home' | 'car' | 'outside' | 'office'
 type MotionStyle = 'ai_subtle' | 'kenburns' | 'static_hold'
+type LivePhotoOutputOrientation = 'vertical' | 'horizontal'
+type LivePhotoFramingMode = 'fill' | 'contain'
+type LivePhotoFramingChoice = 'vertical_fill' | 'landscape_contain'
 type SubjectStatus = 'alive' | 'deceased'
 type SubjectGender = 'male' | 'female'
 type SubjectRelationship =
@@ -76,6 +79,8 @@ interface Template {
     motion_style?: MotionStyle
     live_photo_eligible?: boolean
     live_photo_default?: boolean
+    live_photo_output_orientation?: LivePhotoOutputOrientation
+    live_photo_framing_mode?: LivePhotoFramingMode
     subjects_config?: SubjectsConfig
   }>
 }
@@ -143,6 +148,19 @@ const SUBJECT_RELATIONSHIP_OPTIONS: SubjectRelationship[] = [
   'self',
 ]
 
+const LIVE_PHOTO_FRAMING_OPTIONS: Array<{ value: LivePhotoFramingChoice; label: string; description: string }> = [
+  {
+    value: 'vertical_fill',
+    label: 'Vertical photo - fill screen',
+    description: 'Best for 9:16 images. Crops if the source is horizontal.',
+  },
+  {
+    value: 'landscape_contain',
+    label: 'Landscape photo - fit full photo',
+    description: 'Best for horizontal images. Keeps the full image inside the iPhone frame.',
+  },
+]
+
 function formatEthnicityLabel(value: string): string {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
 }
@@ -173,6 +191,27 @@ function serializeSelectedSubjectIndexes(indexes: number[]): string {
   return [...new Set(indexes)].sort((a, b) => a - b).join(',')
 }
 
+function getDefaultLivePhotoFramingChoice(slide: NonNullable<Template['slides']>[number]): LivePhotoFramingChoice {
+  return slide.live_photo_framing_mode === 'contain' ? 'landscape_contain' : 'vertical_fill'
+}
+
+function getLivePhotoSettings(choice: LivePhotoFramingChoice): {
+  output_orientation: LivePhotoOutputOrientation
+  framing_mode: LivePhotoFramingMode
+} {
+  if (choice === 'landscape_contain') {
+    return {
+      output_orientation: 'vertical',
+      framing_mode: 'contain',
+    }
+  }
+
+  return {
+    output_orientation: 'vertical',
+    framing_mode: 'fill',
+  }
+}
+
 export default function GenerateFromTemplatePage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
@@ -190,6 +229,7 @@ export default function GenerateFromTemplatePage() {
   const [loadingPersonas, setLoadingPersonas] = useState(false)
   const [isGeneratingSelfie, setIsGeneratingSelfie] = useState(false)
   const [selectedLivePhotoSlideOrders, setSelectedLivePhotoSlideOrders] = useState<number[]>([])
+  const [livePhotoFramingChoices, setLivePhotoFramingChoices] = useState<Record<number, LivePhotoFramingChoice>>({})
   const [selfieAge, setSelfieAge] = useState(35)
   const [selfieGender, setSelfieGender] = useState<SelfieGender>('female')
   const [selfieEthnicity, setSelfieEthnicity] = useState<SelfieEthnicity>('white')
@@ -360,6 +400,16 @@ export default function GenerateFromTemplatePage() {
       .filter((order): order is number => typeof order === 'number')
 
     setSelectedLivePhotoSlideOrders(defaultLivePhotoOrders)
+    setLivePhotoFramingChoices((prev) => {
+      const next: Record<number, LivePhotoFramingChoice> = {}
+
+      for (const slide of livePhotoSlides) {
+        if (typeof slide.order !== 'number') continue
+        next[slide.order] = prev[slide.order] ?? getDefaultLivePhotoFramingChoice(slide)
+      }
+
+      return next
+    })
   }, [livePhotoSlides])
 
   useEffect(() => {
@@ -536,6 +586,11 @@ export default function GenerateFromTemplatePage() {
     setSubmitting(true)
     setError(null)
     try {
+      const livePhotoSettings = selectedLivePhotoSlideOrders.reduce<Record<string, ReturnType<typeof getLivePhotoSettings>>>((settings, order) => {
+        settings[String(order)] = getLivePhotoSettings(livePhotoFramingChoices[order] ?? 'vertical_fill')
+        return settings
+      }, {})
+
       const res = await fetch('/api/admin/social/generate-from-template', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -545,6 +600,7 @@ export default function GenerateFromTemplatePage() {
           persona_id: accountType === 'persona' ? selectedPersonaId : undefined,
           variables,
           live_photo_slide_orders: selectedLivePhotoSlideOrders,
+          live_photo_settings: livePhotoSettings,
         }),
       })
 
@@ -630,32 +686,76 @@ export default function GenerateFromTemplatePage() {
           )}
 
           {template.live_photo_supported && livePhotoSlides.length > 0 && (
-          <div className="border border-gray-700/60 rounded-xl p-4 space-y-2">
+          <div className="border border-gray-700/60 rounded-xl p-4 space-y-3">
             <h2 className="text-white font-semibold">Live Photo Slides</h2>
-            <p className="text-xs text-gray-400">Choose which slides should become Live Photos.</p>
-            {livePhotoSlides.map((slide, index) => (
-              <label
-                key={`${slide.order || index}-${slide.slide_type || 'slide'}`}
-                className="flex items-center gap-3 cursor-pointer text-sm text-gray-200"
-              >
-                <input
-                  type="checkbox"
-                  checked={typeof slide.order === 'number' && selectedLivePhotoSlideOrders.includes(slide.order)}
-                  onChange={(e) => {
-                    if (typeof slide.order !== 'number') return
-                    setSelectedLivePhotoSlideOrders((prev) => (
-                      e.target.checked
-                        ? [...new Set([...prev, slide.order as number])]
-                        : prev.filter((order) => order !== slide.order)
-                    ))
-                  }}
-                  className="w-4 h-4 rounded bg-gray-700 border-gray-600 text-amber-500 focus:ring-amber-500"
-                />
-                <span>
-                  Slide {slide.order || index + 1} — make this photo a Live Photo
-                </span>
-              </label>
-            ))}
+            <p className="text-xs text-gray-400">
+              Choose which slides should become Live Photos, then pick whether the source photo is vertical or landscape.
+            </p>
+            <div className="space-y-3">
+              {livePhotoSlides.map((slide, index) => {
+                const order = slide.order
+                const isSelected = typeof order === 'number' && selectedLivePhotoSlideOrders.includes(order)
+                const framingChoice = typeof order === 'number'
+                  ? livePhotoFramingChoices[order] ?? getDefaultLivePhotoFramingChoice(slide)
+                  : 'vertical_fill'
+                const selectedOption = LIVE_PHOTO_FRAMING_OPTIONS.find((option) => option.value === framingChoice)
+
+                return (
+                  <div
+                    key={`${slide.order || index}-${slide.slide_type || 'slide'}`}
+                    className="rounded-lg border border-gray-700/50 bg-gray-900/30 p-3 space-y-2"
+                  >
+                    <label className="flex items-center gap-3 cursor-pointer text-sm text-gray-200">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => {
+                          if (typeof order !== 'number') return
+                          setSelectedLivePhotoSlideOrders((prev) => (
+                            e.target.checked
+                              ? [...new Set([...prev, order])]
+                              : prev.filter((selectedOrder) => selectedOrder !== order)
+                          ))
+                          setLivePhotoFramingChoices((prev) => ({
+                            ...prev,
+                            [order]: prev[order] ?? getDefaultLivePhotoFramingChoice(slide),
+                          }))
+                        }}
+                        className="w-4 h-4 rounded bg-gray-700 border-gray-600 text-amber-500 focus:ring-amber-500"
+                      />
+                      <span>
+                        Slide {order || index + 1} — make this photo a Live Photo
+                      </span>
+                    </label>
+
+                    {isSelected && typeof order === 'number' && (
+                      <div className="pl-7 space-y-1">
+                        <label className="block text-xs text-gray-400">Source photo shape</label>
+                        <select
+                          value={framingChoice}
+                          onChange={(e) => {
+                            setLivePhotoFramingChoices((prev) => ({
+                              ...prev,
+                              [order]: e.target.value as LivePhotoFramingChoice,
+                            }))
+                          }}
+                          className="w-full max-w-md px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-amber-400"
+                        >
+                          {LIVE_PHOTO_FRAMING_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        {selectedOption && (
+                          <p className="text-xs text-gray-500">{selectedOption.description}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
           )}
 

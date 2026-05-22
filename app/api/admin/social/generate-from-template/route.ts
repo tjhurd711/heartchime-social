@@ -31,6 +31,8 @@ type LegacyEvergreenPostType = 'birthday' | 'passing_anniversary' | 'wedding_ann
 type CharacterKey = 'alive' | 'deceased'
 type PhotoSource = 'generated' | 'variable' | 'variable_or_generated'
 type MotionStyle = 'ai_subtle' | 'kenburns' | 'static_hold'
+type LivePhotoOutputOrientation = 'vertical' | 'horizontal'
+type LivePhotoFramingMode = 'fill' | 'contain'
 type SubjectStatus = 'alive' | 'deceased'
 type SubjectGender = 'male' | 'female'
 type SubjectRelationship =
@@ -73,6 +75,10 @@ interface GenerateFromTemplateRequest {
   persona_id?: string
   generate_live_photos?: boolean
   live_photo_slide_orders?: number[]
+  live_photo_settings?: Record<string, {
+    output_orientation?: LivePhotoOutputOrientation
+    framing_mode?: LivePhotoFramingMode
+  }>
 }
 
 interface PostTemplateSlide {
@@ -85,6 +91,8 @@ interface PostTemplateSlide {
   motion_style?: MotionStyle
   live_photo_eligible?: boolean
   live_photo_default?: boolean
+  live_photo_output_orientation?: LivePhotoOutputOrientation
+  live_photo_framing_mode?: LivePhotoFramingMode
   subjects_config?: SubjectsConfig
   characters?: CharacterKey[]
   photo_source?: PhotoSource
@@ -762,6 +770,9 @@ export async function POST(request: NextRequest) {
             continue
           }
 
+          const livePhotoSettings = live_photo_settings?.[String(slide.order)]
+          const outputOrientation = livePhotoSettings?.output_orientation ?? slide.live_photo_output_orientation ?? 'vertical'
+          const framingMode = livePhotoSettings?.framing_mode ?? slide.live_photo_framing_mode ?? 'fill'
           const interpolationContext = {
             ...variables,
             ...buildCharacterDescriptions(slide, variables),
@@ -788,8 +799,8 @@ export async function POST(request: NextRequest) {
                 image_url: staticSlideUrl,
                 motion_style: 'ai_subtle',
                 motion_hint: interpolatedMotionHint,
-                output_orientation: 'vertical',
-                framing_mode: 'fill',
+                output_orientation: outputOrientation,
+                framing_mode: framingMode,
               }),
             })
 
