@@ -160,6 +160,7 @@ const LIVE_PHOTO_FRAMING_OPTIONS: Array<{ value: LivePhotoFramingChoice; label: 
     description: 'Best for horizontal images. Keeps the full image inside the iPhone frame.',
   },
 ]
+const HEADSTONE_MEMORIAL_TYPES = new Set(['headstone_classic', 'headstone_rounded', 'headstone_flat'])
 
 function formatEthnicityLabel(value: string): string {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
@@ -210,6 +211,29 @@ function getLivePhotoSettings(choice: LivePhotoFramingChoice): {
     output_orientation: 'vertical',
     framing_mode: 'fill',
   }
+}
+
+function shouldShowVariableField(fieldName: string, variables: Record<string, TemplateVariableValue>): boolean {
+  const memorialSceneType = getStringVariable(variables, 'memorial_scene_type')
+  const isHeadstoneMemorial = HEADSTONE_MEMORIAL_TYPES.has(memorialSceneType)
+
+  if (fieldName === 'memorial_location') {
+    return !isHeadstoneMemorial
+  }
+
+  if (fieldName === 'memorial_headstone_flower_design') {
+    return isHeadstoneMemorial
+  }
+
+  if (fieldName === 'memorial_urn_color') {
+    return memorialSceneType === 'urn'
+  }
+
+  if (fieldName === 'memorial_keepsake') {
+    return memorialSceneType !== 'urn'
+  }
+
+  return true
 }
 
 export default function GenerateFromTemplatePage() {
@@ -304,8 +328,11 @@ export default function GenerateFromTemplatePage() {
     return fields
   }, [subjectSlides])
   const visibleVariablesSchema = useMemo(
-    () => variablesSchema.filter((field) => !subjectDrivenDemographicFields.has(field.name)),
-    [variablesSchema, subjectDrivenDemographicFields]
+    () => variablesSchema.filter((field) => (
+      !subjectDrivenDemographicFields.has(field.name) &&
+      shouldShowVariableField(field.name, variables)
+    )),
+    [variablesSchema, subjectDrivenDemographicFields, variables]
   )
   const livePhotoSlides = useMemo(
     () => (template?.slides || []).filter((slide) => slide.live_photo_eligible === true),
@@ -392,6 +419,14 @@ export default function GenerateFromTemplatePage() {
       setAccountType(accountTypeOptions[0] || 'business')
     }
   }, [accountTypeOptions, accountType])
+
+  useEffect(() => {
+    const memorialSceneType = getStringVariable(variables, 'memorial_scene_type')
+    if (!HEADSTONE_MEMORIAL_TYPES.has(memorialSceneType)) return
+    if (getStringVariable(variables, 'memorial_location') === 'cemetery') return
+
+    setVariables((prev) => ({ ...prev, memorial_location: 'cemetery' }))
+  }, [variables])
 
   useEffect(() => {
     const defaultLivePhotoOrders = livePhotoSlides
