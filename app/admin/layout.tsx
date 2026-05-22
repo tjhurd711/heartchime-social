@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import Image from 'next/image'
@@ -40,6 +40,10 @@ const socialNavigation: NavItem[] = [
     href: '/admin/social/templates',
   },
   {
+    name: '🔗 Match',
+    href: '/admin/social/match',
+  },
+  {
     name: '⚡ Live Now',
     href: '/admin/social/live-now',
   },
@@ -57,16 +61,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname()
   const router = useRouter()
   const [pin, setPin] = useState('')
-  const [pinAuthenticated, setPinAuthenticated] = useState(false)
+  const [pinAuthenticated, setPinAuthenticated] = useState(
+    () => typeof window !== 'undefined' && localStorage.getItem('admin_authenticated') === 'true'
+  )
   const [pinError, setPinError] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
-
-  useEffect(() => {
-    const storedAuth = localStorage.getItem('admin_authenticated')
-    if (storedAuth === 'true') {
-      setPinAuthenticated(true)
-    }
-  }, [])
 
   const handlePinSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

@@ -1931,8 +1931,10 @@ export type Database = {
           notified_at: string | null
           pipeline: string | null
           platform: string
+          platform_post_id: string | null
           post_type: string
           posted_at: string | null
+          published_url: string | null
           recipient_id: string | null
           saves: number | null
           scheduled_time: string | null
@@ -1978,8 +1980,10 @@ export type Database = {
           notified_at?: string | null
           pipeline?: string | null
           platform: string
+          platform_post_id?: string | null
           post_type: string
           posted_at?: string | null
+          published_url?: string | null
           recipient_id?: string | null
           saves?: number | null
           scheduled_time?: string | null
@@ -2025,8 +2029,10 @@ export type Database = {
           notified_at?: string | null
           pipeline?: string | null
           platform?: string
+          platform_post_id?: string | null
           post_type?: string
           posted_at?: string | null
+          published_url?: string | null
           recipient_id?: string | null
           saves?: number | null
           scheduled_time?: string | null
