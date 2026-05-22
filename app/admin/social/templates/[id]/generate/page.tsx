@@ -226,6 +226,10 @@ function shouldShowVariableField(fieldName: string, variables: Record<string, Te
     return isKnownMemorialScene
   }
 
+  if (fieldName === 'memorial_inscription') {
+    return isHeadstoneMemorial
+  }
+
   if (fieldName === 'memorial_headstone_flower_design') {
     return isHeadstoneMemorial
   }

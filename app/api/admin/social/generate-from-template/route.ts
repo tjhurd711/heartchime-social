@@ -299,6 +299,37 @@ function buildSubjectsContext(
   }
 }
 
+function buildPhotoBlurDescription(variables: TemplateVariables): string {
+  const rawLevel = Number.parseInt(getStringVariable(variables, 'photo_blur_level'), 10)
+  const level = Number.isNaN(rawLevel) ? 1 : Math.min(10, Math.max(1, rawLevel))
+
+  if (level <= 1) {
+    return 'Photo clarity: level 1 of 10. Clear amateur phone photo, no intentional blur.'
+  }
+
+  if (level <= 3) {
+    return `Photo blur/fuzziness: level ${level} of 10. Slight natural softness around people and edges, like a handheld phone photo with minor motion.`
+  }
+
+  if (level <= 6) {
+    return `Photo blur/fuzziness: level ${level} of 10. Noticeable handheld softness and mild motion blur around people, edges, and background, as if the photographer's hand moved slightly while taking the photo.`
+  }
+
+  if (level <= 8) {
+    return `Photo blur/fuzziness: level ${level} of 10. Strong handheld motion blur and general fuzziness, especially around people and object edges, while the scene remains understandable.`
+  }
+
+  return `Photo blur/fuzziness: level ${level} of 10. Very blurry shaky-hand phone photo, with heavy motion blur and soft smeared edges, but the main scene should still be recognizable.`
+}
+
+function applyPhotoGenerationStyle(prompt: string, variables: TemplateVariables): string {
+  if (!prompt.trim()) {
+    return prompt
+  }
+
+  return `${prompt}\n\n${buildPhotoBlurDescription(variables)}`
+}
+
 function parseEraStartYear(value: string): number | null {
   const match = value.match(/^(\d{4})s$/)
   return match ? Number(match[1]) : null
@@ -379,27 +410,33 @@ function buildMemorialSceneDescription(variables: TemplateVariables): string {
     home_garden: 'in a small home garden memorial area',
   }
   const setting = locationDescription[location] || location.replace(/_/g, ' ')
-  const cameraAngleDescription = `The photo is taken from a slight ${cameraAngle}-side angle instead of straight-on, with the memorial off-center like an imperfect phone snapshot.`
+  const cameraAngleDescription: Record<string, string> = {
+    left: 'The photo is taken from a clear left-side angle instead of straight-on, with the memorial off-center like an imperfect phone snapshot.',
+    'center left': 'The photo is taken from a subtle center-left angle, almost straight-on but slightly offset, with the memorial off-center like an imperfect phone snapshot.',
+    'center right': 'The photo is taken from a subtle center-right angle, almost straight-on but slightly offset, with the memorial off-center like an imperfect phone snapshot.',
+    right: 'The photo is taken from a clear right-side angle instead of straight-on, with the memorial off-center like an imperfect phone snapshot.',
+  }
+  const cameraAnglePrompt = cameraAngleDescription[cameraAngle] || cameraAngleDescription.left
   const keepsakeSentence = keepsake ? ` Include a personal keepsake placed near the memorial: ${keepsake}.` : ''
 
   if (sceneType === 'headstone_rounded') {
-    return `A rounded-top stone headstone ${setting}, fully visible from a wide, amateur documentary phone-photo distance. ${cameraAngleDescription} The headstone is engraved with exactly this inscription: "${inscription}". The inscription is carved into the stone in an elegant serif script, not printed or overlaid. Add a subtle carved flower design near the inscription: ${headstoneFlowerDesign}. Flowers, unlit candles, grass or path, and surrounding environment are visible.${keepsakeSentence}`
+    return `A rounded-top stone headstone ${setting}, fully visible from a wide, amateur documentary phone-photo distance. ${cameraAnglePrompt} The headstone is engraved with exactly this inscription: "${inscription}". The inscription is carved into the stone in an elegant serif script, not printed or overlaid. Add a subtle carved flower design near the inscription: ${headstoneFlowerDesign}. Flowers, unlit candles, grass or path, and surrounding environment are visible.${keepsakeSentence}`
   }
 
   if (sceneType === 'headstone_flat') {
-    return `A low flat grave marker or beveled stone memorial ${setting}, photographed from a wide, amateur documentary phone-photo distance. ${cameraAngleDescription} The marker is engraved with exactly this inscription: "${inscription}". The inscription is carved into the stone in an elegant serif script, not printed or overlaid. Add a subtle carved flower design on the stone: ${headstoneFlowerDesign}. Flowers, unlit candles, grass or path, and surrounding environment are visible.${keepsakeSentence}`
+    return `A low flat grave marker or beveled stone memorial ${setting}, photographed from a wide, amateur documentary phone-photo distance. ${cameraAnglePrompt} The marker is engraved with exactly this inscription: "${inscription}". The inscription is carved into the stone in an elegant serif script, not printed or overlaid. Add a subtle carved flower design on the stone: ${headstoneFlowerDesign}. Flowers, unlit candles, grass or path, and surrounding environment are visible.${keepsakeSentence}`
   }
 
   if (sceneType === 'urn') {
-    return `A respectful urn memorial ${setting}, photographed from a wide, amateur documentary phone-photo distance. ${cameraAngleDescription} The urn is ${urnColor}, placed on a small table, stone base, or memorial cloth with flowers and unlit candles around it. Include a small tasteful card or plaque with exactly this inscription: "${inscription}" in elegant serif lettering. No other readable names or dates.`
+    return `A respectful urn memorial ${setting}, photographed from a wide, amateur documentary phone-photo distance. ${cameraAnglePrompt} The urn is ${urnColor}, placed on a small table, stone base, or memorial cloth with flowers and unlit candles around it. Include a small tasteful card or plaque with exactly this inscription: "${inscription}" in elegant serif lettering. No other readable names or dates.`
   }
 
   if (sceneType === 'bouquet') {
     const bouquetKeepsake = keepsake ? `, with a personal keepsake beside them: ${keepsake}` : ''
-    return `A bouquet-of-flowers memorial ${setting}, photographed from a wide, amateur documentary phone-photo distance. ${cameraAngleDescription} Fresh flowers are arranged as the main memorial, with unlit candles${bouquetKeepsake}. Include a small tasteful card or ribbon with exactly this inscription: "${inscription}" in elegant serif lettering. No headstone is visible unless it is far in the background. No other readable names or dates.`
+    return `A bouquet-of-flowers memorial ${setting}, photographed from a wide, amateur documentary phone-photo distance. ${cameraAnglePrompt} Fresh flowers are arranged as the main memorial, with unlit candles${bouquetKeepsake}. Include a small tasteful card or ribbon with exactly this inscription: "${inscription}" in elegant serif lettering. No headstone is visible unless it is far in the background. No other readable names or dates.`
   }
 
-  return `A classic upright stone headstone ${setting}, fully visible from a wide, amateur documentary phone-photo distance. ${cameraAngleDescription} The headstone is engraved with exactly this inscription: "${inscription}". The inscription is carved into the stone in an elegant serif script, not printed or overlaid. Add a subtle carved flower design on the headstone beside the inscription: ${headstoneFlowerDesign}. Flowers, unlit candles, grass or path, and surrounding environment are visible.${keepsakeSentence}`
+  return `A classic upright stone headstone ${setting}, fully visible from a wide, amateur documentary phone-photo distance. ${cameraAnglePrompt} The headstone is engraved with exactly this inscription: "${inscription}". The inscription is carved into the stone in an elegant serif script, not printed or overlaid. Add a subtle carved flower design on the headstone beside the inscription: ${headstoneFlowerDesign}. Flowers, unlit candles, grass or path, and surrounding environment are visible.${keepsakeSentence}`
 }
 
 function buildMemorialContext(
@@ -681,7 +718,7 @@ export async function POST(request: NextRequest) {
             variables
           )
           if (cardPhotoPrompt) {
-            evergreenCardPhotoUrl = await generateAndUploadPhoto(cardPhotoPrompt)
+            evergreenCardPhotoUrl = await generateAndUploadPhoto(applyPhotoGenerationStyle(cardPhotoPrompt, variables))
           }
         }
 
@@ -754,9 +791,9 @@ export async function POST(request: NextRequest) {
       } else if (slide.photo_source === 'variable_or_generated') {
         const photoVariableName = resolvePhotoVariableName(slide)
         const variablePhoto = photoVariableName ? getStringRecordValue(interpolationContext, photoVariableName) : null
-        baseImageUrl = variablePhoto || await generateAndUploadPhoto(interpolatedPrompt)
+        baseImageUrl = variablePhoto || await generateAndUploadPhoto(applyPhotoGenerationStyle(interpolatedPrompt, variables))
       } else {
-        baseImageUrl = await generateAndUploadPhoto(interpolatedPrompt)
+        baseImageUrl = await generateAndUploadPhoto(applyPhotoGenerationStyle(interpolatedPrompt, variables))
       }
 
       if (!baseImageUrl) {
