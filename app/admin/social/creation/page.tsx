@@ -16,7 +16,7 @@ interface TrendRow {
   explanation: string
   sound_name: string | null
   sound_url: string | null
-  caption_lines: string[]
+  caption_lines: string[] | null
   default_slide_count: number
   memorial_default: boolean
 }
@@ -107,6 +107,8 @@ export default function CreationPage() {
   const [memorialKeepsake, setMemorialKeepsake] = useState('')
 
   const [submitting, setSubmitting] = useState(false)
+  const [savingCaptions, setSavingCaptions] = useState(false)
+  const [saveCaptionsMessage, setSaveCaptionsMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const selectedTrend = useMemo(
@@ -125,6 +127,10 @@ export default function CreationPage() {
   const nonMemorialSlideOrders = useMemo(
     () => activeSlideOrders.filter((order) => order !== 5),
     [activeSlideOrders]
+  )
+  const captionFieldOrders = useMemo(
+    () => Array.from({ length: slideCount }, (_item, index) => index + 1),
+    [slideCount]
   )
 
   useEffect(() => {
@@ -155,13 +161,15 @@ export default function CreationPage() {
   useEffect(() => {
     if (!selectedTrend) return
 
-    setSlideCount(Math.max(2, Math.min(4, selectedTrend.default_slide_count || 4)))
+    const nextSlideCount = Math.max(2, Math.min(4, selectedTrend.default_slide_count || 4))
+    setSlideCount(nextSlideCount)
     setIncludeMemorialSlide(Boolean(selectedTrend.memorial_default))
     setSoundName(selectedTrend.sound_name || '')
     setSoundUrl(selectedTrend.sound_url || '')
+    setSaveCaptionsMessage(null)
 
     const nextNotes: Record<number, string> = {}
-    for (let order = 1; order <= 5; order += 1) {
+    for (let order = 1; order <= nextSlideCount; order += 1) {
       nextNotes[order] = selectedTrend.caption_lines?.[order - 1] || ''
     }
     setNoteLinesByOrder(nextNotes)
@@ -246,13 +254,7 @@ export default function CreationPage() {
 
     setSubmitting(true)
     try {
-      const noteLines = [
-        noteLinesByOrder[1] || '',
-        noteLinesByOrder[2] || '',
-        noteLinesByOrder[3] || '',
-        noteLinesByOrder[4] || '',
-        noteLinesByOrder[5] || '',
-      ]
+      const noteLines = captionFieldOrders.map((order) => noteLinesByOrder[order] || '')
 
       const response = await fetch('/api/admin/social/generate-creation', {
         method: 'POST',
@@ -297,6 +299,43 @@ export default function CreationPage() {
       setError(err instanceof Error ? err.message : 'Failed to generate post')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleSaveCaptionsToTrend = async () => {
+    if (!selectedTrendId) {
+      setError('Please pick a trend before saving captions.')
+      return
+    }
+
+    setSavingCaptions(true)
+    setSaveCaptionsMessage(null)
+    setError(null)
+    try {
+      const captionLines = captionFieldOrders.map((order) => noteLinesByOrder[order] || '')
+      const response = await fetch('/api/admin/social/trends', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selectedTrendId,
+          caption_lines: captionLines,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to save captions')
+      }
+
+      setTrends((prev) => prev.map((trend) => (
+        trend.id === selectedTrendId
+          ? { ...trend, caption_lines: captionLines }
+          : trend
+      )))
+      setSaveCaptionsMessage('Saved captions to this trend.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save captions')
+    } finally {
+      setSavingCaptions(false)
     }
   }
 
@@ -634,11 +673,21 @@ export default function CreationPage() {
           </section>
 
           <section className="rounded-2xl border border-[#7a6738]/60 bg-[#111a2f] p-5 space-y-4">
-            <h2 className={`${cormorant.className} text-2xl text-[#f1d386]`}>5) Note / Caption Lines</h2>
-            {activeSlideOrders.map((order) => (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className={`${cormorant.className} text-2xl text-[#f1d386]`}>5) Note / Caption Lines</h2>
+              <button
+                type="button"
+                onClick={() => void handleSaveCaptionsToTrend()}
+                disabled={savingCaptions || !selectedTrendId}
+                className="px-3 py-1.5 rounded-lg border border-[#f1d386]/70 text-[#f1d386] hover:bg-[#f1d386]/10 disabled:opacity-60"
+              >
+                {savingCaptions ? 'Saving...' : 'Save captions to this trend'}
+              </button>
+            </div>
+            {captionFieldOrders.map((order) => (
               <div key={order}>
                 <label className="block text-sm text-[#d7c9a6] mb-1">
-                  Slide {order}{order === 5 ? ' (memorial)' : ''}
+                  Slide {order}
                 </label>
                 <input
                   type="text"
@@ -648,6 +697,9 @@ export default function CreationPage() {
                 />
               </div>
             ))}
+            {saveCaptionsMessage && (
+              <p className="text-sm text-green-300">{saveCaptionsMessage}</p>
+            )}
           </section>
 
           {error && <p className="text-red-300 text-sm">{error}</p>}

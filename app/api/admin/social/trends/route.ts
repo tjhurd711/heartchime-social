@@ -76,3 +76,65 @@ export async function GET() {
     )
   }
 }
+
+interface UpdateTrendCaptionsRequest {
+  id?: string
+  caption_lines?: unknown
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json() as UpdateTrendCaptionsRequest
+    const trendId = typeof body.id === 'string' ? body.id : ''
+    const rawCaptionLines = Array.isArray(body.caption_lines) ? body.caption_lines : null
+
+    if (!trendId) {
+      return NextResponse.json(
+        { error: 'Missing required field: id' },
+        { status: 400 }
+      )
+    }
+
+    if (!rawCaptionLines) {
+      return NextResponse.json(
+        { error: 'caption_lines must be an array of strings' },
+        { status: 400 }
+      )
+    }
+
+    const captionLines = rawCaptionLines.map((value) => (typeof value === 'string' ? value : ''))
+
+    const { data, error } = await supabase
+      .from('social_trends')
+      .update({ caption_lines: captionLines })
+      .eq('id', trendId)
+      .select('*')
+      .single()
+
+    if (error || !data) {
+      return NextResponse.json(
+        {
+          error: 'Failed to update trend captions',
+          details: error?.message || 'Unknown error',
+          pg: error ? {
+            code: error.code ?? null,
+            hint: error.hint ?? null,
+            details: error.details ?? null,
+          } : null,
+        },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json(data)
+  } catch (error) {
+    console.error('[admin/social/trends] caption PATCH failed', error)
+    return NextResponse.json(
+      {
+        error: 'Failed to update trend captions',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 }
+    )
+  }
+}
