@@ -365,22 +365,22 @@ function buildPhotoBlurDescription(variables: TemplateVariables): string {
   const level = Number.isNaN(rawLevel) ? 1 : Math.min(10, Math.max(1, rawLevel))
 
   if (level <= 1) {
-    return 'Photo clarity: level 1 of 10. Clear amateur phone photo, no intentional blur.'
+    return 'Blur level 1/10: mostly clear handheld phone photo, no intentional blur.'
   }
 
   if (level <= 3) {
-    return `Photo blur/fuzziness: level ${level} of 10. Slight natural softness around people and edges, like a handheld phone photo with minor motion.`
+    return `Blur level ${level}/10: slight natural softness and minor motion blur on edges.`
   }
 
   if (level <= 6) {
-    return `Photo blur/fuzziness: level ${level} of 10. Noticeable handheld softness and mild motion blur around people, edges, and background, as if the photographer's hand moved slightly while taking the photo.`
+    return `Blur level ${level}/10: noticeable handheld blur across people and background; avoid tack-sharp edges.`
   }
 
   if (level <= 8) {
-    return `Photo blur/fuzziness: level ${level} of 10. Strong handheld motion blur and general fuzziness, especially around people and object edges, while the scene remains understandable.`
+    return `Blur level ${level}/10: strong handheld motion blur and soft focus; faces and clothing should not look crisp.`
   }
 
-  return `Photo blur/fuzziness: level ${level} of 10. Very blurry shaky-hand phone photo, with heavy motion blur and soft smeared edges, but the main scene should still be recognizable.`
+  return `Blur level ${level}/10: very strong blur with heavy motion smear; scene still recognizable but no sharp facial detail.`
 }
 
 function buildPhotoFilterDescription(variables: TemplateVariables): string {
@@ -391,15 +391,15 @@ function buildPhotoFilterDescription(variables: TemplateVariables): string {
   }
 
   if (filterStyle === 'black_and_white') {
-    return 'Photo filter/look: black and white monochrome. No color tones, balanced contrast, realistic grayscale phone-photo aesthetic.'
+    return 'Filter: black-and-white monochrome with realistic grayscale contrast.'
   }
 
   if (filterStyle === 'old_timey') {
-    return 'Photo filter/look: old-timey vintage film. Soft sepia cast, gentle grain, slightly faded highlights, and subtle analog age/wear while keeping faces realistic.'
+    return 'Filter: old-timey vintage film with soft sepia, gentle grain, and lightly faded highlights.'
   }
 
   if (filterStyle === 'faded_film') {
-    return 'Photo filter/look: faded film memory. Slightly desaturated colors, warm highlights, soft contrast, and mild film grain.'
+    return 'Filter: faded film look with mild desaturation, warm highlights, soft contrast, and light grain.'
   }
 
   return ''
@@ -418,7 +418,8 @@ function applyPhotoGenerationStyle(prompt: string, variables: TemplateVariables)
     return prompt
   }
 
-  return `${prompt}\n\n${styleParts.join('\n')}`
+  const styleLock = `STYLE LOCK (high priority): ${styleParts.join(' ')}`
+  return `${styleLock}\n\n${prompt}`
 }
 
 function parseEraStartYear(value: string): number | null {
