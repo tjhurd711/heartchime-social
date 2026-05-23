@@ -40,6 +40,10 @@ const socialNavigation: NavItem[] = [
     href: '/admin/social/templates',
   },
   {
+    name: '✨ Creation',
+    href: '/admin/social/creation',
+  },
+  {
     name: '🔗 Match',
     href: '/admin/social/match',
   },
