@@ -146,6 +146,13 @@ interface PostTemplateRow {
   is_active: boolean
 }
 
+const SAILOR_SONG_HARDCODED_NOTE_LINES = {
+  note_line_1: 'I sleep so I can see you',
+  note_line_2: "'cause I hate to wait so long",
+  note_line_3: 'I sleep so that I can see you',
+  note_line_4: 'and I hate to wait so long',
+} as const
+
 const TRANSPARENT_PX =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlAbQAAAABJRU5ErkJggg=='
 const CURRENT_YEAR = 2026
@@ -631,6 +638,9 @@ export async function POST(request: NextRequest) {
     }
 
     const typedTemplate = template as PostTemplateRow
+    if (typedTemplate.name === 'Sailor Song') {
+      Object.assign(variables, SAILOR_SONG_HARDCODED_NOTE_LINES)
+    }
 
     if (typedTemplate.account_type !== 'both' && typedTemplate.account_type !== account_type) {
       return NextResponse.json(
