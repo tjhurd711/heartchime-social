@@ -709,7 +709,9 @@ function normalizeLivePhotoDownloadUrl(downloadUrl: string, livePhotoServerUrl: 
 
   try {
     const parsedDownloadUrl = new URL(downloadUrl)
-    return `${baseUrl}${parsedDownloadUrl.pathname}${parsedDownloadUrl.search}${parsedDownloadUrl.hash}`
+    // If the live-photo service already returns an absolute URL, keep it unchanged.
+    // Rewriting hosts can break signed download URLs that point to external storage.
+    return parsedDownloadUrl.toString()
   } catch {
     const path = downloadUrl.startsWith('/') ? downloadUrl : `/${downloadUrl}`
     return `${baseUrl}${path}`
