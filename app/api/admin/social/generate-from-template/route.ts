@@ -713,7 +713,16 @@ function normalizeLivePhotoDownloadUrl(downloadUrl: string, livePhotoServerUrl: 
     // This avoids host reachability issues when the server returns a Tailscale/public hostname
     // but LIVE_PHOTO_SERVER_URL is localhost/LAN (or vice versa).
     if (parsedDownloadUrl.pathname.startsWith('/download/')) {
-      return `${baseUrl}${parsedDownloadUrl.pathname}${parsedDownloadUrl.search}${parsedDownloadUrl.hash}`
+      const preferredLoopbackBase = process.env.LIVE_PHOTO_SERVER_LOOPBACK_URL?.replace(/\/$/, '')
+      if (preferredLoopbackBase) {
+        return `${preferredLoopbackBase}${parsedDownloadUrl.pathname}${parsedDownloadUrl.search}${parsedDownloadUrl.hash}`
+      }
+
+      // Default to loopback for self-download URLs so the Mac server can always
+      // fetch its own generated assets without depending on external DNS/Tailscale resolution.
+      const baseParsed = new URL(baseUrl)
+      const loopbackBase = `${baseParsed.protocol}//127.0.0.1${baseParsed.port ? `:${baseParsed.port}` : ''}`
+      return `${loopbackBase}${parsedDownloadUrl.pathname}${parsedDownloadUrl.search}${parsedDownloadUrl.hash}`
     }
 
     // For non-download absolute URLs (e.g. signed external storage links), keep unchanged.
