@@ -251,6 +251,14 @@ function shouldShowVariableField(fieldName: string, variables: Record<string, Te
   return true
 }
 
+function formatTemplateOptionLabel(fieldName: string, option: string): string {
+  if (fieldName === 'memorial_location' && option === 'shelf') {
+    return 'Shelf / mantel'
+  }
+
+  return option
+}
+
 export default function GenerateFromTemplatePage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
@@ -1115,7 +1123,7 @@ export default function GenerateFromTemplatePage() {
                 <option value="">Select...</option>
                 {(field.options || []).map((option) => (
                   <option key={option} value={option}>
-                    {option}
+                    {formatTemplateOptionLabel(field.name, option)}
                   </option>
                 ))}
               </select>

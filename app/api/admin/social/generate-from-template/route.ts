@@ -409,6 +409,7 @@ function buildMemorialSceneDescription(variables: TemplateVariables): string {
     roadside: 'at a small roadside memorial',
     park: 'in a quiet park memorial area',
     home_garden: 'in a small home garden memorial area',
+    shelf: 'displayed on a shelf or mantelpiece indoors, with soft home lighting',
   }
   const setting = locationDescription[location] || location.replace(/_/g, ' ')
   const cameraAngleDescription: Record<string, string> = {
@@ -436,7 +437,11 @@ function buildMemorialSceneDescription(variables: TemplateVariables): string {
   }
 
   if (sceneType === 'urn') {
-    return `A respectful urn memorial ${setting}, photographed from an amateur documentary phone-photo distance. ${cameraDistancePrompt} ${cameraAnglePrompt} The urn is ${urnColor}, placed on a small table, stone base, or memorial cloth with flowers and unlit candles around it. A small tasteful card or plaque may be present, but any writing is too small or too far away to read. No readable names, dates, or inscriptions.`
+    const urnPlacement = location === 'shelf'
+      ? 'placed on a shelf or mantelpiece with flowers, a framed photo, and unlit candles nearby'
+      : 'placed on a small table, stone base, or memorial cloth with flowers and unlit candles around it'
+
+    return `A respectful urn memorial ${setting}, photographed from an amateur documentary phone-photo distance. ${cameraDistancePrompt} ${cameraAnglePrompt} The urn is ${urnColor}, ${urnPlacement}. A small tasteful card or plaque may be present, but any writing is too small or too far away to read. No readable names, dates, or inscriptions.`
   }
 
   if (sceneType === 'bouquet') {
