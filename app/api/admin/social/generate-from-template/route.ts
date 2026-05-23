@@ -422,6 +422,25 @@ function applyPhotoGenerationStyle(prompt: string, variables: TemplateVariables)
   return `${styleLock}\n\n${prompt}`
 }
 
+function applyTemplateOrientationConstraint(
+  prompt: string,
+  templateName: string,
+  slide: PostTemplateSlide
+): string {
+  if (!prompt.trim()) {
+    return prompt
+  }
+
+  if (templateName !== 'Sailor Song' || slide.slide_type !== 'ai_generated') {
+    return prompt
+  }
+
+  const orientationLock =
+    'ORIENTATION LOCK (high priority): Generate a horizontal landscape image (not vertical portrait). Use wide landscape composition with a broad scene.'
+
+  return `${orientationLock}\n\n${prompt}`
+}
+
 function parseEraStartYear(value: string): number | null {
   const match = value.match(/^(\d{4})s$/)
   return match ? Number(match[1]) : null
@@ -833,6 +852,7 @@ export async function POST(request: NextRequest) {
         interpolatedPrompt = legacyEvergreenPrompt
       }
       interpolatedPrompt = applyPeopleCountConstraint(interpolatedPrompt, slide, activeSlidesByOrder, variables)
+      interpolatedPrompt = applyTemplateOrientationConstraint(interpolatedPrompt, typedTemplate.name, slide)
       const noteOverlayText = resolveNoteOverlayText(slide, interpolationContext)
 
       if (slide.slide_type === 'heartchime_card') {
