@@ -26,6 +26,18 @@ interface S3ReferenceBrowseItem {
   presignedUrl: string
 }
 
+interface TemplateReferencePhoto {
+  order?: number
+  url: string
+  label?: string
+}
+
+interface TemplateReferenceRow {
+  name: string
+  reference_video_url?: string | null
+  reference_photos?: TemplateReferencePhoto[] | null
+}
+
 const cormorant = Cormorant_Garamond({
   subsets: ['latin'],
   weight: ['500', '600', '700'],
@@ -74,10 +86,29 @@ function getDefaultScene(order: number): string {
   return SCENE_OPTIONS[(order - 2) % SCENE_OPTIONS.length]
 }
 
+function isVideoUrl(url: string | null | undefined): boolean {
+  if (!url) return false
+  return /\.(mp4|webm|mov)(\?.*)?$/i.test(url)
+}
+
+function toRenderableUrl(rawUrl: string): string {
+  if (/\.amazonaws\.com\//i.test(rawUrl)) {
+    return `/api/admin/social/templates/reference-media?url=${encodeURIComponent(rawUrl)}`
+  }
+  return rawUrl
+}
+
+function resolveTrendTemplateName(trendName: string): string | null {
+  if (trendName === 'Sailor Song') return 'Sailor Song'
+  if (trendName === 'Purple Rain') return 'Purple Rain (Before / After)'
+  return null
+}
+
 export default function CreationPage() {
   const router = useRouter()
 
   const [trends, setTrends] = useState<TrendRow[]>([])
+  const [templateReferences, setTemplateReferences] = useState<TemplateReferenceRow[]>([])
   const [loadingTrends, setLoadingTrends] = useState(true)
   const [selectedTrendId, setSelectedTrendId] = useState<string>('')
 
@@ -99,7 +130,6 @@ export default function CreationPage() {
 
   const [addSpecificDetail, setAddSpecificDetail] = useState(false)
   const [detailText, setDetailText] = useState('')
-  const [referencePreviousIdentity, setReferencePreviousIdentity] = useState(false)
 
   const [sceneValues, setSceneValues] = useState<Record<number, string>>({
     2: getDefaultScene(2),
@@ -129,6 +159,34 @@ export default function CreationPage() {
     () => trends.find((trend) => trend.id === selectedTrendId) || null,
     [trends, selectedTrendId]
   )
+  const selectedTrendExample = useMemo(() => {
+    if (!selectedTrend) return null
+
+    const templateName = resolveTrendTemplateName(selectedTrend.name)
+    if (!templateName) return null
+
+    const template = templateReferences.find((row) => row.name === templateName)
+    if (!template) return null
+
+    const photos = Array.isArray(template.reference_photos) ? [...template.reference_photos] : []
+    photos.sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+
+    if (photos.length > 0 && photos[0]?.url) {
+      return {
+        url: photos[0].url,
+        label: photos[0].label || `${selectedTrend.name} example`,
+      }
+    }
+
+    if (template.reference_video_url) {
+      return {
+        url: template.reference_video_url,
+        label: `${selectedTrend.name} example`,
+      }
+    }
+
+    return null
+  }, [selectedTrend, templateReferences])
 
   const activeSlideOrders = useMemo(() => {
     const orders = [1, 2]
@@ -162,6 +220,12 @@ export default function CreationPage() {
         if (rows.length > 0) {
           setSelectedTrendId(rows[0].id)
         }
+
+        const templatesResponse = await fetch('/api/admin/social/templates')
+        const templatesData = await templatesResponse.json()
+        if (templatesResponse.ok && Array.isArray(templatesData)) {
+          setTemplateReferences(templatesData as TemplateReferenceRow[])
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load trends')
       } finally {
@@ -180,7 +244,6 @@ export default function CreationPage() {
     setIncludeMemorialSlide(Boolean(selectedTrend.memorial_default))
     setSoundName(selectedTrend.sound_name || '')
     setSoundUrl(selectedTrend.sound_url || '')
-    setReferencePreviousIdentity(false)
     setSaveCaptionsMessage(null)
 
     const savedCaptionLines = Array.isArray(selectedTrend.caption_lines)
@@ -285,7 +348,6 @@ export default function CreationPage() {
           slide_count: slideCount,
           include_memorial: includeMemorialSlide,
           reference_pick_key: referencePickKey,
-          identity_mode: referencePreviousIdentity ? 'previous' : 'anchor',
           add_detail: addSpecificDetail,
           detail_text: addSpecificDetail ? detailText : '',
           scene_2: sceneValues[2] || '',
@@ -382,27 +444,53 @@ export default function CreationPage() {
         <form onSubmit={handleSubmit} className="space-y-6">
           <section className="rounded-2xl border border-[#7a6738]/60 bg-[#111a2f] p-5 space-y-4">
             <h2 className={`${cormorant.className} text-2xl text-[#f1d386]`}>1) Trend Picker</h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              {trends.map((trend) => {
-                const selected = trend.id === selectedTrendId
-                return (
-                  <button
-                    key={trend.id}
-                    type="button"
-                    onClick={() => setSelectedTrendId(trend.id)}
-                    className={`text-left rounded-xl border p-4 transition-all ${
-                      selected
-                        ? 'border-[#f1d386] bg-[#1c2743] ring-1 ring-[#f1d386]/60'
-                        : 'border-[#3d4a68] bg-[#15213a] hover:border-[#8d7b4f]'
-                    }`}
-                  >
-                    <p className={`${cormorant.className} text-2xl text-[#f7f1df]`}>{trend.name}</p>
-                    <p className="text-sm text-[#d7c9a6] mt-1">{trend.explanation}</p>
-                    <p className="text-xs text-[#b9aa87] mt-2">Sound: {trend.sound_name || '—'}</p>
-                  </button>
-                )
-              })}
+            <div className="max-w-xl">
+              <label className="text-sm text-[#d7c9a6] block mb-1">Trend</label>
+              <select
+                value={selectedTrendId}
+                onChange={(e) => setSelectedTrendId(e.target.value)}
+                className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+              >
+                {trends.map((trend) => (
+                  <option key={trend.id} value={trend.id}>
+                    {trend.name}
+                  </option>
+                ))}
+              </select>
             </div>
+
+            {selectedTrend && (
+              <div className="rounded-xl border border-[#3d4a68] bg-[#15213a] p-4 space-y-2">
+                <p className={`${cormorant.className} text-2xl text-[#f7f1df]`}>{selectedTrend.name}</p>
+                <p className="text-sm text-[#d7c9a6]">{selectedTrend.explanation}</p>
+                <p className="text-xs text-[#b9aa87]">Sound: {selectedTrend.sound_name || '—'}</p>
+
+                {selectedTrendExample && (
+                  <div className="pt-2">
+                    <p className="text-xs uppercase tracking-wide text-[#f1d386] mb-2">Example</p>
+                    <div className="w-40 h-64 rounded-lg overflow-hidden border border-[#3d4a68] bg-black">
+                      {isVideoUrl(selectedTrendExample.url) ? (
+                        <video
+                          src={toRenderableUrl(selectedTrendExample.url)}
+                          autoPlay
+                          muted
+                          loop
+                          playsInline
+                          controls
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <img
+                          src={toRenderableUrl(selectedTrendExample.url)}
+                          alt={selectedTrendExample.label}
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
@@ -498,17 +586,8 @@ export default function CreationPage() {
           <section className="rounded-2xl border border-[#7a6738]/60 bg-[#111a2f] p-5 space-y-4">
             <h2 className={`${cormorant.className} text-2xl text-[#f1d386]`}>3) Slides 2..N (Identity Anchor)</h2>
             <p className="text-sm text-[#d7c9a6]">
-              Keep the same people while changing scene. Add extra slides when needed.
+              Keep the same exact people from Slide 1 while changing scene. Add extra slides when needed.
             </p>
-            <label className="flex items-center gap-2 text-sm text-[#f7f1df]">
-              <input
-                type="checkbox"
-                checked={referencePreviousIdentity}
-                onChange={(e) => setReferencePreviousIdentity(e.target.checked)}
-                className="h-4 w-4 accent-[#f1d386]"
-              />
-              Reference previous slide for exact same people (strongest continuity)
-            </label>
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
