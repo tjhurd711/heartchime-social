@@ -759,6 +759,11 @@ async function toLivePhotoSourceImageUrl(imageUrl: string): Promise<string> {
   )
 }
 
+function isLivePhotoContentPolicyViolation(status: number, responseText: string): boolean {
+  if (status !== 422) return false
+  return /content policy violation/i.test(responseText)
+}
+
 function overlayStyleToTextStyle(style: OverlayStyle | undefined): TextStyle {
   if (style === 'lyric') return 'lyric'
   return style === 'caption' ? 'clean' : 'snapchat'
@@ -1147,6 +1152,7 @@ export async function POST(request: NextRequest) {
           const livePhotoSettings = live_photo_settings?.[String(slide.order)]
           const outputOrientation = livePhotoSettings?.output_orientation ?? slide.live_photo_output_orientation ?? 'vertical'
           const framingMode = livePhotoSettings?.framing_mode ?? slide.live_photo_framing_mode ?? 'fill'
+          const requestedMotionStyle = slide.motion_style ?? 'ai_subtle'
           const interpolationContext = {
             ...variables,
             ...buildCharacterDescriptions(slide, variables),
@@ -1163,29 +1169,52 @@ export async function POST(request: NextRequest) {
           }
 
           try {
-            const response = await fetch(`${livePhotoServerUrl.replace(/\/$/, '')}/generate`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${livePhotoApiKey}`,
-              },
-              body: JSON.stringify({
-                image_url: livePhotoSourceImageUrl,
-                motion_style: 'ai_subtle',
-                motion_hint: interpolatedMotionHint,
-                output_orientation: outputOrientation,
-                framing_mode: framingMode,
-              }),
-            })
+            const callLivePhotoGenerate = async (motionStyle: MotionStyle, motionHint: string) => {
+              const response = await fetch(`${livePhotoServerUrl.replace(/\/$/, '')}/generate`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${livePhotoApiKey}`,
+                },
+                body: JSON.stringify({
+                  image_url: livePhotoSourceImageUrl,
+                  motion_style: motionStyle,
+                  motion_hint: motionHint,
+                  output_orientation: outputOrientation,
+                  framing_mode: framingMode,
+                }),
+              })
 
-            if (!response.ok) {
               const responseText = await response.text()
+              let data: any = null
+              try {
+                data = responseText ? JSON.parse(responseText) : null
+              } catch {
+                data = null
+              }
+
+              return { response, responseText, data }
+            }
+
+            let attempt = await callLivePhotoGenerate(requestedMotionStyle, interpolatedMotionHint)
+
+            if (!attempt.response.ok && isLivePhotoContentPolicyViolation(attempt.response.status, attempt.responseText)) {
+              const fallbackHint = 'Slow gentle zoom across the still image. No generated scene motion.'
+              attempt = await callLivePhotoGenerate('kenburns', fallbackHint)
+              if (attempt.response.ok) {
+                livePhotoWarnings.push(
+                  `Slide ${slide.order} hit Veo content policy; used kenburns fallback instead.`
+                )
+              }
+            }
+
+            if (!attempt.response.ok) {
               throw new Error(
-                `Live photo server returned ${response.status}: ${responseText || 'No response body'}`
+                `Live photo server returned ${attempt.response.status}: ${attempt.responseText || 'No response body'}`
               )
             }
 
-            const data = await response.json()
+            const data = attempt.data
             if (!data?.pvt_url || !data?.photo_url || !data?.video_url) {
               throw new Error('Live photo response missing pvt_url, photo_url, or video_url')
             }
