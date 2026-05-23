@@ -709,8 +709,14 @@ function normalizeLivePhotoDownloadUrl(downloadUrl: string, livePhotoServerUrl: 
 
   try {
     const parsedDownloadUrl = new URL(downloadUrl)
-    // If the live-photo service already returns an absolute URL, keep it unchanged.
-    // Rewriting hosts can break signed download URLs that point to external storage.
+    // For live-photo server-local download endpoints, force the configured base host.
+    // This avoids host reachability issues when the server returns a Tailscale/public hostname
+    // but LIVE_PHOTO_SERVER_URL is localhost/LAN (or vice versa).
+    if (parsedDownloadUrl.pathname.startsWith('/download/')) {
+      return `${baseUrl}${parsedDownloadUrl.pathname}${parsedDownloadUrl.search}${parsedDownloadUrl.hash}`
+    }
+
+    // For non-download absolute URLs (e.g. signed external storage links), keep unchanged.
     return parsedDownloadUrl.toString()
   } catch {
     const path = downloadUrl.startsWith('/') ? downloadUrl : `/${downloadUrl}`
