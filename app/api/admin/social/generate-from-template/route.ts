@@ -351,11 +351,13 @@ function applyPeopleCountConstraint(
   const compositionConstraint = expectedCount === 1
     ? 'Framing/composition lock: Keep the person at an everyday medium or medium-wide distance, not a tight close-up. Subject should occupy roughly 20-35% of the frame height, with clear surrounding environment visible.'
     : 'Framing/composition lock: Keep people naturally spaced (not shoulder-to-shoulder pressed together) with visible space between bodies. Use a medium-wide candid phone framing so the group occupies only about 25-45% of the frame, with lots of environment around them.'
-  const wardrobeConstraint = expectedCount >= 2
-    ? 'Wardrobe lock: Each person must wear visually distinct clothing (different colors/styles/pieces). Avoid matching outfits, uniforms, or near-identical tops.'
-    : 'Wardrobe lock: Clothing should look natural and everyday, with non-formal styling.'
+  const referenceOutfitConstraint = slide.photo_source === 'reference_anchor'
+    ? 'Make sure the person or people are in different outfits than the ones in the original photo.'
+    : ''
+  const constraintParts = [strictConstraint, compositionConstraint, referenceOutfitConstraint]
+    .filter((part) => part.trim().length > 0)
 
-  return `${prompt}\n\n${strictConstraint}\n${compositionConstraint}\n${wardrobeConstraint}`
+  return `${prompt}\n\n${constraintParts.join('\n')}`
 }
 
 function buildPhotoBlurDescription(variables: TemplateVariables): string {
