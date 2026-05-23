@@ -13,7 +13,7 @@ interface GenerateCreationRequest {
   reference_pick_key: string
   add_detail: boolean
   detail_text?: string
-  scene_2: string
+  scene_2?: string
   scene_3?: string
   scene_4?: string
   note_lines: string[]
@@ -47,13 +47,18 @@ export async function POST(request: NextRequest) {
     if (!body.reference_pick_key?.trim()) {
       return NextResponse.json({ error: 'Missing required field: reference_pick_key' }, { status: 400 })
     }
-    if (!body.scene_2?.trim()) {
+    const slideCount = Math.max(1, Math.min(4, Math.floor(body.slide_count || 4)))
+    const includeSlide2 = slideCount >= 2
+    const includeSlide3 = slideCount >= 3
+    const includeSlide4 = slideCount >= 4
+
+    if (includeSlide2 && !body.scene_2?.trim()) {
       return NextResponse.json({ error: 'Missing required field: scene_2' }, { status: 400 })
     }
 
-    const slideCount = Math.max(2, Math.min(4, Math.floor(body.slide_count || 4)))
-    const includeSlide3 = slideCount >= 3
-    const includeSlide4 = slideCount >= 4
+    const scene2 = body.scene_2?.trim() || 'Walking on the beach at sunset'
+    const scene3 = body.scene_3?.trim() || scene2
+    const scene4 = body.scene_4?.trim() || scene3 || scene2
 
     const { data: trend, error: trendError } = await supabase
       .from('social_trends')
@@ -88,9 +93,10 @@ export async function POST(request: NextRequest) {
     const variables: Record<string, string> = {
       slide_1_reference_pick_key: body.reference_pick_key.trim(),
       slide_1_extra_detail_clause: detailClause,
-      scene_2: body.scene_2.trim(),
-      scene_3: body.scene_3?.trim() || body.scene_2.trim(),
-      scene_4: body.scene_4?.trim() || body.scene_3?.trim() || body.scene_2.trim(),
+      scene_2: scene2,
+      scene_3: scene3,
+      scene_4: scene4,
+      include_slide_2: includeSlide2 ? 'yes' : 'no',
       include_slide_3: includeSlide3 ? 'yes' : 'no',
       include_slide_4: includeSlide4 ? 'yes' : 'no',
       include_memorial_slide: body.include_memorial ? 'yes' : 'no',

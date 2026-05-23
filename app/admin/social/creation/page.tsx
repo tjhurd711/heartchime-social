@@ -239,7 +239,7 @@ export default function CreationPage() {
   useEffect(() => {
     if (!selectedTrend) return
 
-    const nextSlideCount = Math.max(2, Math.min(4, selectedTrend.default_slide_count || 4))
+    const nextSlideCount = Math.max(1, Math.min(4, selectedTrend.default_slide_count || 4))
     setSlideCount(nextSlideCount)
     setIncludeMemorialSlide(Boolean(selectedTrend.memorial_default))
     setSoundName(selectedTrend.sound_name || '')
@@ -331,7 +331,7 @@ export default function CreationPage() {
       setError('Please choose a reference photo from S3.')
       return
     }
-    if (!sceneValues[2]?.trim()) {
+    if (slideCount >= 2 && !sceneValues[2]?.trim()) {
       setError('Slide 2 needs a scene.')
       return
     }
@@ -599,8 +599,8 @@ export default function CreationPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setSlideCount((prev) => Math.max(2, prev - 1))}
-                disabled={slideCount <= 2}
+                onClick={() => setSlideCount((prev) => Math.max(1, prev - 1))}
+                disabled={slideCount <= 1}
                 className="px-3 py-1.5 rounded-lg border border-[#3d4a68] text-[#d7c9a6] hover:bg-[#2e3b5e] disabled:opacity-60"
               >
                 - Remove last slide
