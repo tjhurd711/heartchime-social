@@ -171,6 +171,12 @@ const SAILOR_SONG_HARDCODED_NOTE_LINES = {
   note_line_3: 'I sleep so that I can see you',
   note_line_4: 'and I hate to wait so long',
 } as const
+const PHOTO_FILTER_OPTIONS = [
+  { value: 'none', label: 'None (natural)' },
+  { value: 'black_and_white', label: 'Black & White' },
+  { value: 'old_timey', label: 'Old-Timey Vintage' },
+  { value: 'faded_film', label: 'Faded Film' },
+] as const
 
 function formatEthnicityLabel(value: string): string {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
@@ -403,6 +409,10 @@ export default function GenerateFromTemplatePage() {
   )
   const livePhotoSlides = useMemo(
     () => (template?.slides || []).filter((slide) => slide.live_photo_eligible === true),
+    [template]
+  )
+  const hasAiGeneratedSlides = useMemo(
+    () => (template?.slides || []).some((slide) => slide.slide_type === 'ai_generated'),
     [template]
   )
   const memorialAttendeeSlides = useMemo(
@@ -876,6 +886,26 @@ export default function GenerateFromTemplatePage() {
               })}
             </div>
           </div>
+          )}
+
+          {hasAiGeneratedSlides && (
+            <div className="border border-gray-700/60 rounded-xl p-4 space-y-2">
+              <h2 className="text-white font-semibold">Photo Filter / Look</h2>
+              <p className="text-xs text-gray-400">
+                Optional global look applied to AI-generated slides.
+              </p>
+              <select
+                value={getStringVariable(variables, 'photo_filter_style') || 'none'}
+                onChange={(e) => setVariables((prev) => ({ ...prev, photo_filter_style: e.target.value }))}
+                className="w-full max-w-md px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-amber-400"
+              >
+                {PHOTO_FILTER_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           )}
 
           {subjectSlides.map((slide) => {

@@ -375,12 +375,42 @@ function buildPhotoBlurDescription(variables: TemplateVariables): string {
   return `Photo blur/fuzziness: level ${level} of 10. Very blurry shaky-hand phone photo, with heavy motion blur and soft smeared edges, but the main scene should still be recognizable.`
 }
 
+function buildPhotoFilterDescription(variables: TemplateVariables): string {
+  const filterStyle = getStringVariable(variables, 'photo_filter_style')
+
+  if (!filterStyle || filterStyle === 'none') {
+    return ''
+  }
+
+  if (filterStyle === 'black_and_white') {
+    return 'Photo filter/look: black and white monochrome. No color tones, balanced contrast, realistic grayscale phone-photo aesthetic.'
+  }
+
+  if (filterStyle === 'old_timey') {
+    return 'Photo filter/look: old-timey vintage film. Soft sepia cast, gentle grain, slightly faded highlights, and subtle analog age/wear while keeping faces realistic.'
+  }
+
+  if (filterStyle === 'faded_film') {
+    return 'Photo filter/look: faded film memory. Slightly desaturated colors, warm highlights, soft contrast, and mild film grain.'
+  }
+
+  return ''
+}
+
 function applyPhotoGenerationStyle(prompt: string, variables: TemplateVariables): string {
   if (!prompt.trim()) {
     return prompt
   }
 
-  return `${prompt}\n\n${buildPhotoBlurDescription(variables)}`
+  const filterDescription = buildPhotoFilterDescription(variables)
+  const blurDescription = buildPhotoBlurDescription(variables)
+  const styleParts = [filterDescription, blurDescription].filter((part) => part.trim().length > 0)
+
+  if (styleParts.length === 0) {
+    return prompt
+  }
+
+  return `${prompt}\n\n${styleParts.join('\n')}`
 }
 
 function parseEraStartYear(value: string): number | null {

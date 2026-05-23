@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
@@ -69,6 +69,12 @@ interface SendToDeviceResult {
   imported_count?: number;
   note_created?: boolean;
   mac_response?: unknown;
+}
+
+interface SlidePreviewItem {
+  order: number;
+  url: string;
+  slide_type?: string;
 }
 
 const POST_TYPE_LABELS: Record<string, { label: string; emoji: string }> = {
@@ -490,7 +496,35 @@ export default function SocialPostDetailPage() {
     }))
     .filter((entry) => entry.pvt_zip_url)
     .sort((a, b) => a.order - b.order);
-  const hasDeviceSlideBundle = Array.isArray(post.slide_bundle) && post.slide_bundle.length > 0;
+  const previewSlides = useMemo(() => {
+    const slideBundle = Array.isArray(post.slide_bundle)
+      ? (post.slide_bundle as Array<{ order?: number; url?: string; image_url?: string; slide_type?: string }>)
+      : [];
+    const bundleSlides: SlidePreviewItem[] = slideBundle
+      .map((slide, index) => ({
+        order: typeof slide.order === 'number' ? slide.order : index + 1,
+        url: slide.url || slide.image_url || '',
+        slide_type: slide.slide_type,
+      }))
+      .filter((slide) => slide.url);
+
+    if (bundleSlides.length > 0) {
+      return bundleSlides.sort((a, b) => a.order - b.order);
+    }
+
+    return [
+      post.slide_1_url ? { order: 1, url: post.slide_1_url } : null,
+      post.slide_2_url ? { order: 2, url: post.slide_2_url } : null,
+    ].filter((slide): slide is SlidePreviewItem => !!slide);
+  }, [post.slide_bundle, post.slide_1_url, post.slide_2_url]);
+  const hasDeviceSlideBundle = previewSlides.length > 0;
+  const safeActiveSlide = Math.max(0, Math.min(activeSlide, Math.max(0, previewSlides.length - 1)));
+
+  useEffect(() => {
+    if (activeSlide > Math.max(0, previewSlides.length - 1)) {
+      setActiveSlide(0);
+    }
+  }, [activeSlide, previewSlides.length]);
 
   return (
     <div className="min-h-screen bg-gray-900 p-6">
@@ -905,94 +939,56 @@ export default function SocialPostDetailPage() {
                 style={{ aspectRatio: '9/16' }}
               >
                 {/* Slide Content */}
-                {activeSlide === 0 ? (
-                  /* Slide 1 */
+                {previewSlides[safeActiveSlide]?.url ? (
+                  <img
+                    src={previewSlides[safeActiveSlide].url}
+                    alt={`Slide ${previewSlides[safeActiveSlide].order}`}
+                    className="w-full h-full object-cover"
+                  />
+                ) : post.recipient?.image_clean_url ? (
                   <div className="relative w-full h-full">
-                    {post.slide_1_url ? (
-                      <img
-                        src={post.slide_1_url}
-                        alt="Slide 1"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : post.recipient?.image_clean_url ? (
-                      <>
-                        <img
-                          src={post.recipient.image_clean_url}
-                          alt="Recipient"
-                          className="w-full h-full object-cover"
-                        />
-                        {/* Hook Text Overlay */}
-                        {post.hook_text && (
-                          <div className="absolute inset-0 flex items-center justify-center p-4">
-                            {post.text_style === 'snapchat' ? (
-                              <p 
-                                className="text-white text-xl font-bold text-center"
-                                style={{
-                                  textShadow: '-2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000',
-                                  transform: 'rotate(-3deg)',
-                                }}
-                              >
-                                {post.hook_text}
-                              </p>
-                            ) : (
-                              <div className="bg-black/50 px-4 py-2 rounded-lg">
-                                <p className="text-white text-lg font-semibold text-center uppercase tracking-wider">
-                                  {post.hook_text}
-                                </p>
-                              </div>
-                            )}
+                    <img
+                      src={post.recipient.image_clean_url}
+                      alt="Recipient"
+                      className="w-full h-full object-cover"
+                    />
+                    {post.hook_text && (
+                      <div className="absolute inset-0 flex items-center justify-center p-4">
+                        {post.text_style === 'snapchat' ? (
+                          <p
+                            className="text-white text-xl font-bold text-center"
+                            style={{
+                              textShadow: '-2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000',
+                              transform: 'rotate(-3deg)',
+                            }}
+                          >
+                            {post.hook_text}
+                          </p>
+                        ) : (
+                          <div className="bg-black/50 px-4 py-2 rounded-lg">
+                            <p className="text-white text-lg font-semibold text-center uppercase tracking-wider">
+                              {post.hook_text}
+                            </p>
                           </div>
                         )}
-                      </>
-                    ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-gray-800">
-                        <span className="text-4xl mb-2">📷</span>
-                        <p className="text-gray-500 text-sm">Not yet generated</p>
                       </div>
                     )}
                   </div>
                 ) : (
-                  /* Slide 2 */
-                  <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-b from-gray-800 to-gray-900 p-4">
-                    {post.slide_2_url ? (
-                      <img
-                        src={post.slide_2_url}
-                        alt="Slide 2"
-                        className="w-full h-full object-contain"
-                      />
-                    ) : (
-                      <>
-                        <div className="w-full max-w-[200px] bg-white rounded-xl p-3 shadow-lg">
-                          <div className="flex items-center gap-2 mb-2">
-                            <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
-                              <span className="text-orange-500 text-lg">💛</span>
-                            </div>
-                            <div>
-                              <p className="text-gray-800 text-xs font-semibold">HeartChime</p>
-                              <p className="text-gray-500 text-[10px]">A moment to remember</p>
-                            </div>
-                          </div>
-                          <div className="aspect-square bg-gray-200 rounded-lg mb-2 flex items-center justify-center">
-                            <span className="text-gray-400 text-xs">📷</span>
-                          </div>
-                          <p className="text-gray-600 text-[10px] text-center">
-                            {post.deceased_nickname || post.deceased_relationship || 'Your loved one'}
-                          </p>
-                        </div>
-                        <p className="text-gray-500 text-xs mt-4">Not yet generated</p>
-                      </>
-                    )}
+                  <div className="w-full h-full flex flex-col items-center justify-center bg-gray-800">
+                    <span className="text-4xl mb-2">📷</span>
+                    <p className="text-gray-500 text-sm">Not yet generated</p>
                   </div>
                 )}
 
                 {/* Carousel Dots */}
                 <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5">
-                  {[0, 1].map((idx) => (
+                  {previewSlides.map((slide, idx) => (
                     <button
-                      key={idx}
+                      key={`${slide.order}-${idx}`}
                       onClick={() => setActiveSlide(idx)}
                       className={`w-2 h-2 rounded-full transition-all ${
-                        activeSlide === idx
+                        safeActiveSlide === idx
                           ? 'bg-white w-4'
                           : 'bg-white/50 hover:bg-white/70'
                       }`}
@@ -1003,49 +999,38 @@ export default function SocialPostDetailPage() {
             </div>
 
             {/* Slide Labels */}
-            <div className="flex justify-center gap-4 mt-3">
-              <button
-                onClick={() => setActiveSlide(0)}
-                className={`text-xs ${activeSlide === 0 ? 'text-orange-400' : 'text-gray-500'}`}
-              >
-                Slide 1: Recipient
-              </button>
-              <button
-                onClick={() => setActiveSlide(1)}
-                className={`text-xs ${activeSlide === 1 ? 'text-orange-400' : 'text-gray-500'}`}
-              >
-                Slide 2: HeartChime
-              </button>
+            <div className="flex flex-wrap justify-center gap-2 mt-3">
+              {previewSlides.map((slide, idx) => (
+                <button
+                  key={`label-${slide.order}-${idx}`}
+                  onClick={() => setActiveSlide(idx)}
+                  className={`text-xs px-2 py-1 rounded ${
+                    safeActiveSlide === idx ? 'text-orange-300 bg-orange-500/10' : 'text-gray-500'
+                  }`}
+                >
+                  Slide {slide.order}
+                </button>
+              ))}
             </div>
           </div>
 
           {/* Download Buttons */}
-          {(post.slide_1_url || post.slide_2_url) && (
+          {previewSlides.length > 0 && (
             <div className="bg-gray-800 rounded-xl p-4">
               <h3 className="text-sm font-medium text-white mb-3">Download Slides</h3>
-              <div className="flex gap-2">
-                {post.slide_1_url && (
+              <div className="flex flex-wrap gap-2">
+                {previewSlides.map((slide) => (
                   <a
-                    href={post.slide_1_url}
+                    key={`download-${slide.order}-${slide.url}`}
+                    href={slide.url}
                     download
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex-1 py-2 px-3 bg-gray-700 text-white text-sm rounded-lg hover:bg-gray-600 transition-colors text-center"
                   >
-                    📥 Slide 1
+                    📥 Slide {slide.order}
                   </a>
-                )}
-                {post.slide_2_url && (
-                  <a
-                    href={post.slide_2_url}
-                    download
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 py-2 px-3 bg-gray-700 text-white text-sm rounded-lg hover:bg-gray-600 transition-colors text-center"
-                  >
-                    📥 Slide 2
-                  </a>
-                )}
+                ))}
               </div>
             </div>
           )}
