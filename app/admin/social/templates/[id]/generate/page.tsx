@@ -20,6 +20,7 @@ type MotionStyle = 'ai_subtle' | 'kenburns' | 'static_hold'
 type LivePhotoOutputOrientation = 'vertical' | 'horizontal'
 type LivePhotoFramingMode = 'fill' | 'fit' | 'blur' | 'contain'
 type LivePhotoFramingChoice = 'vertical_fill' | 'landscape_fit'
+type PhotoSource = 'generated' | 'variable' | 'variable_or_generated' | 'reference_previous' | 'reference_anchor' | 'reference_live_pick'
 type SubjectStatus = 'alive' | 'deceased'
 type SubjectGender = 'male' | 'female'
 type SubjectRelationship =
@@ -77,6 +78,7 @@ interface Template {
   slides?: Array<{
     order?: number
     slide_type?: string
+    photo_source?: PhotoSource
     prompt_recipe?: string
     characters?: CharacterKey[]
     motion_hint?: string
@@ -87,6 +89,11 @@ interface Template {
     live_photo_framing_mode?: LivePhotoFramingMode
     subjects_config?: SubjectsConfig
   }>
+}
+
+interface S3ReferenceBrowseItem {
+  key: string
+  presignedUrl: string
 }
 
 interface PersonaOption {
@@ -177,6 +184,7 @@ const PHOTO_FILTER_OPTIONS = [
   { value: 'old_timey', label: 'Old-Timey Vintage' },
   { value: 'faded_film', label: 'Faded Film' },
 ] as const
+const LIVE_REFERENCE_DEFAULT_PREFIX = 'uploads/'
 
 function formatEthnicityLabel(value: string): string {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
@@ -323,6 +331,15 @@ export default function GenerateFromTemplatePage() {
   const [selfieGaze, setSelfieGaze] = useState<SelfieGaze>('looking at camera')
   const [selfieSetting, setSelfieSetting] = useState<SelfieSetting>('home')
   const [customSelectEnabled, setCustomSelectEnabled] = useState<Record<string, boolean>>({})
+  const [showReferencePicker, setShowReferencePicker] = useState(false)
+  const [referencePrefixInput, setReferencePrefixInput] = useState(LIVE_REFERENCE_DEFAULT_PREFIX)
+  const [referenceActivePrefix, setReferenceActivePrefix] = useState(LIVE_REFERENCE_DEFAULT_PREFIX)
+  const [referenceItems, setReferenceItems] = useState<S3ReferenceBrowseItem[]>([])
+  const [referenceNextToken, setReferenceNextToken] = useState<string | null>(null)
+  const [referenceLoading, setReferenceLoading] = useState(false)
+  const [referenceLoadingMore, setReferenceLoadingMore] = useState(false)
+  const [referencePickerError, setReferencePickerError] = useState<string | null>(null)
+  const [selectedReferencePreviewUrl, setSelectedReferencePreviewUrl] = useState<string | null>(null)
 
   useEffect(() => {
     const loadTemplate = async () => {
@@ -415,6 +432,15 @@ export default function GenerateFromTemplatePage() {
     () => (template?.slides || []).some((slide) => slide.slide_type === 'ai_generated'),
     [template]
   )
+  const liveReferenceSlide = useMemo(
+    () => (template?.slides || []).find((slide) => slide.photo_source === 'reference_live_pick'),
+    [template]
+  )
+  const liveReferenceSlideOrder = typeof liveReferenceSlide?.order === 'number' ? liveReferenceSlide.order : null
+  const liveReferenceVariableName = liveReferenceSlideOrder ? `slide_${liveReferenceSlideOrder}_reference_pick_key` : null
+  const selectedReferencePickKey = liveReferenceVariableName
+    ? getStringVariable(variables, liveReferenceVariableName)
+    : ''
   const memorialAttendeeSlides = useMemo(
     () => (template?.slides || []).filter((slide) => (
       typeof slide.order === 'number' &&
@@ -466,6 +492,7 @@ export default function GenerateFromTemplatePage() {
   const requiredMissing = useMemo(() => {
     return visibleVariablesSchema.some((field) => field.required && !getResolvedVariableValue(field.name).trim())
   }, [visibleVariablesSchema, variables, isSailorSongTemplate])
+  const liveReferenceMissing = liveReferenceSlideOrder !== null && !selectedReferencePickKey
   const subjectsMissing = useMemo(() => {
     return subjectSlides.some((slide) => {
       const config = slide.subjects_config
@@ -655,6 +682,47 @@ export default function GenerateFromTemplatePage() {
     }
   }
 
+  const browseReferencePrefix = async (prefix: string, token?: string, append = false) => {
+    if (!append) {
+      setReferenceLoading(true)
+    } else {
+      setReferenceLoadingMore(true)
+    }
+    setReferencePickerError(null)
+    try {
+      const params = new URLSearchParams({ prefix })
+      if (token) {
+        params.set('token', token)
+      }
+      const res = await fetch(`/api/admin/social/reference-browse?${params.toString()}`)
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data?.error || data?.details || 'Failed to browse S3 reference photos')
+      }
+
+      const nextItems: S3ReferenceBrowseItem[] = Array.isArray(data.items) ? data.items : []
+      setReferenceActivePrefix(prefix)
+      setReferencePrefixInput(prefix)
+      setReferenceItems((prev) => (append ? [...prev, ...nextItems] : nextItems))
+      setReferenceNextToken(typeof data.nextToken === 'string' ? data.nextToken : null)
+    } catch (err) {
+      setReferencePickerError(err instanceof Error ? err.message : 'Failed to browse S3 reference photos')
+    } finally {
+      setReferenceLoading(false)
+      setReferenceLoadingMore(false)
+    }
+  }
+
+  const handleSelectReference = (item: S3ReferenceBrowseItem) => {
+    if (!liveReferenceVariableName) return
+    setVariables((prev) => ({
+      ...prev,
+      [liveReferenceVariableName]: item.key,
+    }))
+    setSelectedReferencePreviewUrl(item.presignedUrl)
+    setShowReferencePicker(false)
+  }
+
   const setSubjectCount = (slideOrder: number, count: number) => {
     const key = `slide_${slideOrder}_subjects`
     setVariables((prev) => {
@@ -707,7 +775,7 @@ export default function GenerateFromTemplatePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!template) return
-    if (requiredMissing || selfieMissing || personaMissing || demographicsMissing || subjectsMissing) {
+    if (requiredMissing || selfieMissing || personaMissing || demographicsMissing || subjectsMissing || liveReferenceMissing) {
       setError('Please fill all required fields.')
       return
     }
@@ -905,6 +973,39 @@ export default function GenerateFromTemplatePage() {
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {liveReferenceSlideOrder !== null && liveReferenceVariableName && (
+            <div className="border border-gray-700/60 rounded-xl p-4 space-y-3">
+              <h2 className="text-white font-semibold">Slide {liveReferenceSlideOrder} Style Reference (S3)</h2>
+              <p className="text-xs text-gray-400">
+                Pick one S3 photo as a style/composition reference only. Generation will mint a fresh presigned URL at runtime from the stored S3 key.
+              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowReferencePicker(true)
+                    void browseReferencePrefix(referenceActivePrefix || LIVE_REFERENCE_DEFAULT_PREFIX)
+                  }}
+                  className="px-4 py-2 rounded-lg bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 transition-colors"
+                >
+                  Pick reference photo from S3
+                </button>
+                {selectedReferencePickKey ? (
+                  <span className="text-xs text-green-300 break-all">Selected key: {selectedReferencePickKey}</span>
+                ) : (
+                  <span className="text-xs text-gray-500">No S3 reference selected yet.</span>
+                )}
+              </div>
+              {selectedReferencePreviewUrl && (
+                <img
+                  src={selectedReferencePreviewUrl}
+                  alt="Selected S3 style reference"
+                  className="w-32 h-32 object-cover rounded-lg border border-gray-700"
+                />
+              )}
             </div>
           )}
 
@@ -1310,9 +1411,9 @@ export default function GenerateFromTemplatePage() {
 
           <button
             type="submit"
-            disabled={submitting || requiredMissing || selfieMissing || personaMissing || demographicsMissing || subjectsMissing || !!uploadingField}
+            disabled={submitting || requiredMissing || selfieMissing || personaMissing || demographicsMissing || subjectsMissing || liveReferenceMissing || !!uploadingField}
             className={`w-full py-3 rounded-xl font-semibold transition-all ${
-              !submitting && !requiredMissing && !demographicsMissing && !subjectsMissing && !uploadingField
+              !submitting && !requiredMissing && !demographicsMissing && !subjectsMissing && !liveReferenceMissing && !uploadingField
                 ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-400 hover:to-orange-400'
                 : 'bg-gray-700 text-gray-500 cursor-not-allowed'
             }`}
@@ -1330,6 +1431,97 @@ export default function GenerateFromTemplatePage() {
           />
         </div>
       </div>
+
+      {showReferencePicker && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm p-4 md:p-6 overflow-y-auto">
+          <div className="max-w-6xl mx-auto bg-[#1a1f2e] border border-gray-700 rounded-2xl p-4 md:p-6 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className="text-white text-lg font-semibold">Pick S3 Style Reference</h3>
+                <p className="text-xs text-gray-400 mt-1">
+                  Source bucket: order-by-age-uploads. Stored value is key-only.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowReferencePicker(false)}
+                className="px-3 py-1.5 rounded-lg bg-gray-700 text-gray-200 hover:bg-gray-600"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="flex flex-col md:flex-row gap-3">
+              <input
+                value={referencePrefixInput}
+                onChange={(e) => setReferencePrefixInput(e.target.value)}
+                placeholder="uploads/"
+                className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-amber-400"
+              />
+              <button
+                type="button"
+                onClick={() => void browseReferencePrefix(referencePrefixInput.trim() || LIVE_REFERENCE_DEFAULT_PREFIX)}
+                disabled={referenceLoading}
+                className="px-4 py-2 rounded-lg border border-amber-400/60 text-amber-300 hover:bg-amber-500/10 disabled:opacity-60"
+              >
+                {referenceLoading ? 'Loading...' : 'Browse'}
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-500">Current prefix: {referenceActivePrefix}</p>
+
+            {referencePickerError && (
+              <p className="text-sm text-red-300">{referencePickerError}</p>
+            )}
+
+            {referenceLoading ? (
+              <div className="text-sm text-gray-400 py-8 text-center">Loading S3 images...</div>
+            ) : referenceItems.length === 0 ? (
+              <div className="text-sm text-gray-400 py-8 text-center">No images found at this prefix.</div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                {referenceItems.map((item) => {
+                  const isSelected = item.key === selectedReferencePickKey
+                  return (
+                    <button
+                      type="button"
+                      key={item.key}
+                      onClick={() => handleSelectReference(item)}
+                      className={`relative rounded-lg overflow-hidden border text-left transition-all ${
+                        isSelected ? 'border-amber-400 ring-1 ring-amber-400' : 'border-gray-700 hover:border-amber-400/60'
+                      }`}
+                      title={item.key}
+                    >
+                      <img
+                        src={item.presignedUrl}
+                        alt={item.key}
+                        loading="lazy"
+                        className="w-full aspect-square object-cover bg-gray-900"
+                      />
+                      <div className="absolute inset-x-0 bottom-0 bg-black/70 px-2 py-1">
+                        <p className="text-[11px] text-gray-200 truncate">{item.key.split('/').pop()}</p>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {referenceNextToken && (
+              <div className="flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => void browseReferencePrefix(referenceActivePrefix, referenceNextToken, true)}
+                  disabled={referenceLoadingMore}
+                  className="px-4 py-2 rounded-lg border border-gray-500 text-gray-200 hover:bg-gray-700/50 disabled:opacity-60"
+                >
+                  {referenceLoadingMore ? 'Loading more...' : 'Load more'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

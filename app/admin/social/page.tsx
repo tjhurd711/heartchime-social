@@ -205,7 +205,7 @@ export default function SocialMediaCommandCenter() {
       </div>
 
       {/* Pipeline Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         {/* Evergreen */}
         <Link 
           href="/admin/social/evergreen"
@@ -299,6 +299,28 @@ export default function SocialMediaCommandCenter() {
           </div>
           <div className="mt-4 flex items-center text-blue-400 text-sm font-medium group-hover:translate-x-1 transition-transform">
             Manage Live Past →
+          </div>
+        </Link>
+
+        {/* Reference Bank */}
+        <Link
+          href="/admin/social/reference-bank"
+          className="bg-[#1a1f2e] rounded-2xl p-6 border border-gray-800/50 hover:border-amber-500/50 transition-all group"
+        >
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <span className="text-4xl">🖼️</span>
+              <h2 className="text-xl font-bold text-white mt-2">Reference Bank</h2>
+              <p className="text-gray-400 text-sm mt-1">Browse S3 uploads and save reusable references</p>
+            </div>
+          </div>
+          <div className="flex gap-4 text-sm">
+            <span className="text-gray-400">
+              <span className="text-amber-400 font-medium">Cross-bucket</span> picker
+            </span>
+          </div>
+          <div className="mt-4 flex items-center text-amber-300 text-sm font-medium group-hover:translate-x-1 transition-transform">
+            Open Reference Bank →
           </div>
         </Link>
       </div>

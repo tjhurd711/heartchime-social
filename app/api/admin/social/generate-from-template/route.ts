@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { GetObjectCommand } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { generateAndUploadPhoto } from '@/lib/geminiImageGen'
 import { renderAndUploadSocialCard } from '@/lib/socialCardRenderer'
 import { renderAndUploadSlide1, TextStyle } from '@/lib/socialSlide1Renderer'
 import { buildPhotoPrompt } from '@/lib/socialPhotoPrompt'
+import { s3Client } from '@/lib/s3'
 
 export const maxDuration = 300
 export const runtime = 'nodejs'
@@ -29,7 +32,13 @@ type SlideType =
   | 'before_after'
 type LegacyEvergreenPostType = 'birthday' | 'passing_anniversary' | 'wedding_anniversary' | 'user_birthday'
 type CharacterKey = 'alive' | 'deceased'
-type PhotoSource = 'generated' | 'variable' | 'variable_or_generated' | 'reference_previous' | 'reference_anchor'
+type PhotoSource =
+  | 'generated'
+  | 'variable'
+  | 'variable_or_generated'
+  | 'reference_previous'
+  | 'reference_anchor'
+  | 'reference_live_pick'
 type MotionStyle = 'ai_subtle' | 'kenburns' | 'static_hold'
 type LivePhotoOutputOrientation = 'vertical' | 'horizontal'
 type LivePhotoFramingMode = 'fill' | 'fit' | 'blur'
@@ -130,6 +139,7 @@ interface SlideBundleItem {
   slide_type: SlideType
   overlay_text: string | null
   live_photo_pvt_url?: string
+  reference_pick_key?: string
 }
 
 interface PostTemplateRow {
@@ -156,6 +166,8 @@ const SAILOR_SONG_HARDCODED_NOTE_LINES = {
 const TRANSPARENT_PX =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlAbQAAAABJRU5ErkJggg=='
 const CURRENT_YEAR = 2026
+const LIVE_REFERENCE_SOURCE_BUCKET = 'order-by-age-uploads'
+const LIVE_REFERENCE_ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.heic', '.webp'])
 
 const SUBJECT_RELATIONSHIPS = new Set<SubjectRelationship>([
   'father',
@@ -631,6 +643,37 @@ function isSlideEnabled(slide: PostTemplateSlide, variables: TemplateVariables):
   return getStringVariable(variables, enabledVariable) === expectedValue
 }
 
+function getLiveReferenceVariableName(slideOrder: number): string {
+  return `slide_${slideOrder}_reference_pick_key`
+}
+
+function isAllowedLiveReferenceKey(key: string): boolean {
+  const lower = key.toLowerCase()
+  return Array.from(LIVE_REFERENCE_ALLOWED_EXTENSIONS).some((extension) => lower.endsWith(extension))
+}
+
+async function mintLiveReferencePresignedUrl(key: string): Promise<string> {
+  return getSignedUrl(
+    s3Client,
+    new GetObjectCommand({
+      Bucket: LIVE_REFERENCE_SOURCE_BUCKET,
+      Key: key,
+    }),
+    { expiresIn: 60 * 60 }
+  )
+}
+
+function applyStyleOnlyReferencePrompt(prompt: string): string {
+  const styleOnlyConstraint =
+    'STYLE-ONLY REFERENCE LOCK (highest priority): Create NEW, DIFFERENT people who do not resemble or match anyone in the reference image. Do not preserve identity, face shape, hairline, features, or exact clothing from the reference. Borrow only the visual style/composition: amateur snapshot quality, slight blur/soft focus, imperfect indoor lighting, candid awkward pose, and realistic non-stock-photo vibe. Keep composition and action similar while changing the people and making the setting slightly different.'
+
+  if (!prompt.trim()) {
+    return styleOnlyConstraint
+  }
+
+  return `${styleOnlyConstraint}\n\n${prompt}`
+}
+
 function resolveOverlayText(
   slide: PostTemplateSlide,
   variables: Record<string, unknown>,
@@ -812,6 +855,21 @@ export async function POST(request: NextRequest) {
             { status: 400 }
           )
         }
+      } else if (slide.photo_source === 'reference_live_pick') {
+        const liveReferenceKeyVariable = getLiveReferenceVariableName(slide.order)
+        const referencePickKey = getStringVariable(variables, liveReferenceKeyVariable)
+        if (!referencePickKey) {
+          return NextResponse.json(
+            { error: `Slide order ${slide.order} uses photo_source=reference_live_pick but is missing ${liveReferenceKeyVariable}` },
+            { status: 400 }
+          )
+        }
+        if (!isAllowedLiveReferenceKey(referencePickKey)) {
+          return NextResponse.json(
+            { error: `Slide order ${slide.order} has invalid reference pick key extension: ${referencePickKey}` },
+            { status: 400 }
+          )
+        }
       }
     }
 
@@ -831,6 +889,7 @@ export async function POST(request: NextRequest) {
     let latestImageUrl: string | null = null
     let evergreenCardPhotoUrl: string | null = null
     const referenceImageBySlideOrder = new Map<number, string>()
+    const referencePickKeyBySlideOrder = new Map<number, string>()
 
     for (const slide of activeSlides) {
       const interpolationContext = {
@@ -949,7 +1008,7 @@ export async function POST(request: NextRequest) {
         }
         baseImageUrl = await generateAndUploadPhoto(
           applyPhotoGenerationStyle(interpolatedPrompt, variables),
-          { referenceImageUrl }
+          { referenceImageUrl, referenceMode: 'identity' }
         )
       } else if (slide.photo_source === 'reference_anchor') {
         if (typeof slide.reference_anchor_order !== 'number') {
@@ -963,8 +1022,25 @@ export async function POST(request: NextRequest) {
         }
         baseImageUrl = await generateAndUploadPhoto(
           applyPhotoGenerationStyle(interpolatedPrompt, variables),
-          { referenceImageUrl }
+          { referenceImageUrl, referenceMode: 'identity' }
         )
+      } else if (slide.photo_source === 'reference_live_pick') {
+        const liveReferenceVariable = getLiveReferenceVariableName(slide.order)
+        const referencePickKey = getStringVariable(variables, liveReferenceVariable)
+        if (!referencePickKey) {
+          throw new Error(`Slide order ${slide.order} is missing ${liveReferenceVariable}`)
+        }
+        if (!isAllowedLiveReferenceKey(referencePickKey)) {
+          throw new Error(`Slide order ${slide.order} has unsupported reference key extension`)
+        }
+
+        referenceImageUrl = await mintLiveReferencePresignedUrl(referencePickKey)
+        const styleOnlyPrompt = applyStyleOnlyReferencePrompt(interpolatedPrompt)
+        baseImageUrl = await generateAndUploadPhoto(
+          applyPhotoGenerationStyle(styleOnlyPrompt, variables),
+          { referenceImageUrl, referenceMode: 'style' }
+        )
+        referencePickKeyBySlideOrder.set(slide.order, referencePickKey)
       } else {
         baseImageUrl = await generateAndUploadPhoto(applyPhotoGenerationStyle(interpolatedPrompt, variables))
       }
@@ -1107,6 +1183,7 @@ export async function POST(request: NextRequest) {
         slide_type: slide.slide_type,
         overlay_text: slide.overlay_text,
         live_photo_pvt_url: livePhoto?.pvt_zip_url,
+        reference_pick_key: referencePickKeyBySlideOrder.get(slide.order),
       }
     })
 

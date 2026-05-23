@@ -21,7 +21,7 @@ interface GeminiResponsePart {
 
 export async function generateAndUploadPhoto(
   prompt: string,
-  options: { referenceImageUrl?: string | null } = {}
+  options: { referenceImageUrl?: string | null; referenceMode?: 'identity' | 'style' } = {}
 ): Promise<string | null> {
   const apiKey = process.env.GEMINI_API_KEY
   
@@ -47,6 +47,15 @@ export async function generateAndUploadPhoto(
               data: referenceBuffer.toString('base64'),
             },
           })
+          if (options.referenceMode === 'style') {
+            requestParts.push({
+              text: 'Use the attached image as style/composition reference only. Generate different people who do not resemble the person/people in the reference. Keep only the amateur camera look, composition, lighting awkwardness, and blur characteristics.',
+            })
+          } else {
+            requestParts.push({
+              text: 'Use the attached image as identity reference where requested by the prompt.',
+            })
+          }
         } else {
           console.warn('[gemini] Failed to fetch reference image:', referenceResponse.status)
         }
