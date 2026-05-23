@@ -165,6 +165,12 @@ const LIVE_PHOTO_FRAMING_OPTIONS: Array<{ value: LivePhotoFramingChoice; label: 
   },
 ]
 const HEADSTONE_MEMORIAL_TYPES = new Set(['headstone_classic', 'headstone_rounded', 'headstone_flat'])
+const SAILOR_SONG_HARDCODED_NOTE_LINES = {
+  note_line_1: 'I sleep so I can see you',
+  note_line_2: "'cause I hate to wait so long",
+  note_line_3: 'I sleep so that I can see you',
+  note_line_4: 'and I hate to wait so long',
+} as const
 
 function formatEthnicityLabel(value: string): string {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
@@ -346,6 +352,16 @@ export default function GenerateFromTemplatePage() {
   }, [accountType, personas.length])
 
   const variablesSchema = useMemo(() => template?.variables_schema || [], [template])
+  const isSailorSongTemplate = template?.name === 'Sailor Song'
+  const getResolvedVariableValue = (name: string): string => {
+    if (
+      isSailorSongTemplate &&
+      Object.prototype.hasOwnProperty.call(SAILOR_SONG_HARDCODED_NOTE_LINES, name)
+    ) {
+      return SAILOR_SONG_HARDCODED_NOTE_LINES[name as keyof typeof SAILOR_SONG_HARDCODED_NOTE_LINES]
+    }
+    return getStringVariable(variables, name)
+  }
   const schemaFieldNames = useMemo(() => new Set(variablesSchema.map((field) => field.name)), [variablesSchema])
   const subjectSlides = useMemo(
     () => (template?.slides || []).filter((slide) => slide.subjects_config?.enabled === true),
@@ -423,8 +439,8 @@ export default function GenerateFromTemplatePage() {
   }, [shouldShowCharacterInputs, needsAliveDemographicInputs, needsDeceasedDemographicInputs, variables])
 
   const requiredMissing = useMemo(() => {
-    return visibleVariablesSchema.some((field) => field.required && !getStringVariable(variables, field.name).trim())
-  }, [visibleVariablesSchema, variables])
+    return visibleVariablesSchema.some((field) => field.required && !getResolvedVariableValue(field.name).trim())
+  }, [visibleVariablesSchema, variables, isSailorSongTemplate])
   const subjectsMissing = useMemo(() => {
     return subjectSlides.some((slide) => {
       const config = slide.subjects_config
@@ -504,6 +520,23 @@ export default function GenerateFromTemplatePage() {
       return changed ? next : prev
     })
   }, [subjectSlides])
+
+  useEffect(() => {
+    if (!isSailorSongTemplate) return
+
+    setVariables((prev) => {
+      const next = { ...prev }
+      let changed = false
+
+      for (const [key, value] of Object.entries(SAILOR_SONG_HARDCODED_NOTE_LINES)) {
+        if (next[key] === value) continue
+        next[key] = value
+        changed = true
+      }
+
+      return changed ? next : prev
+    })
+  }, [isSailorSongTemplate])
 
   useEffect(() => {
     if (memorialAttendeeSlides.length === 0) return
@@ -1111,9 +1144,21 @@ export default function GenerateFromTemplatePage() {
             {field.type === 'text' && (
               <input
                 type="text"
-                value={getStringVariable(variables, field.name)}
-                onChange={(e) => setVariables((prev) => ({ ...prev, [field.name]: e.target.value }))}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-amber-400"
+                value={getResolvedVariableValue(field.name)}
+                onChange={(e) => {
+                  if (
+                    isSailorSongTemplate &&
+                    Object.prototype.hasOwnProperty.call(SAILOR_SONG_HARDCODED_NOTE_LINES, field.name)
+                  ) {
+                    return
+                  }
+                  setVariables((prev) => ({ ...prev, [field.name]: e.target.value }))
+                }}
+                readOnly={
+                  isSailorSongTemplate &&
+                  Object.prototype.hasOwnProperty.call(SAILOR_SONG_HARDCODED_NOTE_LINES, field.name)
+                }
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-amber-400 read-only:opacity-80 read-only:cursor-not-allowed"
               />
             )}
 
