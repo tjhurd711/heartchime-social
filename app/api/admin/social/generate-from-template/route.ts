@@ -168,6 +168,7 @@ const TRANSPARENT_PX =
 const CURRENT_YEAR = 2026
 const LIVE_REFERENCE_SOURCE_BUCKET = 'order-by-age-uploads'
 const LIVE_REFERENCE_ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.heic', '.webp'])
+const GENERATED_MEDIA_BUCKET = process.env.S3_BUCKET_NAME || 'heartbeat-photos-prod'
 
 const SUBJECT_RELATIONSHIPS = new Set<SubjectRelationship>([
   'father',
@@ -715,6 +716,47 @@ function normalizeLivePhotoDownloadUrl(downloadUrl: string, livePhotoServerUrl: 
   }
 }
 
+function parseS3ObjectFromUrl(rawUrl: string): { bucket: string; key: string } | null {
+  try {
+    const parsed = new URL(rawUrl)
+    const host = parsed.hostname
+    const key = parsed.pathname.replace(/^\/+/, '')
+    if (!key) return null
+
+    const regionalHostMatch = host.match(/^(.+)\.s3\.[^.]+\.amazonaws\.com$/)
+    if (regionalHostMatch?.[1]) {
+      return { bucket: regionalHostMatch[1], key }
+    }
+
+    const legacyHostMatch = host.match(/^(.+)\.s3\.amazonaws\.com$/)
+    if (legacyHostMatch?.[1]) {
+      return { bucket: legacyHostMatch[1], key }
+    }
+
+    return null
+  } catch {
+    return null
+  }
+}
+
+async function toLivePhotoSourceImageUrl(imageUrl: string): Promise<string> {
+  const s3Target = parseS3ObjectFromUrl(imageUrl)
+  if (!s3Target) {
+    return imageUrl
+  }
+
+  // Use a short-lived signed URL so the live-photo service can always fetch source images,
+  // even if bucket/object public access policies change.
+  return getSignedUrl(
+    s3Client,
+    new GetObjectCommand({
+      Bucket: s3Target.bucket || GENERATED_MEDIA_BUCKET,
+      Key: s3Target.key,
+    }),
+    { expiresIn: 60 * 30 }
+  )
+}
+
 function overlayStyleToTextStyle(style: OverlayStyle | undefined): TextStyle {
   if (style === 'lyric') return 'lyric'
   return style === 'caption' ? 'clean' : 'snapchat'
@@ -1098,6 +1140,7 @@ export async function POST(request: NextRequest) {
             livePhotoWarnings.push(`Missing static image URL for slide ${slide.order}; skipped live photo generation.`)
             continue
           }
+          const livePhotoSourceImageUrl = await toLivePhotoSourceImageUrl(staticSlideUrl)
 
           const livePhotoSettings = live_photo_settings?.[String(slide.order)]
           const outputOrientation = livePhotoSettings?.output_orientation ?? slide.live_photo_output_orientation ?? 'vertical'
@@ -1125,7 +1168,7 @@ export async function POST(request: NextRequest) {
                 Authorization: `Bearer ${livePhotoApiKey}`,
               },
               body: JSON.stringify({
-                image_url: staticSlideUrl,
+                image_url: livePhotoSourceImageUrl,
                 motion_style: 'ai_subtle',
                 motion_hint: interpolatedMotionHint,
                 output_orientation: outputOrientation,
