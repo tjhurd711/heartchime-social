@@ -64,6 +64,10 @@ const TREND_CAPTION_FALLBACKS: Record<string, string[]> = {
     'I sleep so that I can see you',
     'and I hate to wait so long',
   ],
+  'Purple Rain': [
+    'Husband / Father / Brother / Bossman / Friend',
+    'Fck Cancer',
+  ],
 }
 
 function getDefaultScene(order: number): string {
