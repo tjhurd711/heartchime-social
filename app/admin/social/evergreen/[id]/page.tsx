@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
@@ -77,6 +77,30 @@ interface SlidePreviewItem {
   slide_type?: string;
 }
 
+function buildPreviewSlides(post: SocialPost | null): SlidePreviewItem[] {
+  if (!post) return [];
+
+  const slideBundle = Array.isArray(post.slide_bundle)
+    ? (post.slide_bundle as Array<{ order?: number; url?: string; image_url?: string; slide_type?: string }>)
+    : [];
+  const bundleSlides: SlidePreviewItem[] = slideBundle
+    .map((slide, index) => ({
+      order: typeof slide.order === 'number' ? slide.order : index + 1,
+      url: slide.url || slide.image_url || '',
+      slide_type: slide.slide_type,
+    }))
+    .filter((slide) => slide.url);
+
+  if (bundleSlides.length > 0) {
+    return bundleSlides.sort((a, b) => a.order - b.order);
+  }
+
+  return [
+    post.slide_1_url ? { order: 1, url: post.slide_1_url } : null,
+    post.slide_2_url ? { order: 2, url: post.slide_2_url } : null,
+  ].filter((slide): slide is SlidePreviewItem => !!slide);
+}
+
 const POST_TYPE_LABELS: Record<string, { label: string; emoji: string }> = {
   birthday: { label: 'Birthday', emoji: '🎂' },
   passing_anniversary: { label: 'Anniversary', emoji: '🕯️' },
@@ -134,6 +158,16 @@ export default function SocialPostDetailPage() {
   useEffect(() => {
     fetchPost();
   }, [postId]);
+
+  const previewSlides = buildPreviewSlides(post);
+  const hasDeviceSlideBundle = previewSlides.length > 0;
+  const safeActiveSlide = Math.max(0, Math.min(activeSlide, Math.max(0, previewSlides.length - 1)));
+
+  useEffect(() => {
+    if (activeSlide > Math.max(0, previewSlides.length - 1)) {
+      setActiveSlide(0);
+    }
+  }, [activeSlide, previewSlides.length]);
 
   const fetchPost = async () => {
     setLoading(true);
@@ -496,35 +530,6 @@ export default function SocialPostDetailPage() {
     }))
     .filter((entry) => entry.pvt_zip_url)
     .sort((a, b) => a.order - b.order);
-  const previewSlides = useMemo(() => {
-    const slideBundle = Array.isArray(post.slide_bundle)
-      ? (post.slide_bundle as Array<{ order?: number; url?: string; image_url?: string; slide_type?: string }>)
-      : [];
-    const bundleSlides: SlidePreviewItem[] = slideBundle
-      .map((slide, index) => ({
-        order: typeof slide.order === 'number' ? slide.order : index + 1,
-        url: slide.url || slide.image_url || '',
-        slide_type: slide.slide_type,
-      }))
-      .filter((slide) => slide.url);
-
-    if (bundleSlides.length > 0) {
-      return bundleSlides.sort((a, b) => a.order - b.order);
-    }
-
-    return [
-      post.slide_1_url ? { order: 1, url: post.slide_1_url } : null,
-      post.slide_2_url ? { order: 2, url: post.slide_2_url } : null,
-    ].filter((slide): slide is SlidePreviewItem => !!slide);
-  }, [post.slide_bundle, post.slide_1_url, post.slide_2_url]);
-  const hasDeviceSlideBundle = previewSlides.length > 0;
-  const safeActiveSlide = Math.max(0, Math.min(activeSlide, Math.max(0, previewSlides.length - 1)));
-
-  useEffect(() => {
-    if (activeSlide > Math.max(0, previewSlides.length - 1)) {
-      setActiveSlide(0);
-    }
-  }, [activeSlide, previewSlides.length]);
 
   return (
     <div className="min-h-screen bg-gray-900 p-6">
