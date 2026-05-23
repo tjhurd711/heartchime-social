@@ -12,8 +12,16 @@ const s3Client = new S3Client({
 // Gemini 3 Pro Image Preview model
 const GEMINI_MODEL = 'gemini-3.1-flash-image-preview'
 
+interface GeminiResponsePart {
+  inlineData?: {
+    mimeType?: string
+    data?: string
+  }
+}
+
 export async function generateAndUploadPhoto(
-  prompt: string
+  prompt: string,
+  options: { referenceImageUrl?: string | null } = {}
 ): Promise<string | null> {
   const apiKey = process.env.GEMINI_API_KEY
   
@@ -25,6 +33,28 @@ export async function generateAndUploadPhoto(
   try {
     console.log('[gemini] Generating image with prompt:', prompt.slice(0, 100) + '...')
     console.log(`[gemini] Using model: ${GEMINI_MODEL}`)
+
+    const parts: Array<Record<string, unknown>> = []
+    if (options.referenceImageUrl) {
+      try {
+        const referenceResponse = await fetch(options.referenceImageUrl)
+        if (referenceResponse.ok) {
+          const contentType = referenceResponse.headers.get('content-type') || 'image/jpeg'
+          const referenceBuffer = Buffer.from(await referenceResponse.arrayBuffer())
+          parts.push({
+            inlineData: {
+              mimeType: contentType,
+              data: referenceBuffer.toString('base64'),
+            },
+          })
+        } else {
+          console.warn('[gemini] Failed to fetch reference image:', referenceResponse.status)
+        }
+      } catch (referenceError) {
+        console.warn('[gemini] Failed to load reference image:', referenceError)
+      }
+    }
+    parts.push({ text: prompt })
     
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
@@ -35,9 +65,7 @@ export async function generateAndUploadPhoto(
           contents: [
             {
               role: 'user',
-              parts: [
-                { text: prompt }
-              ]
+              parts
             }
           ],
           generationConfig: {
@@ -59,7 +87,7 @@ export async function generateAndUploadPhoto(
     // Response: candidates[0].content.parts[] where part has inlineData
     const parts = data.candidates?.[0]?.content?.parts
     if (parts) {
-      const imagePart = parts.find((p: any) => p.inlineData?.mimeType?.startsWith('image/'))
+      const imagePart = (parts as GeminiResponsePart[]).find((part) => part.inlineData?.mimeType?.startsWith('image/'))
       if (imagePart?.inlineData?.data) {
         const base64 = imagePart.inlineData.data
         const buffer = Buffer.from(base64, 'base64')

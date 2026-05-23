@@ -29,7 +29,7 @@ type SlideType =
   | 'before_after'
 type LegacyEvergreenPostType = 'birthday' | 'passing_anniversary' | 'wedding_anniversary' | 'user_birthday'
 type CharacterKey = 'alive' | 'deceased'
-type PhotoSource = 'generated' | 'variable' | 'variable_or_generated'
+type PhotoSource = 'generated' | 'variable' | 'variable_or_generated' | 'reference_previous' | 'reference_anchor'
 type MotionStyle = 'ai_subtle' | 'kenburns' | 'static_hold'
 type LivePhotoOutputOrientation = 'vertical' | 'horizontal'
 type LivePhotoFramingMode = 'fill' | 'fit' | 'blur'
@@ -100,6 +100,11 @@ interface PostTemplateSlide {
   photo_variable_name?: string
   variable_name?: string
   note_overlay_variable?: string
+  reference_anchor_order?: number
+  extra_slide_options?: {
+    enabled_variable?: string
+    enabled_when_value?: string
+  }
 }
 
 interface LivePhotoResult {
@@ -510,6 +515,16 @@ function resolvePhotoVariableName(slide: PostTemplateSlide): string | null {
   return slide.photo_variable || slide.photo_variable_name || slide.variable_name || null
 }
 
+function isSlideEnabled(slide: PostTemplateSlide, variables: TemplateVariables): boolean {
+  const enabledVariable = slide.extra_slide_options?.enabled_variable
+  if (!enabledVariable) {
+    return true
+  }
+
+  const expectedValue = slide.extra_slide_options?.enabled_when_value ?? 'true'
+  return getStringVariable(variables, enabledVariable) === expectedValue
+}
+
 function resolveOverlayText(
   slide: PostTemplateSlide,
   variables: Record<string, unknown>,
@@ -631,8 +646,12 @@ export async function POST(request: NextRequest) {
     }
 
     const slides = parseSlides(typedTemplate.slides)
+    const activeSlides = slides.filter((slide) => isSlideEnabled(slide, variables))
+    if (activeSlides.length === 0) {
+      return NextResponse.json({ error: 'No enabled slides found for this template request' }, { status: 400 })
+    }
     const subjectDrivenDemographicFields = new Set<string>()
-    for (const slide of slides) {
+    for (const slide of activeSlides) {
       if (!slide.subjects_config?.enabled) {
         continue
       }
@@ -652,7 +671,7 @@ export async function POST(request: NextRequest) {
       })
 
     const slideDerivedMissing = new Set<string>()
-    for (const slide of slides) {
+    for (const slide of activeSlides) {
       const subjectValidationError = validateSlideSubjects(slide, variables)
       if (subjectValidationError) {
         return NextResponse.json({ error: subjectValidationError }, { status: 400 })
@@ -701,8 +720,9 @@ export async function POST(request: NextRequest) {
     const slideResults: Array<{ order: number; url: string; slide_type: SlideType; overlay_text: string | null }> = []
     let latestImageUrl: string | null = null
     let evergreenCardPhotoUrl: string | null = null
+    const referenceImageBySlideOrder = new Map<number, string>()
 
-    for (const slide of slides) {
+    for (const slide of activeSlides) {
       const interpolationContext = {
         ...variables,
         ...buildCharacterDescriptions(slide, variables),
@@ -745,6 +765,7 @@ export async function POST(request: NextRequest) {
         const cardUrl = await renderAndUploadSocialCard(cardPhoto, cardMessage)
         slideResults.push({ order: slide.order, url: cardUrl, slide_type: slide.slide_type, overlay_text: noteOverlayText })
         latestImageUrl = cardUrl
+        referenceImageBySlideOrder.set(slide.order, cardPhoto || cardUrl)
         continue
       }
 
@@ -760,6 +781,7 @@ export async function POST(request: NextRequest) {
 
         slideResults.push({ order: slide.order, url: selfieUrl, slide_type: slide.slide_type, overlay_text: noteOverlayText })
         latestImageUrl = selfieUrl
+        referenceImageBySlideOrder.set(slide.order, selfieUrl)
         continue
       }
 
@@ -772,6 +794,7 @@ export async function POST(request: NextRequest) {
         )
         slideResults.push({ order: slide.order, url: textCardUrl, slide_type: slide.slide_type, overlay_text: noteOverlayText })
         latestImageUrl = textCardUrl
+        referenceImageBySlideOrder.set(slide.order, textCardUrl)
         continue
       }
 
@@ -794,10 +817,12 @@ export async function POST(request: NextRequest) {
 
         slideResults.push({ order: slide.order, url: finalUrl, slide_type: slide.slide_type, overlay_text: noteOverlayText })
         latestImageUrl = finalUrl
+        referenceImageBySlideOrder.set(slide.order, sourcePhotoUrl)
         continue
       }
 
       let baseImageUrl: string | null = null
+      let referenceImageUrl: string | null = null
       if (slide.photo_source === 'variable') {
         const photoVariableName = resolvePhotoVariableName(slide)
         baseImageUrl = photoVariableName ? getStringRecordValue(interpolationContext, photoVariableName) : null
@@ -805,6 +830,29 @@ export async function POST(request: NextRequest) {
         const photoVariableName = resolvePhotoVariableName(slide)
         const variablePhoto = photoVariableName ? getStringRecordValue(interpolationContext, photoVariableName) : null
         baseImageUrl = variablePhoto || await generateAndUploadPhoto(applyPhotoGenerationStyle(interpolatedPrompt, variables))
+      } else if (slide.photo_source === 'reference_previous') {
+        referenceImageUrl = referenceImageBySlideOrder.get(slide.order - 1) || latestImageUrl
+        if (!referenceImageUrl) {
+          throw new Error(`Slide order ${slide.order} requires photo_source=reference_previous, but no previous slide image exists`)
+        }
+        baseImageUrl = await generateAndUploadPhoto(
+          applyPhotoGenerationStyle(interpolatedPrompt, variables),
+          { referenceImageUrl }
+        )
+      } else if (slide.photo_source === 'reference_anchor') {
+        if (typeof slide.reference_anchor_order !== 'number') {
+          throw new Error(`Slide order ${slide.order} uses photo_source=reference_anchor but is missing reference_anchor_order`)
+        }
+        referenceImageUrl = referenceImageBySlideOrder.get(slide.reference_anchor_order) || null
+        if (!referenceImageUrl) {
+          throw new Error(
+            `Slide order ${slide.order} requires anchor slide ${slide.reference_anchor_order}, but that slide image is unavailable`
+          )
+        }
+        baseImageUrl = await generateAndUploadPhoto(
+          applyPhotoGenerationStyle(interpolatedPrompt, variables),
+          { referenceImageUrl }
+        )
       } else {
         baseImageUrl = await generateAndUploadPhoto(applyPhotoGenerationStyle(interpolatedPrompt, variables))
       }
@@ -821,6 +869,7 @@ export async function POST(request: NextRequest) {
 
       slideResults.push({ order: slide.order, url: finalUrl, slide_type: slide.slide_type, overlay_text: noteOverlayText })
       latestImageUrl = finalUrl
+      referenceImageBySlideOrder.set(slide.order, baseImageUrl || finalUrl)
     }
 
     const orderedSlides = slideResults.sort((a, b) => a.order - b.order)
@@ -828,7 +877,7 @@ export async function POST(request: NextRequest) {
     const livePhotoResults: LivePhotoResult[] = []
     const livePhotoWarnings: string[] = []
     let isLivePhoto = false
-    const eligibleLivePhotoOrders = slides
+    const eligibleLivePhotoOrders = activeSlides
       .filter((slide) => slide.live_photo_eligible)
       .map((slide) => slide.order)
     const requestedLivePhotoOrders = live_photo_slide_orders ?? (generate_live_photos ? eligibleLivePhotoOrders : [])
@@ -845,7 +894,7 @@ export async function POST(request: NextRequest) {
           slideUrlByOrder.set(slideResult.order, slideResult.url)
         }
 
-        for (const slide of slides) {
+        for (const slide of activeSlides) {
           if (!slide.live_photo_eligible) {
             continue
           }

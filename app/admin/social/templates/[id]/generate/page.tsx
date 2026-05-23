@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation'
 import ReferencePanel, { TemplateReferencePhoto } from '../../_components/reference-panel'
 
 type AccountType = 'business' | 'persona'
-type FieldType = 'text' | 'textarea' | 'select' | 'photo_upload'
+type FieldType = 'text' | 'textarea' | 'select' | 'photo_upload' | 'select_with_custom'
 type CharacterKey = 'alive' | 'deceased'
 type SelfieGender = 'male' | 'female'
 type SelfieEthnicity = 'white' | 'black' | 'hispanic' | 'asian' | 'middle eastern' | 'south asian' | 'mixed'
@@ -61,6 +61,8 @@ interface VariableField {
   required: boolean
   options?: string[]
 }
+
+const CUSTOM_OPTION_VALUE = '__custom__'
 
 interface Template {
   id: string
@@ -259,6 +261,15 @@ function formatTemplateOptionLabel(fieldName: string, option: string): string {
   return option
 }
 
+function isCustomSelectValue(field: VariableField, currentValue: string): boolean {
+  if (!currentValue.trim()) {
+    return false
+  }
+
+  const options = field.options || []
+  return !options.includes(currentValue)
+}
+
 export default function GenerateFromTemplatePage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
@@ -284,6 +295,7 @@ export default function GenerateFromTemplatePage() {
   const [selfieEmotion, setSelfieEmotion] = useState<SelfieEmotion>('bittersweet')
   const [selfieGaze, setSelfieGaze] = useState<SelfieGaze>('looking at camera')
   const [selfieSetting, setSelfieSetting] = useState<SelfieSetting>('home')
+  const [customSelectEnabled, setCustomSelectEnabled] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     const loadTemplate = async () => {
@@ -1127,6 +1139,57 @@ export default function GenerateFromTemplatePage() {
                   </option>
                 ))}
               </select>
+            )}
+
+            {field.type === 'select_with_custom' && (
+              <>
+                {(() => {
+                  const currentValue = getStringVariable(variables, field.name)
+                  const hasStoredCustomValue = isCustomSelectValue(field, currentValue)
+                  const isCustomMode = customSelectEnabled[field.name] ?? hasStoredCustomValue
+                  const selectedValue = isCustomMode ? CUSTOM_OPTION_VALUE : currentValue
+
+                  return (
+                    <>
+                      <select
+                        value={selectedValue}
+                        onChange={(e) => {
+                          const nextValue = e.target.value
+                          if (nextValue === CUSTOM_OPTION_VALUE) {
+                            setCustomSelectEnabled((prev) => ({ ...prev, [field.name]: true }))
+                            setVariables((prev) => {
+                              const existingValue = getStringVariable(prev, field.name)
+                              const nextCustomValue = isCustomSelectValue(field, existingValue) ? existingValue : ''
+                              return { ...prev, [field.name]: nextCustomValue }
+                            })
+                            return
+                          }
+                          setCustomSelectEnabled((prev) => ({ ...prev, [field.name]: false }))
+                          setVariables((prev) => ({ ...prev, [field.name]: nextValue }))
+                        }}
+                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-amber-400"
+                      >
+                        <option value="">Select...</option>
+                        {(field.options || []).map((option) => (
+                          <option key={option} value={option}>
+                            {formatTemplateOptionLabel(field.name, option)}
+                          </option>
+                        ))}
+                        <option value={CUSTOM_OPTION_VALUE}>Other...</option>
+                      </select>
+                      {isCustomMode && (
+                        <input
+                          type="text"
+                          value={currentValue}
+                          onChange={(e) => setVariables((prev) => ({ ...prev, [field.name]: e.target.value }))}
+                          placeholder="Enter custom value..."
+                          className="mt-2 w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-amber-400"
+                        />
+                      )}
+                    </>
+                  )
+                })()}
+              </>
             )}
 
             {field.type === 'photo_upload' && (
