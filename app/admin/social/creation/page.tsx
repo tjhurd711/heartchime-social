@@ -57,6 +57,15 @@ const SCENE_OPTIONS = [
   'Coffee at the kitchen table',
 ]
 
+const TREND_CAPTION_FALLBACKS: Record<string, string[]> = {
+  'Sailor Song': [
+    'I sleep so I can see you',
+    "'cause I hate to wait so long",
+    'I sleep so that I can see you',
+    'and I hate to wait so long',
+  ],
+}
+
 function getDefaultScene(order: number): string {
   return SCENE_OPTIONS[(order - 2) % SCENE_OPTIONS.length]
 }
@@ -168,9 +177,15 @@ export default function CreationPage() {
     setSoundUrl(selectedTrend.sound_url || '')
     setSaveCaptionsMessage(null)
 
+    const savedCaptionLines = Array.isArray(selectedTrend.caption_lines)
+      ? selectedTrend.caption_lines
+      : []
+    const fallbackCaptionLines = TREND_CAPTION_FALLBACKS[selectedTrend.name] || []
+    const captionSource = savedCaptionLines.length > 0 ? savedCaptionLines : fallbackCaptionLines
+
     const nextNotes: Record<number, string> = {}
     for (let order = 1; order <= nextSlideCount; order += 1) {
-      nextNotes[order] = selectedTrend.caption_lines?.[order - 1] || ''
+      nextNotes[order] = captionSource[order - 1] || ''
     }
     setNoteLinesByOrder(nextNotes)
   }, [selectedTrend])
