@@ -20,6 +20,7 @@ interface GenerateCreationRequest {
   live_photo_slide_orders?: number[]
   sound_name?: string
   sound_url?: string
+  identity_mode?: 'anchor' | 'previous'
   memorial_settings?: {
     memorial_scene_type?: string
     memorial_location?: string
@@ -66,10 +67,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Trend not found or inactive' }, { status: 404 })
     }
 
+    const identityMode = body.identity_mode === 'previous' ? 'previous' : 'anchor'
+    const engineTemplateName = identityMode === 'previous'
+      ? 'Creation Engine (Previous Identity)'
+      : 'Creation Engine'
+
     const { data: engineTemplate, error: templateError } = await supabase
       .from('post_templates')
       .select('id')
-      .eq('name', 'Creation Engine')
+      .eq('name', engineTemplateName)
       .eq('is_active', true)
       .single()
 

@@ -99,6 +99,7 @@ export default function CreationPage() {
 
   const [addSpecificDetail, setAddSpecificDetail] = useState(false)
   const [detailText, setDetailText] = useState('')
+  const [referencePreviousIdentity, setReferencePreviousIdentity] = useState(false)
 
   const [sceneValues, setSceneValues] = useState<Record<number, string>>({
     2: getDefaultScene(2),
@@ -179,6 +180,7 @@ export default function CreationPage() {
     setIncludeMemorialSlide(Boolean(selectedTrend.memorial_default))
     setSoundName(selectedTrend.sound_name || '')
     setSoundUrl(selectedTrend.sound_url || '')
+    setReferencePreviousIdentity(false)
     setSaveCaptionsMessage(null)
 
     const savedCaptionLines = Array.isArray(selectedTrend.caption_lines)
@@ -283,6 +285,7 @@ export default function CreationPage() {
           slide_count: slideCount,
           include_memorial: includeMemorialSlide,
           reference_pick_key: referencePickKey,
+          identity_mode: referencePreviousIdentity ? 'previous' : 'anchor',
           add_detail: addSpecificDetail,
           detail_text: addSpecificDetail ? detailText : '',
           scene_2: sceneValues[2] || '',
@@ -403,15 +406,10 @@ export default function CreationPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
-                <label className="text-sm text-[#d7c9a6]">Slide count (2-4)</label>
-                <input
-                  type="number"
-                  min={2}
-                  max={4}
-                  value={slideCount}
-                  onChange={(e) => setSlideCount(Math.max(2, Math.min(4, Number(e.target.value) || 2)))}
-                  className="mt-1 w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
-                />
+                <label className="text-sm text-[#d7c9a6]">Slides before memorial</label>
+                <p className="mt-1 w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]">
+                  {slideCount}
+                </p>
               </div>
               <div>
                 <label className="text-sm text-[#d7c9a6]">Sound name</label>
@@ -500,8 +498,35 @@ export default function CreationPage() {
           <section className="rounded-2xl border border-[#7a6738]/60 bg-[#111a2f] p-5 space-y-4">
             <h2 className={`${cormorant.className} text-2xl text-[#f1d386]`}>3) Slides 2..N (Identity Anchor)</h2>
             <p className="text-sm text-[#d7c9a6]">
-              Uses `reference_anchor` identity mode: keep same people from Slide 1 while changing scene.
+              Keep the same people while changing scene. Add extra slides when needed.
             </p>
+            <label className="flex items-center gap-2 text-sm text-[#f7f1df]">
+              <input
+                type="checkbox"
+                checked={referencePreviousIdentity}
+                onChange={(e) => setReferencePreviousIdentity(e.target.checked)}
+                className="h-4 w-4 accent-[#f1d386]"
+              />
+              Reference previous slide for exact same people (strongest continuity)
+            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSlideCount((prev) => Math.min(4, prev + 1))}
+                disabled={slideCount >= 4}
+                className="px-3 py-1.5 rounded-lg border border-[#f1d386]/70 text-[#f1d386] hover:bg-[#f1d386]/10 disabled:opacity-60"
+              >
+                + Add slide
+              </button>
+              <button
+                type="button"
+                onClick={() => setSlideCount((prev) => Math.max(2, prev - 1))}
+                disabled={slideCount <= 2}
+                className="px-3 py-1.5 rounded-lg border border-[#3d4a68] text-[#d7c9a6] hover:bg-[#2e3b5e] disabled:opacity-60"
+              >
+                - Remove last slide
+              </button>
+            </div>
 
             {[2, 3, 4].filter((order) => order <= slideCount).map((order) => {
               const currentScene = sceneValues[order] || ''
