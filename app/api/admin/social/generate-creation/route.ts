@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     const includeSlide4 = slideCount >= 4
 
     const { data: trend, error: trendError } = await supabase
-      .from('trends')
+      .from('social_trends')
       .select('id, sound_name, sound_url')
       .eq('id', body.trend_id)
       .eq('is_active', true)
