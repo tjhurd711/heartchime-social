@@ -14,6 +14,8 @@ type SelfieAngle = 'from below' | 'straight on' | 'from above' | 'side tilt'
 type SelfieEmotion = 'neutral' | 'slight smile' | 'bittersweet' | 'sad' | 'hopeful' | 'tired' | 'peaceful'
 type SelfieGaze = 'looking at camera' | 'looking away' | 'eyes down' | 'looking off to side'
 type SelfieSetting = 'home' | 'car' | 'outside' | 'office'
+
+const DEPRECATED_TEMPLATE_VARIABLES = new Set(['deceased_photo_url'])
 type MotionStyle = 'ai_subtle' | 'kenburns' | 'static_hold'
 type LivePhotoOutputOrientation = 'vertical' | 'horizontal'
 type LivePhotoFramingMode = 'fill' | 'fit' | 'blur' | 'contain'
@@ -342,6 +344,7 @@ export default function GenerateFromTemplatePage() {
   }, [subjectSlides])
   const visibleVariablesSchema = useMemo(
     () => variablesSchema.filter((field) => (
+      !DEPRECATED_TEMPLATE_VARIABLES.has(field.name) &&
       !subjectDrivenDemographicFields.has(field.name) &&
       shouldShowVariableField(field.name, variables)
     )),

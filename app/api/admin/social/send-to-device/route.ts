@@ -33,6 +33,11 @@ interface SendToDeviceRequest {
   slides?: SlideBundleItem[]
 }
 
+interface TemplateAudio {
+  audio_track_name: string | null
+  audio_track_url: string | null
+}
+
 function getLivePhotoUrlForOrder(livePhotos: LivePhotoEntry[], order: number): string | undefined {
   const entry = livePhotos.find((item) => (item.slide_order ?? item.order) === order)
   return entry?.urls?.pvt_zip_url || entry?.pvt_zip_url
@@ -57,15 +62,59 @@ function isMacServerUnreachable(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'TimeoutError'
 }
 
+async function getTemplateAudio(templateId?: string | null): Promise<TemplateAudio> {
+  if (!templateId) {
+    return { audio_track_name: null, audio_track_url: null }
+  }
+
+  const { data: template, error } = await supabase
+    .from('post_templates')
+    .select('audio_track_name, audio_track_url')
+    .eq('id', templateId)
+    .single()
+
+  if (error || !template) {
+    return { audio_track_name: null, audio_track_url: null }
+  }
+
+  return {
+    audio_track_name: typeof template.audio_track_name === 'string' ? template.audio_track_name : null,
+    audio_track_url: typeof template.audio_track_url === 'string' ? template.audio_track_url : null,
+  }
+}
+
+async function getTemplateAudioForPost(postId?: string): Promise<TemplateAudio> {
+  if (!postId) {
+    return { audio_track_name: null, audio_track_url: null }
+  }
+
+  const { data: post, error } = await supabase
+    .from('social_posts')
+    .select('template_id')
+    .eq('id', postId)
+    .single()
+
+  if (error || !post) {
+    return { audio_track_name: null, audio_track_url: null }
+  }
+
+  const templateId = typeof post.template_id === 'string' ? post.template_id : null
+  return getTemplateAudio(templateId)
+}
+
 async function buildPayload(body: SendToDeviceRequest) {
   const trendName = body.trend_name || 'Purple Rain'
   const albumName = body.album_name || 'HC-Business'
 
   if (body.slides?.length) {
+    const templateAudio = await getTemplateAudioForPost(body.post_id)
+
     return {
       post_id: body.post_id || '',
       trend_name: trendName,
       album_name: albumName,
+      audio_track_name: templateAudio.audio_track_name,
+      audio_track_url: templateAudio.audio_track_url,
       slides: normalizeSlides(body.slides),
     }
   }
@@ -76,7 +125,7 @@ async function buildPayload(body: SendToDeviceRequest) {
 
   const { data: post, error } = await supabase
     .from('social_posts')
-    .select('id, slide_bundle, live_photo_urls')
+    .select('id, slide_bundle, live_photo_urls, template_id')
     .eq('id', body.post_id)
     .single()
 
@@ -90,11 +139,15 @@ async function buildPayload(body: SendToDeviceRequest) {
   }
 
   const livePhotos = Array.isArray(post.live_photo_urls) ? post.live_photo_urls as LivePhotoEntry[] : []
+  const templateId = typeof post.template_id === 'string' ? post.template_id : null
+  const templateAudio = await getTemplateAudio(templateId)
 
   return {
     post_id: post.id,
     trend_name: trendName,
     album_name: albumName,
+    audio_track_name: templateAudio.audio_track_name,
+    audio_track_url: templateAudio.audio_track_url,
     slides: normalizeSlides(slideBundle, livePhotos),
   }
 }

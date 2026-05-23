@@ -29,6 +29,7 @@ export default function SocialMatchPage() {
   const [error, setError] = useState('')
   const [warnings, setWarnings] = useState<string[]>([])
   const [successPost, setSuccessPost] = useState<MatchPost | null>(null)
+  const [existingMatchUrl, setExistingMatchUrl] = useState<string | null>(null)
 
   const loadRecent = async () => {
     const response = await fetch('/api/admin/social/match?recent=true')
@@ -52,6 +53,7 @@ export default function SocialMatchPage() {
     setSuccessPost(null)
     setNotFound(false)
     setFoundPost(null)
+    setExistingMatchUrl(null)
 
     try {
       const response = await fetch(`/api/admin/social/match?postId=${encodeURIComponent(postId.trim())}`)
@@ -67,6 +69,7 @@ export default function SocialMatchPage() {
       }
 
       setFoundPost(data.post)
+      setExistingMatchUrl(data.post.published_url || null)
       setPublishedUrl(data.post.published_url || '')
       if (data.post.platform === 'instagram' || data.post.platform === 'tiktok') {
         setPlatform(data.post.platform)
@@ -112,6 +115,7 @@ export default function SocialMatchPage() {
 
       setFoundPost(data.post)
       setSuccessPost(data.post)
+      setExistingMatchUrl(null)
       setWarnings(data.warnings || [])
       await loadRecent()
     } catch (saveError) {
@@ -124,8 +128,8 @@ export default function SocialMatchPage() {
   const handleSave = async (event: FormEvent) => {
     event.preventDefault()
 
-    if (foundPost?.published_url && foundPost.published_url !== publishedUrl) {
-      const shouldOverwrite = window.confirm(`This post is already matched to ${foundPost.published_url} — overwrite?`)
+    if (existingMatchUrl && existingMatchUrl !== publishedUrl) {
+      const shouldOverwrite = window.confirm(`This post is already matched to ${existingMatchUrl} - overwrite?`)
       if (!shouldOverwrite) return
       await saveMatch(true)
       return
@@ -234,13 +238,13 @@ export default function SocialMatchPage() {
               <section className="bg-[#1a1f2e] rounded-2xl border border-gray-800/50 p-6">
                 <h2 className="text-lg font-semibold text-white mb-4">Step C - Attach URL</h2>
 
-                {foundPost.published_url && (
+                {existingMatchUrl && !successPost && (
                   <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
                     This post is already matched to{' '}
-                    <a href={foundPost.published_url} target="_blank" rel="noopener noreferrer" className="underline">
-                      {foundPost.published_url}
+                    <a href={existingMatchUrl} target="_blank" rel="noopener noreferrer" className="underline">
+                      {existingMatchUrl}
                     </a>{' '}
-                    — overwrite?
+                    - overwrite?
                   </div>
                 )}
 
