@@ -311,6 +311,47 @@ function buildSubjectsContext(
   }
 }
 
+function expectedPeopleCountForSlide(
+  slide: PostTemplateSlide,
+  slidesByOrder: Map<number, PostTemplateSlide>,
+  variables: TemplateVariables
+): number | null {
+  if (slide.subjects_config?.enabled) {
+    const count = getSlideSubjects(slide, variables).length
+    return count > 0 ? count : null
+  }
+
+  if (slide.photo_source === 'reference_anchor' && typeof slide.reference_anchor_order === 'number') {
+    const anchorSlide = slidesByOrder.get(slide.reference_anchor_order)
+    if (!anchorSlide?.subjects_config?.enabled) {
+      return null
+    }
+    const count = getSlideSubjects(anchorSlide, variables).length
+    return count > 0 ? count : null
+  }
+
+  return null
+}
+
+function applyPeopleCountConstraint(
+  prompt: string,
+  slide: PostTemplateSlide,
+  slidesByOrder: Map<number, PostTemplateSlide>,
+  variables: TemplateVariables
+): string {
+  const expectedCount = expectedPeopleCountForSlide(slide, slidesByOrder, variables)
+  if (!expectedCount || !prompt.trim()) {
+    return prompt
+  }
+
+  const personLabel = expectedCount === 1 ? 'person' : 'people'
+  const strictConstraint =
+    `People-count lock: Show exactly ${expectedCount} ${personLabel} in total. ` +
+    'Do not add extra people anywhere in the frame (foreground or background), no bystanders, no crowds, no extra faces, and no reflections of additional people.'
+
+  return `${prompt}\n\n${strictConstraint}`
+}
+
 function buildPhotoBlurDescription(variables: TemplateVariables): string {
   const rawLevel = Number.parseInt(getStringVariable(variables, 'photo_blur_level'), 10)
   const level = Number.isNaN(rawLevel) ? 1 : Math.min(10, Math.max(1, rawLevel))
@@ -657,6 +698,7 @@ export async function POST(request: NextRequest) {
 
     const slides = parseSlides(typedTemplate.slides)
     const activeSlides = slides.filter((slide) => isSlideEnabled(slide, variables))
+    const activeSlidesByOrder = new Map(activeSlides.map((slide) => [slide.order, slide]))
     if (activeSlides.length === 0) {
       return NextResponse.json({ error: 'No enabled slides found for this template request' }, { status: 400 })
     }
@@ -751,6 +793,7 @@ export async function POST(request: NextRequest) {
       if (legacyEvergreenPrompt) {
         interpolatedPrompt = legacyEvergreenPrompt
       }
+      interpolatedPrompt = applyPeopleCountConstraint(interpolatedPrompt, slide, activeSlidesByOrder, variables)
       const noteOverlayText = resolveNoteOverlayText(slide, interpolationContext)
 
       if (slide.slide_type === 'heartchime_card') {

@@ -224,6 +224,21 @@ function getLivePhotoSettings(choice: LivePhotoFramingChoice): {
 }
 
 function shouldShowVariableField(fieldName: string, variables: Record<string, TemplateVariableValue>): boolean {
+  const includeMemorialSlide = getStringVariable(variables, 'include_memorial_slide') === 'yes'
+  const memorialFieldNames = new Set([
+    'memorial_scene_type',
+    'memorial_location',
+    'memorial_camera_angle',
+    'memorial_camera_distance',
+    'memorial_inscription',
+    'memorial_headstone_flower_design',
+    'memorial_urn_color',
+    'memorial_keepsake',
+  ])
+  if (memorialFieldNames.has(fieldName) && !includeMemorialSlide) {
+    return false
+  }
+
   const memorialSceneType = getStringVariable(variables, 'memorial_scene_type')
   const isHeadstoneMemorial = HEADSTONE_MEMORIAL_TYPES.has(memorialSceneType)
   const isKnownMemorialScene = isHeadstoneMemorial || memorialSceneType === 'urn' || memorialSceneType === 'bouquet'
