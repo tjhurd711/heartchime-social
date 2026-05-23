@@ -34,14 +34,14 @@ export async function generateAndUploadPhoto(
     console.log('[gemini] Generating image with prompt:', prompt.slice(0, 100) + '...')
     console.log(`[gemini] Using model: ${GEMINI_MODEL}`)
 
-    const parts: Array<Record<string, unknown>> = []
+    const requestParts: Array<Record<string, unknown>> = []
     if (options.referenceImageUrl) {
       try {
         const referenceResponse = await fetch(options.referenceImageUrl)
         if (referenceResponse.ok) {
           const contentType = referenceResponse.headers.get('content-type') || 'image/jpeg'
           const referenceBuffer = Buffer.from(await referenceResponse.arrayBuffer())
-          parts.push({
+          requestParts.push({
             inlineData: {
               mimeType: contentType,
               data: referenceBuffer.toString('base64'),
@@ -54,7 +54,7 @@ export async function generateAndUploadPhoto(
         console.warn('[gemini] Failed to load reference image:', referenceError)
       }
     }
-    parts.push({ text: prompt })
+    requestParts.push({ text: prompt })
     
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
@@ -65,7 +65,7 @@ export async function generateAndUploadPhoto(
           contents: [
             {
               role: 'user',
-              parts
+              parts: requestParts
             }
           ],
           generationConfig: {
@@ -85,9 +85,9 @@ export async function generateAndUploadPhoto(
     
     // Extract image from Gemini 3 Pro response format
     // Response: candidates[0].content.parts[] where part has inlineData
-    const parts = data.candidates?.[0]?.content?.parts
-    if (parts) {
-      const imagePart = (parts as GeminiResponsePart[]).find((part) => part.inlineData?.mimeType?.startsWith('image/'))
+    const responseParts = data.candidates?.[0]?.content?.parts
+    if (responseParts) {
+      const imagePart = (responseParts as GeminiResponsePart[]).find((part) => part.inlineData?.mimeType?.startsWith('image/'))
       if (imagePart?.inlineData?.data) {
         const base64 = imagePart.inlineData.data
         const buffer = Buffer.from(base64, 'base64')
