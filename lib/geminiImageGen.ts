@@ -48,7 +48,7 @@ function normalizeReferenceMimeType(contentTypeHeader: string | null, referenceU
 
 export async function generateAndUploadPhoto(
   prompt: string,
-  options: { referenceImageUrl?: string | null; referenceMode?: 'identity' | 'style' } = {}
+  options: { referenceImageUrl?: string | null; referenceMode?: 'identity' | 'style' | 'identity-transform' } = {}
 ): Promise<string | null> {
   const apiKey = process.env.GEMINI_API_KEY
   
@@ -80,6 +80,10 @@ export async function generateAndUploadPhoto(
           if (options.referenceMode === 'style') {
             requestParts.push({
               text: 'Use the attached image as style/composition reference only. Generate different people who do not resemble the person/people in the reference. Keep only the amateur camera look, composition, lighting awkwardness, and blur characteristics.',
+            })
+          } else if (options.referenceMode === 'identity-transform') {
+            requestParts.push({
+              text: 'Use the attached image to preserve composition and camera characteristics, but transform the person/people into a clearly different identity as requested by the prompt.',
             })
           } else {
             requestParts.push({

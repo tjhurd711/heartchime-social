@@ -39,6 +39,7 @@ type PhotoSource =
   | 'reference_previous'
   | 'reference_anchor'
   | 'reference_live_pick'
+  | 'upload_transform'
 type MotionStyle = 'ai_subtle' | 'kenburns' | 'static_hold'
 type LivePhotoOutputOrientation = 'vertical' | 'horizontal'
 type LivePhotoFramingMode = 'fill' | 'fit' | 'blur'
@@ -168,6 +169,7 @@ const TRANSPARENT_PX =
 const CURRENT_YEAR = 2026
 const LIVE_REFERENCE_SOURCE_BUCKET = 'order-by-age-uploads'
 const LIVE_REFERENCE_ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.heic', '.webp'])
+const UPLOAD_TRANSFORM_ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.heic', '.heif', '.webp', '.avif'])
 const GENERATED_MEDIA_BUCKET = process.env.S3_BUCKET_NAME || 'heartbeat-photos-prod'
 
 const SUBJECT_RELATIONSHIPS = new Set<SubjectRelationship>([
@@ -651,9 +653,21 @@ function getLiveReferenceVariableName(slideOrder: number): string {
   return `slide_${slideOrder}_reference_pick_key`
 }
 
+function getUploadTransformVariableName(slideOrder: number): string {
+  return `slide_${slideOrder}_upload_key`
+}
+
 function isAllowedLiveReferenceKey(key: string): boolean {
   const lower = key.toLowerCase()
   return Array.from(LIVE_REFERENCE_ALLOWED_EXTENSIONS).some((extension) => lower.endsWith(extension))
+}
+
+function isAllowedUploadTransformKey(key: string): boolean {
+  if (!key.startsWith('social-uploads/')) {
+    return false
+  }
+  const lower = key.toLowerCase()
+  return Array.from(UPLOAD_TRANSFORM_ALLOWED_EXTENSIONS).some((extension) => lower.endsWith(extension))
 }
 
 async function mintLiveReferencePresignedUrl(key: string): Promise<string> {
@@ -661,6 +675,17 @@ async function mintLiveReferencePresignedUrl(key: string): Promise<string> {
     s3Client,
     new GetObjectCommand({
       Bucket: LIVE_REFERENCE_SOURCE_BUCKET,
+      Key: key,
+    }),
+    { expiresIn: 60 * 60 }
+  )
+}
+
+async function mintUploadTransformPresignedUrl(key: string): Promise<string> {
+  return getSignedUrl(
+    s3Client,
+    new GetObjectCommand({
+      Bucket: GENERATED_MEDIA_BUCKET,
       Key: key,
     }),
     { expiresIn: 60 * 60 }
@@ -676,6 +701,17 @@ function applyStyleOnlyReferencePrompt(prompt: string): string {
   }
 
   return `${styleOnlyConstraint}\n\n${prompt}`
+}
+
+function applyIdentityTransformReferencePrompt(prompt: string): string {
+  const transformLead =
+    'Recreate this exact photo as a completely different person — new face/identity — keeping the same selfie composition, framing, bland lighting, and amateur quality.'
+
+  if (!prompt.trim()) {
+    return transformLead
+  }
+
+  return `${transformLead}\n\n${prompt}`
 }
 
 function resolveOverlayText(
@@ -927,6 +963,25 @@ export async function POST(request: NextRequest) {
             { status: 400 }
           )
         }
+      } else if (slide.photo_source === 'upload_transform') {
+        const uploadTransformVariable = getUploadTransformVariableName(slide.order)
+        const uploadTransformKey = getStringVariable(variables, uploadTransformVariable)
+        if (!uploadTransformKey) {
+          return NextResponse.json(
+            {
+              error: `Slide order ${slide.order} uses photo_source=upload_transform but is missing ${uploadTransformVariable}`,
+            },
+            { status: 400 }
+          )
+        }
+        if (!isAllowedUploadTransformKey(uploadTransformKey)) {
+          return NextResponse.json(
+            {
+              error: `Slide order ${slide.order} has invalid upload transform key: ${uploadTransformKey}`,
+            },
+            { status: 400 }
+          )
+        }
       }
     }
 
@@ -1098,6 +1153,23 @@ export async function POST(request: NextRequest) {
           { referenceImageUrl, referenceMode: 'style' }
         )
         referencePickKeyBySlideOrder.set(slide.order, referencePickKey)
+      } else if (slide.photo_source === 'upload_transform') {
+        const uploadTransformVariable = getUploadTransformVariableName(slide.order)
+        const uploadTransformKey = getStringVariable(variables, uploadTransformVariable)
+        if (!uploadTransformKey) {
+          throw new Error(`Slide order ${slide.order} is missing ${uploadTransformVariable}`)
+        }
+        if (!isAllowedUploadTransformKey(uploadTransformKey)) {
+          throw new Error(`Slide order ${slide.order} has unsupported upload transform key`)
+        }
+
+        referenceImageUrl = await mintUploadTransformPresignedUrl(uploadTransformKey)
+        const identityTransformPrompt = applyIdentityTransformReferencePrompt(interpolatedPrompt)
+        baseImageUrl = await generateAndUploadPhoto(
+          applyPhotoGenerationStyle(identityTransformPrompt, variables, slide.order),
+          { referenceImageUrl, referenceMode: 'identity-transform' }
+        )
+        referencePickKeyBySlideOrder.set(slide.order, uploadTransformKey)
       } else {
         baseImageUrl = await generateAndUploadPhoto(applyPhotoGenerationStyle(interpolatedPrompt, variables, slide.order))
       }

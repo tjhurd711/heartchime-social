@@ -10,12 +10,16 @@ interface GenerateCreationRequest {
   trend_id: string
   slide_count: number
   include_memorial: boolean
-  reference_pick_key: string
+  reference_pick_key?: string
+  upload_transform_key?: string
   add_detail: boolean
   detail_text?: string
   scene_2?: string
   scene_3?: string
   scene_4?: string
+  child_gender?: 'boy' | 'girl'
+  child_age?: number
+  mother_age?: number
   blur_levels?: Record<string, number>
   note_lines: string[]
   live_photo_slide_orders?: number[]
@@ -45,25 +49,14 @@ export async function POST(request: NextRequest) {
     if (!body.trend_id) {
       return NextResponse.json({ error: 'Missing required field: trend_id' }, { status: 400 })
     }
-    if (!body.reference_pick_key?.trim()) {
-      return NextResponse.json({ error: 'Missing required field: reference_pick_key' }, { status: 400 })
-    }
     const slideCount = Math.max(1, Math.min(4, Math.floor(body.slide_count || 4)))
     const includeSlide2 = slideCount >= 2
     const includeSlide3 = slideCount >= 3
     const includeSlide4 = slideCount >= 4
 
-    if (includeSlide2 && !body.scene_2?.trim()) {
-      return NextResponse.json({ error: 'Missing required field: scene_2' }, { status: 400 })
-    }
-
-    const scene2 = body.scene_2?.trim() || 'Walking on the beach at sunset'
-    const scene3 = body.scene_3?.trim() || scene2
-    const scene4 = body.scene_4?.trim() || scene3 || scene2
-
     const { data: trend, error: trendError } = await supabase
       .from('social_trends')
-      .select('id, sound_name, sound_url')
+      .select('id, name, sound_name, sound_url')
       .eq('id', body.trend_id)
       .eq('is_active', true)
       .single()
@@ -72,16 +65,49 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Trend not found or inactive' }, { status: 404 })
     }
 
+    const isAstronautTrend = trend.name === "I'm an Astronaut"
+
+    if (!isAstronautTrend && !body.reference_pick_key?.trim()) {
+      return NextResponse.json({ error: 'Missing required field: reference_pick_key' }, { status: 400 })
+    }
+    if (isAstronautTrend && !body.upload_transform_key?.trim()) {
+      return NextResponse.json({ error: 'Missing required field: upload_transform_key' }, { status: 400 })
+    }
+
+    if (!isAstronautTrend && includeSlide2 && !body.scene_2?.trim()) {
+      return NextResponse.json({ error: 'Missing required field: scene_2' }, { status: 400 })
+    }
+
+    const scene2 = body.scene_2?.trim() || 'Walking on the beach at sunset'
+    const scene3 = body.scene_3?.trim() || scene2
+    const scene4 = body.scene_4?.trim() || scene3 || scene2
+
+    const childGender = body.child_gender === 'girl' ? 'girl' : 'boy'
+    const parsedChildAge = Number.isFinite(body.child_age) ? Math.floor(Number(body.child_age)) : NaN
+    const parsedMotherAge = Number.isFinite(body.mother_age) ? Math.floor(Number(body.mother_age)) : NaN
+    const childAge = Number.isNaN(parsedChildAge) ? 6 : Math.min(18, Math.max(1, parsedChildAge))
+    const motherAge = Number.isNaN(parsedMotherAge) ? 28 : Math.min(90, Math.max(16, parsedMotherAge))
+
+    if (isAstronautTrend && includeSlide2) {
+      if (Number.isNaN(parsedChildAge) || Number.isNaN(parsedMotherAge)) {
+        return NextResponse.json(
+          { error: 'Missing required fields: child_age and mother_age for Astronaut slide 2' },
+          { status: 400 }
+        )
+      }
+    }
+
+    const engineTemplateName = isAstronautTrend ? 'Creation Engine Astronaut' : 'Creation Engine'
     const { data: engineTemplate, error: templateError } = await supabase
       .from('post_templates')
       .select('id')
-      .eq('name', 'Creation Engine')
+      .eq('name', engineTemplateName)
       .eq('is_active', true)
       .single()
 
     if (templateError || !engineTemplate?.id) {
       return NextResponse.json(
-        { error: 'Creation Engine template not found. Run migrations first.' },
+        { error: `${engineTemplateName} template not found. Run migrations first.` },
         { status: 500 }
       )
     }
@@ -101,11 +127,7 @@ export async function POST(request: NextRequest) {
     }
 
     const variables: Record<string, string> = {
-      slide_1_reference_pick_key: body.reference_pick_key.trim(),
       slide_1_extra_detail_clause: detailClause,
-      scene_2: scene2,
-      scene_3: scene3,
-      scene_4: scene4,
       include_slide_2: includeSlide2 ? 'yes' : 'no',
       include_slide_3: includeSlide3 ? 'yes' : 'no',
       include_slide_4: includeSlide4 ? 'yes' : 'no',
@@ -125,6 +147,19 @@ export async function POST(request: NextRequest) {
       memorial_urn_color:
         body.memorial_settings?.memorial_urn_color || 'deep navy blue ceramic with subtle gold accents',
       memorial_keepsake: body.memorial_settings?.memorial_keepsake || '',
+      ...(isAstronautTrend
+        ? {
+            slide_1_upload_key: body.upload_transform_key?.trim() || '',
+            child_gender: childGender,
+            child_age: String(childAge),
+            mother_age: String(motherAge),
+          }
+        : {
+            slide_1_reference_pick_key: body.reference_pick_key?.trim() || '',
+            scene_2: scene2,
+            scene_3: scene3,
+            scene_4: scene4,
+          }),
       ...Object.fromEntries(blurLevelEntries),
     }
 
