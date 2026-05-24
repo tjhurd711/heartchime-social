@@ -394,10 +394,17 @@ export default function CreationPage() {
 
       const data = await response.json()
       if (!response.ok) {
-        throw new Error(data?.error || 'Failed to generate post')
+        const baseMessage = data?.error || 'Failed to generate post'
+        const details = typeof data?.details === 'string' && data.details.trim().length > 0
+          ? `: ${data.details}`
+          : ''
+        throw new Error(`${baseMessage}${details}`)
       }
       if (!data?.post_id) {
-        throw new Error('Generation response missing post_id')
+        const details = typeof data?.details === 'string' && data.details.trim().length > 0
+          ? `: ${data.details}`
+          : ''
+        throw new Error(`Generation response missing post_id${details}`)
       }
 
       router.push(`/admin/social/evergreen/${data.post_id}`)

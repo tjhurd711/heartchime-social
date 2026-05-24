@@ -313,12 +313,20 @@ export default function CreateSocialPostPage() {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to generate post');
+        const baseMessage = errorData?.error || 'Failed to generate post';
+        const details = typeof errorData?.details === 'string' && errorData.details.trim().length > 0
+          ? `: ${errorData.details}`
+          : '';
+        throw new Error(`${baseMessage}${details}`);
       }
 
       const data = await response.json();
       if (!data.post_id) {
-        throw new Error(data.error || 'Failed to generate post');
+        const baseMessage = data?.error || 'Failed to generate post';
+        const details = typeof data?.details === 'string' && data.details.trim().length > 0
+          ? `: ${data.details}`
+          : '';
+        throw new Error(`${baseMessage}${details}`);
       }
 
       const orderedSlides = Array.isArray(data.slides)
