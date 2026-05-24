@@ -141,6 +141,11 @@ export default function CreationPage() {
     3: getDefaultScene(3),
     4: getDefaultScene(4),
   })
+  const [actionValues, setActionValues] = useState<Record<number, string>>({
+    2: 'smiling for a photo',
+    3: 'pointing at something',
+    4: 'walking together',
+  })
   const [sceneCustomMode, setSceneCustomMode] = useState<Record<number, boolean>>({})
   const [blurLevelsByOrder, setBlurLevelsByOrder] = useState<Record<number, number>>({
     1: DEFAULT_BLUR_LEVEL,
@@ -288,6 +293,11 @@ export default function CreationPage() {
     setReferencePickKey('')
     setSelectedReferencePreviewUrl(null)
     setShowReferencePicker(false)
+    setActionValues({
+      2: 'smiling for a photo',
+      3: 'pointing at something',
+      4: 'walking together',
+    })
   }, [selectedTrend])
 
   useEffect(() => {
@@ -378,6 +388,10 @@ export default function CreationPage() {
       setError('Please enter the relationship for Astronaut.')
       return
     }
+    if (isAstronautTrend && slideCount >= 2 && !actionValues[2]?.trim()) {
+      setError('Slide 2 needs an action for Astronaut.')
+      return
+    }
     if (
       isAstronautTrend &&
       (!Number.isFinite(astronautAgeStep) || Number.isNaN(astronautAgeStep) || astronautAgeStep < 1)
@@ -403,6 +417,9 @@ export default function CreationPage() {
           scene_2: sceneValues[2] || '',
           scene_3: sceneValues[3] || '',
           scene_4: sceneValues[4] || '',
+          action_2: actionValues[2] || '',
+          action_3: actionValues[3] || '',
+          action_4: actionValues[4] || '',
           relationship: astronautRelationship.trim(),
           age_step: Math.max(1, Math.floor(astronautAgeStep || 1)),
           note_lines: noteLines,
@@ -764,6 +781,19 @@ export default function CreationPage() {
                       placeholder="Enter custom scene..."
                       className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
                     />
+                  )}
+
+                  {isAstronautTrend && (
+                    <div>
+                      <label className="text-sm text-[#d7c9a6] block mb-1">Action</label>
+                      <input
+                        type="text"
+                        value={actionValues[order] || ''}
+                        onChange={(e) => setActionValues((prev) => ({ ...prev, [order]: e.target.value }))}
+                        placeholder='e.g. smiling for a photo, pointing at something'
+                        className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                      />
+                    </div>
                   )}
 
                   <div>

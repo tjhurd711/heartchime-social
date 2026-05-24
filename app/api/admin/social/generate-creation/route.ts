@@ -16,6 +16,9 @@ interface GenerateCreationRequest {
   scene_2?: string
   scene_3?: string
   scene_4?: string
+  action_2?: string
+  action_3?: string
+  action_4?: string
   relationship?: string
   age_step?: number
   blur_levels?: Record<string, number>
@@ -78,6 +81,9 @@ export async function POST(request: NextRequest) {
     const scene2 = body.scene_2?.trim() || 'Walking on the beach at sunset'
     const scene3 = body.scene_3?.trim() || scene2
     const scene4 = body.scene_4?.trim() || scene3 || scene2
+    const action2 = body.action_2?.trim() || 'smiling for a photo'
+    const action3 = body.action_3?.trim() || action2
+    const action4 = body.action_4?.trim() || action3
 
     const parsedAgeStep = Number.isFinite(body.age_step) ? Math.floor(Number(body.age_step)) : NaN
     const ageStep = Number.isNaN(parsedAgeStep) ? 3 : Math.min(30, Math.max(1, parsedAgeStep))
@@ -144,6 +150,9 @@ export async function POST(request: NextRequest) {
       scene_2: scene2,
       scene_3: scene3,
       scene_4: scene4,
+      action_2: action2,
+      action_3: action3,
+      action_4: action4,
       ...(isAstronautTrend
         ? {
             slide_1_reference_pick_key: body.reference_pick_key?.trim() || '',
