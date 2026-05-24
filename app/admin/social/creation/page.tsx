@@ -247,7 +247,10 @@ export default function CreationPage() {
   useEffect(() => {
     if (!selectedTrend) return
 
-    const nextSlideCount = Math.max(1, Math.min(4, selectedTrend.default_slide_count || 4))
+    const trendDefaultSlideCount = selectedTrend.name === 'Purple Rain'
+      ? 1
+      : selectedTrend.default_slide_count
+    const nextSlideCount = Math.max(1, Math.min(4, trendDefaultSlideCount || 4))
     setSlideCount(nextSlideCount)
     setIncludeMemorialSlide(Boolean(selectedTrend.memorial_default))
     setSoundName(selectedTrend.sound_name || '')
