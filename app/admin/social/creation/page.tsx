@@ -133,6 +133,7 @@ export default function CreationPage() {
 
   const [addSpecificDetail, setAddSpecificDetail] = useState(false)
   const [detailText, setDetailText] = useState('')
+  const [astronautRace, setAstronautRace] = useState('')
   const [astronautRelationship, setAstronautRelationship] = useState('son and mother')
   const [astronautAgeStep, setAstronautAgeStep] = useState(3)
 
@@ -388,6 +389,10 @@ export default function CreationPage() {
       setError('Please enter the relationship for Astronaut.')
       return
     }
+    if (isAstronautTrend && !astronautRace.trim()) {
+      setError('Please enter race for Astronaut.')
+      return
+    }
     if (isAstronautTrend && slideCount >= 2 && !actionValues[2]?.trim()) {
       setError('Slide 2 needs an action for Astronaut.')
       return
@@ -421,6 +426,7 @@ export default function CreationPage() {
           action_3: actionValues[3] || '',
           action_4: actionValues[4] || '',
           relationship: astronautRelationship.trim(),
+          race: astronautRace.trim(),
           age_step: Math.max(1, Math.floor(astronautAgeStep || 1)),
           note_lines: noteLines,
           blur_levels: {
@@ -695,7 +701,17 @@ export default function CreationPage() {
                 : 'Keep the same exact people from Slide 1 while changing scene. Add extra slides when needed.'}
             </p>
             {isAstronautTrend && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label className="text-sm text-[#d7c9a6] block mb-1">Race</label>
+                  <input
+                    type="text"
+                    value={astronautRace}
+                    onChange={(e) => setAstronautRace(e.target.value)}
+                    placeholder="e.g. Black, White, Hispanic"
+                    className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                  />
+                </div>
                 <div>
                   <label className="text-sm text-[#d7c9a6] block mb-1">Relationship</label>
                   <input

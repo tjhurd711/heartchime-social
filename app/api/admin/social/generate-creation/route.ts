@@ -19,6 +19,7 @@ interface GenerateCreationRequest {
   action_2?: string
   action_3?: string
   action_4?: string
+  race?: string
   relationship?: string
   age_step?: number
   blur_levels?: Record<string, number>
@@ -76,6 +77,9 @@ export async function POST(request: NextRequest) {
     }
     if (isAstronautTrend && !body.relationship?.trim()) {
       return NextResponse.json({ error: 'Missing required field: relationship' }, { status: 400 })
+    }
+    if (isAstronautTrend && !body.race?.trim()) {
+      return NextResponse.json({ error: 'Missing required field: race' }, { status: 400 })
     }
 
     const scene2 = body.scene_2?.trim() || 'Walking on the beach at sunset'
@@ -157,6 +161,7 @@ export async function POST(request: NextRequest) {
         ? {
             slide_1_reference_pick_key: body.reference_pick_key?.trim() || '',
             relationship: body.relationship?.trim() || '',
+            race: body.race?.trim() || '',
             age_step: String(ageStep),
           }
         : {
