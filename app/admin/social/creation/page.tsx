@@ -21,8 +21,6 @@ interface TrendRow {
   memorial_default: boolean
 }
 
-type AstronautChildGender = 'boy' | 'girl'
-
 interface S3ReferenceBrowseItem {
   key: string
   presignedUrl: string
@@ -132,16 +130,11 @@ export default function CreationPage() {
   const [referenceHasNextPage, setReferenceHasNextPage] = useState(false)
   const [referenceLoading, setReferenceLoading] = useState(false)
   const [referencePickerError, setReferencePickerError] = useState<string | null>(null)
-  const [uploadTransformKey, setUploadTransformKey] = useState('')
-  const [uploadTransformPreviewUrl, setUploadTransformPreviewUrl] = useState<string | null>(null)
-  const [uploadTransformFileName, setUploadTransformFileName] = useState('')
-  const [uploadingTransformPhoto, setUploadingTransformPhoto] = useState(false)
 
   const [addSpecificDetail, setAddSpecificDetail] = useState(false)
   const [detailText, setDetailText] = useState('')
-  const [astronautChildGender, setAstronautChildGender] = useState<AstronautChildGender>('boy')
-  const [astronautChildAge, setAstronautChildAge] = useState(6)
-  const [astronautMotherAge, setAstronautMotherAge] = useState(28)
+  const [astronautRelationship, setAstronautRelationship] = useState('son and mother')
+  const [astronautAgeStep, setAstronautAgeStep] = useState(3)
 
   const [sceneValues, setSceneValues] = useState<Record<number, string>>({
     2: getDefaultScene(2),
@@ -295,9 +288,6 @@ export default function CreationPage() {
     setReferencePickKey('')
     setSelectedReferencePreviewUrl(null)
     setShowReferencePicker(false)
-    setUploadTransformKey('')
-    setUploadTransformPreviewUrl(null)
-    setUploadTransformFileName('')
   }, [selectedTrend])
 
   useEffect(() => {
@@ -314,14 +304,6 @@ export default function CreationPage() {
       setMemorialLocation('cemetery')
     }
   }, [memorialSceneType, memorialLocation])
-
-  useEffect(() => {
-    return () => {
-      if (uploadTransformPreviewUrl) {
-        URL.revokeObjectURL(uploadTransformPreviewUrl)
-      }
-    }
-  }, [uploadTransformPreviewUrl])
 
   const browseReferencePrefix = async (prefix: string, page = 1) => {
     setReferenceLoading(true)
@@ -360,37 +342,6 @@ export default function CreationPage() {
     setShowReferencePicker(false)
   }
 
-  const handleUploadTransformPhoto = async (file: File) => {
-    setUploadingTransformPhoto(true)
-    setError(null)
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-      const signResponse = await fetch('/api/admin/social/creation-upload', {
-        method: 'POST',
-        body: formData,
-      })
-      const signData = await signResponse.json()
-      if (!signResponse.ok) {
-        throw new Error(signData?.error || 'Failed to upload image')
-      }
-      if (!signData?.s3Key) {
-        throw new Error('Upload response missing S3 key')
-      }
-
-      if (uploadTransformPreviewUrl) {
-        URL.revokeObjectURL(uploadTransformPreviewUrl)
-      }
-      setUploadTransformPreviewUrl(URL.createObjectURL(file))
-      setUploadTransformFileName(file.name)
-      setUploadTransformKey(signData.s3Key)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to upload transform photo')
-    } finally {
-      setUploadingTransformPhoto(false)
-    }
-  }
-
   const handleToggleLivePhoto = (order: number, checked: boolean) => {
     setLivePhotoSlideOrders((prev) => {
       if (checked) {
@@ -415,23 +366,25 @@ export default function CreationPage() {
       setError('Please pick a trend.')
       return
     }
-    if (isAstronautTrend) {
-      if (!uploadTransformKey.trim()) {
-        setError('Please upload a source image for Slide 1.')
-        return
-      }
-    } else {
-      if (!referencePickKey.trim()) {
-        setError('Please choose a reference photo from S3.')
-        return
-      }
+    if (!referencePickKey.trim()) {
+      setError('Please choose a reference photo from S3.')
+      return
+    }
+    if (!isAstronautTrend) {
       if (slideCount >= 2 && !sceneValues[2]?.trim()) {
         setError('Slide 2 needs a scene.')
         return
       }
     }
-    if (uploadingTransformPhoto) {
-      setError('Please wait for the Slide 1 upload to finish.')
+    if (isAstronautTrend && !astronautRelationship.trim()) {
+      setError('Please enter the relationship for Astronaut.')
+      return
+    }
+    if (
+      isAstronautTrend &&
+      (!Number.isFinite(astronautAgeStep) || Number.isNaN(astronautAgeStep) || astronautAgeStep < 1)
+    ) {
+      setError('Please enter a valid age step (1 or more) for Astronaut.')
       return
     }
 
@@ -447,15 +400,13 @@ export default function CreationPage() {
           slide_count: slideCount,
           include_memorial: includeMemorialSlide,
           reference_pick_key: referencePickKey,
-          upload_transform_key: uploadTransformKey,
           add_detail: addSpecificDetail,
           detail_text: addSpecificDetail ? detailText : '',
           scene_2: sceneValues[2] || '',
           scene_3: sceneValues[3] || '',
           scene_4: sceneValues[4] || '',
-          child_gender: astronautChildGender,
-          child_age: astronautChildAge,
-          mother_age: astronautMotherAge,
+          relationship: astronautRelationship.trim(),
+          age_step: Math.max(1, Math.floor(astronautAgeStep || 1)),
           note_lines: noteLines,
           blur_levels: {
             1: blurLevelsByOrder[1] || DEFAULT_BLUR_LEVEL,
@@ -639,63 +590,36 @@ export default function CreationPage() {
 
           <section className="rounded-2xl border border-[#7a6738]/60 bg-[#111a2f] p-5 space-y-4">
             <h2 className={`${cormorant.className} text-2xl text-[#f1d386]`}>
-              {isAstronautTrend ? '2) Slide 1 (Upload + Transform)' : '2) Slide 1 (Reference Style)'}
+              2) Slide 1 (Reference Style)
             </h2>
             <p className="text-sm text-[#d7c9a6]">
               {isAstronautTrend
-                ? 'Upload one device photo. Generation keeps composition/lighting framing but transforms identity to a different person.'
+                ? 'Astronaut now uses the same S3 reference picker + style mode as other trends.'
                 : 'Uses `reference_live_pick` style mode: different people, same awkward-real snapshot style.'}
             </p>
 
-            {isAstronautTrend ? (
-              <div className="space-y-2">
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/jpg,image/webp,image/heic,image/heif,image/avif"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0]
-                    if (file) {
-                      void handleUploadTransformPhoto(file)
-                    }
-                  }}
-                  className="w-full text-sm text-[#f7f1df] file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#f1d386]/20 file:text-[#f1d386] hover:file:bg-[#f1d386]/30"
-                />
-                {uploadingTransformPhoto && (
-                  <p className="text-sm text-[#f1d386]">Uploading photo...</p>
-                )}
-                {uploadTransformKey ? (
-                  <span className="text-xs text-[#f7f1df] break-all">Stored key: {uploadTransformKey}</span>
-                ) : (
-                  <span className="text-xs text-[#b9aa87]">No upload selected yet.</span>
-                )}
-                {uploadTransformFileName && (
-                  <p className="text-xs text-[#b9aa87]">File: {uploadTransformFileName}</p>
-                )}
-              </div>
-            ) : (
-              <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowReferencePicker(true)
-                    void browseReferencePrefix(referenceActivePrefix || LIVE_REFERENCE_DEFAULT_PREFIX, 1)
-                  }}
-                  className="rounded-lg border border-[#f1d386]/70 bg-[#2e3b5e] px-4 py-2 text-[#f1d386] hover:bg-[#364974]"
-                >
-                  Pick reference photo from S3
-                </button>
-                {referencePickKey ? (
-                  <span className="text-xs text-[#f7f1df] break-all">Selected key: {referencePickKey}</span>
-                ) : (
-                  <span className="text-xs text-[#b9aa87]">No S3 reference selected yet.</span>
-                )}
-              </div>
-            )}
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowReferencePicker(true)
+                  void browseReferencePrefix(referenceActivePrefix || LIVE_REFERENCE_DEFAULT_PREFIX, 1)
+                }}
+                className="rounded-lg border border-[#f1d386]/70 bg-[#2e3b5e] px-4 py-2 text-[#f1d386] hover:bg-[#364974]"
+              >
+                Pick reference photo from S3
+              </button>
+              {referencePickKey ? (
+                <span className="text-xs text-[#f7f1df] break-all">Selected key: {referencePickKey}</span>
+              ) : (
+                <span className="text-xs text-[#b9aa87]">No S3 reference selected yet.</span>
+              )}
+            </div>
 
-            {(isAstronautTrend ? uploadTransformPreviewUrl : selectedReferencePreviewUrl) && (
+            {selectedReferencePreviewUrl && (
               <img
-                src={isAstronautTrend ? (uploadTransformPreviewUrl as string) : (selectedReferencePreviewUrl as string)}
-                alt={isAstronautTrend ? 'Uploaded source photo' : 'Selected S3 style reference'}
+                src={selectedReferencePreviewUrl}
+                alt="Selected S3 style reference"
                 className="w-32 h-32 object-cover rounded-lg border border-[#3d4a68]"
               />
             )}
@@ -752,9 +676,34 @@ export default function CreationPage() {
             </h2>
             <p className="text-sm text-[#d7c9a6]">
               {isAstronautTrend
-                ? 'Slides 2-4 chain from the immediately previous slide (`reference_previous`) with hardwired age progression prompts.'
+                ? 'Slides 2-4 chain from the immediately previous slide (`reference_previous`) with configurable relationship + age step.'
                 : 'Keep the same exact people from Slide 1 while changing scene. Add extra slides when needed.'}
             </p>
+            {isAstronautTrend && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm text-[#d7c9a6] block mb-1">Relationship</label>
+                  <input
+                    type="text"
+                    value={astronautRelationship}
+                    onChange={(e) => setAstronautRelationship(e.target.value)}
+                    placeholder="e.g. son and mother"
+                    className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-[#d7c9a6] block mb-1">Age step (years per slide)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={30}
+                    value={astronautAgeStep}
+                    onChange={(e) => setAstronautAgeStep(Math.max(1, Number.parseInt(e.target.value || '1', 10) || 1))}
+                    className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                  />
+                </div>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -783,55 +732,9 @@ export default function CreationPage() {
                 <div key={order} className="rounded-xl border border-[#3d4a68] bg-[#15213a] p-4 space-y-3">
                   <h3 className={`${cormorant.className} text-xl text-[#f7f1df]`}>Slide {order}</h3>
                   {isAstronautTrend ? (
-                    <>
-                      {order === 2 && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                          <div>
-                            <label className="text-sm text-[#d7c9a6] block mb-1">Child gender</label>
-                            <select
-                              value={astronautChildGender}
-                              onChange={(e) => setAstronautChildGender(e.target.value as AstronautChildGender)}
-                              className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
-                            >
-                              <option value="boy">boy</option>
-                              <option value="girl">girl</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="text-sm text-[#d7c9a6] block mb-1">Child age</label>
-                            <input
-                              type="number"
-                              min={1}
-                              max={18}
-                              value={astronautChildAge}
-                              onChange={(e) => setAstronautChildAge(Math.max(1, Number.parseInt(e.target.value || '1', 10) || 1))}
-                              className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-sm text-[#d7c9a6] block mb-1">Mother age</label>
-                            <input
-                              type="number"
-                              min={16}
-                              max={90}
-                              value={astronautMotherAge}
-                              onChange={(e) => setAstronautMotherAge(Math.max(16, Number.parseInt(e.target.value || '16', 10) || 16))}
-                              className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
-                            />
-                          </div>
-                        </div>
-                      )}
-                      {order === 3 && (
-                        <p className="text-sm text-[#d7c9a6]">
-                          Hardwired prompt: same exact two people, +7 years older than Slide 2, in a different setting.
-                        </p>
-                      )}
-                      {order === 4 && (
-                        <p className="text-sm text-[#d7c9a6]">
-                          Hardwired prompt: same exact two people, +5 years older than Slide 3.
-                        </p>
-                      )}
-                    </>
+                    <p className="text-sm text-[#d7c9a6]">
+                      Uses `reference_previous` from Slide {order - 1} and applies the shared Astronaut age progression prompt.
+                    </p>
                   ) : (
                     <>
                       <label className="text-sm text-[#d7c9a6] block">Scene</label>
@@ -1080,19 +983,19 @@ export default function CreationPage() {
 
           <button
             type="submit"
-            disabled={submitting || uploadingTransformPhoto}
+            disabled={submitting}
             className={`w-full rounded-xl py-3 font-semibold transition ${
-              (submitting || uploadingTransformPhoto)
+              submitting
                 ? 'bg-[#394560] text-[#a8b2cc] cursor-not-allowed'
                 : 'bg-gradient-to-r from-[#d4af37] to-[#f1d386] text-[#1b2237] hover:from-[#e2be4b] hover:to-[#f7df9f]'
             }`}
           >
-            {submitting ? 'Generating...' : uploadingTransformPhoto ? 'Uploading photo...' : '6) Generate'}
+            {submitting ? 'Generating...' : '6) Generate'}
           </button>
         </form>
       )}
 
-      {!isAstronautTrend && showReferencePicker && (
+      {showReferencePicker && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm p-4 md:p-6 overflow-y-auto">
           <div className="max-w-6xl mx-auto bg-[#111a2f] border border-[#3d4a68] rounded-2xl p-4 md:p-6 space-y-4">
             <div className="flex items-center justify-between gap-4">

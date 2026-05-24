@@ -11,15 +11,13 @@ interface GenerateCreationRequest {
   slide_count: number
   include_memorial: boolean
   reference_pick_key?: string
-  upload_transform_key?: string
   add_detail: boolean
   detail_text?: string
   scene_2?: string
   scene_3?: string
   scene_4?: string
-  child_gender?: 'boy' | 'girl'
-  child_age?: number
-  mother_age?: number
+  relationship?: string
+  age_step?: number
   blur_levels?: Record<string, number>
   note_lines: string[]
   live_photo_slide_orders?: number[]
@@ -67,31 +65,27 @@ export async function POST(request: NextRequest) {
 
     const isAstronautTrend = trend.name === "I'm an Astronaut"
 
-    if (!isAstronautTrend && !body.reference_pick_key?.trim()) {
+    if (!body.reference_pick_key?.trim()) {
       return NextResponse.json({ error: 'Missing required field: reference_pick_key' }, { status: 400 })
     }
-    if (isAstronautTrend && !body.upload_transform_key?.trim()) {
-      return NextResponse.json({ error: 'Missing required field: upload_transform_key' }, { status: 400 })
-    }
-
     if (!isAstronautTrend && includeSlide2 && !body.scene_2?.trim()) {
       return NextResponse.json({ error: 'Missing required field: scene_2' }, { status: 400 })
+    }
+    if (isAstronautTrend && !body.relationship?.trim()) {
+      return NextResponse.json({ error: 'Missing required field: relationship' }, { status: 400 })
     }
 
     const scene2 = body.scene_2?.trim() || 'Walking on the beach at sunset'
     const scene3 = body.scene_3?.trim() || scene2
     const scene4 = body.scene_4?.trim() || scene3 || scene2
 
-    const childGender = body.child_gender === 'girl' ? 'girl' : 'boy'
-    const parsedChildAge = Number.isFinite(body.child_age) ? Math.floor(Number(body.child_age)) : NaN
-    const parsedMotherAge = Number.isFinite(body.mother_age) ? Math.floor(Number(body.mother_age)) : NaN
-    const childAge = Number.isNaN(parsedChildAge) ? 6 : Math.min(18, Math.max(1, parsedChildAge))
-    const motherAge = Number.isNaN(parsedMotherAge) ? 28 : Math.min(90, Math.max(16, parsedMotherAge))
+    const parsedAgeStep = Number.isFinite(body.age_step) ? Math.floor(Number(body.age_step)) : NaN
+    const ageStep = Number.isNaN(parsedAgeStep) ? 3 : Math.min(30, Math.max(1, parsedAgeStep))
 
     if (isAstronautTrend && includeSlide2) {
-      if (Number.isNaN(parsedChildAge) || Number.isNaN(parsedMotherAge)) {
+      if (Number.isNaN(parsedAgeStep)) {
         return NextResponse.json(
-          { error: 'Missing required fields: child_age and mother_age for Astronaut slide 2' },
+          { error: 'Missing required field: age_step for Astronaut slide 2+' },
           { status: 400 }
         )
       }
@@ -149,10 +143,9 @@ export async function POST(request: NextRequest) {
       memorial_keepsake: body.memorial_settings?.memorial_keepsake || '',
       ...(isAstronautTrend
         ? {
-            slide_1_upload_key: body.upload_transform_key?.trim() || '',
-            child_gender: childGender,
-            child_age: String(childAge),
-            mother_age: String(motherAge),
+            slide_1_reference_pick_key: body.reference_pick_key?.trim() || '',
+            relationship: body.relationship?.trim() || '',
+            age_step: String(ageStep),
           }
         : {
             slide_1_reference_pick_key: body.reference_pick_key?.trim() || '',
