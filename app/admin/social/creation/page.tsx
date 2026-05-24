@@ -364,29 +364,18 @@ export default function CreationPage() {
     setUploadingTransformPhoto(true)
     setError(null)
     try {
+      const formData = new FormData()
+      formData.append('file', file)
       const signResponse = await fetch('/api/admin/social/creation-upload', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileName: file.name,
-          contentType: file.type,
-        }),
+        body: formData,
       })
       const signData = await signResponse.json()
       if (!signResponse.ok) {
-        throw new Error(signData?.error || 'Failed to prepare upload')
+        throw new Error(signData?.error || 'Failed to upload image')
       }
-      if (!signData?.uploadUrl || !signData?.s3Key) {
-        throw new Error('Upload URL response missing required fields')
-      }
-
-      const uploadResponse = await fetch(signData.uploadUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': file.type },
-        body: file,
-      })
-      if (!uploadResponse.ok) {
-        throw new Error('Failed to upload image to S3')
+      if (!signData?.s3Key) {
+        throw new Error('Upload response missing S3 key')
       }
 
       if (uploadTransformPreviewUrl) {

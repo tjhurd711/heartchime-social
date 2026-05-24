@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { PutObjectCommand } from '@aws-sdk/client-s3'
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { v4 as uuidv4 } from 'uuid'
 import { s3Client } from '@/lib/s3'
 
@@ -19,13 +18,15 @@ function extensionFromContentType(contentType: string): string {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const fileName = typeof body?.fileName === 'string' ? body.fileName : ''
-    const contentType = typeof body?.contentType === 'string' ? body.contentType : ''
+    const formData = await request.formData()
+    const file = formData.get('file')
 
-    if (!fileName || !contentType) {
-      return NextResponse.json({ error: 'fileName and contentType are required' }, { status: 400 })
+    if (!(file instanceof File)) {
+      return NextResponse.json({ error: 'file is required' }, { status: 400 })
     }
+
+    const fileName = file.name || 'upload.jpg'
+    const contentType = file.type || 'image/jpeg'
     if (!ALLOWED_TYPES.has(contentType)) {
       return NextResponse.json({ error: 'Invalid content type for image upload' }, { status: 400 })
     }
@@ -36,16 +37,16 @@ export async function POST(request: NextRequest) {
       : extensionFromContentType(contentType)
     const s3Key = `social-uploads/${uuidv4()}.${extension}`
 
-    const command = new PutObjectCommand({
+    const body = Buffer.from(await file.arrayBuffer())
+    await s3Client.send(new PutObjectCommand({
       Bucket: BUCKET,
       Key: s3Key,
+      Body: body,
       ContentType: contentType,
-    })
-    const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 })
+    }))
     const publicUrl = `https://${BUCKET}.s3.${REGION}.amazonaws.com/${s3Key}`
 
     return NextResponse.json({
-      uploadUrl,
       s3Key,
       publicUrl,
     })
