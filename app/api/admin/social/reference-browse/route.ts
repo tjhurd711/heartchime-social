@@ -5,7 +5,8 @@ import { s3Client } from '@/lib/s3'
 
 const SOURCE_BUCKET = 'order-by-age-uploads'
 const DEFAULT_PREFIX = 'uploads/'
-const MAX_KEYS = 100
+const DEFAULT_PAGE_SIZE = 24
+const MAX_PAGE_SIZE = 60
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.heic', '.webp'])
 
 function isImageKey(key: string): boolean {
@@ -17,13 +18,46 @@ export async function GET(request: NextRequest) {
   try {
     const prefix = request.nextUrl.searchParams.get('prefix') || DEFAULT_PREFIX
     const token = request.nextUrl.searchParams.get('token') || undefined
+    const pageRaw = request.nextUrl.searchParams.get('page')
+    const pageSizeRaw = Number.parseInt(request.nextUrl.searchParams.get('pageSize') || '', 10)
+    const pageSize = Number.isNaN(pageSizeRaw)
+      ? DEFAULT_PAGE_SIZE
+      : Math.min(MAX_PAGE_SIZE, Math.max(1, pageSizeRaw))
+    const pageFromQuery = Number.parseInt(pageRaw || '', 10)
+    const page = Number.isNaN(pageFromQuery) ? 1 : Math.max(1, pageFromQuery)
+
+    let continuationToken = token
+    if (!continuationToken && page > 1) {
+      for (let index = 1; index < page; index += 1) {
+        const cursorResponse = await s3Client.send(
+          new ListObjectsV2Command({
+            Bucket: SOURCE_BUCKET,
+            Prefix: prefix,
+            MaxKeys: pageSize,
+            ContinuationToken: continuationToken,
+          })
+        )
+
+        if (!cursorResponse.NextContinuationToken) {
+          return NextResponse.json({
+            items: [],
+            page,
+            pageSize,
+            nextToken: null,
+            hasNextPage: false,
+          })
+        }
+
+        continuationToken = cursorResponse.NextContinuationToken
+      }
+    }
 
     const listResponse = await s3Client.send(
       new ListObjectsV2Command({
         Bucket: SOURCE_BUCKET,
         Prefix: prefix,
-        MaxKeys: MAX_KEYS,
-        ContinuationToken: token,
+        MaxKeys: pageSize,
+        ContinuationToken: continuationToken,
       })
     )
 
@@ -48,7 +82,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       items,
+      page,
+      pageSize,
       nextToken: listResponse.NextContinuationToken || null,
+      hasNextPage: Boolean(listResponse.NextContinuationToken),
     })
   } catch (error) {
     console.error('[reference-browse] failed', {

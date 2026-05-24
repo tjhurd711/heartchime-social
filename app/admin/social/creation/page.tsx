@@ -51,6 +51,7 @@ const dmSans = DM_Sans({
 const LIVE_REFERENCE_DEFAULT_PREFIX = 'uploads/'
 const CUSTOM_OPTION_VALUE = '__custom__'
 const DEFAULT_BLUR_LEVEL = 1
+const REFERENCE_PAGE_SIZE = 24
 
 const SCENE_OPTIONS = [
   'Walking on the beach at sunset',
@@ -124,9 +125,10 @@ export default function CreationPage() {
   const [referencePrefixInput, setReferencePrefixInput] = useState(LIVE_REFERENCE_DEFAULT_PREFIX)
   const [referenceActivePrefix, setReferenceActivePrefix] = useState(LIVE_REFERENCE_DEFAULT_PREFIX)
   const [referenceItems, setReferenceItems] = useState<S3ReferenceBrowseItem[]>([])
-  const [referenceNextToken, setReferenceNextToken] = useState<string | null>(null)
+  const [referencePage, setReferencePage] = useState(1)
+  const [referencePageInput, setReferencePageInput] = useState('1')
+  const [referenceHasNextPage, setReferenceHasNextPage] = useState(false)
   const [referenceLoading, setReferenceLoading] = useState(false)
-  const [referenceLoadingMore, setReferenceLoadingMore] = useState(false)
   const [referencePickerError, setReferencePickerError] = useState<string | null>(null)
 
   const [addSpecificDetail, setAddSpecificDetail] = useState(false)
@@ -297,16 +299,13 @@ export default function CreationPage() {
     }
   }, [memorialSceneType, memorialLocation])
 
-  const browseReferencePrefix = async (prefix: string, token?: string, append = false) => {
-    if (!append) {
-      setReferenceLoading(true)
-    } else {
-      setReferenceLoadingMore(true)
-    }
+  const browseReferencePrefix = async (prefix: string, page = 1) => {
+    setReferenceLoading(true)
     setReferencePickerError(null)
     try {
       const params = new URLSearchParams({ prefix })
-      if (token) params.set('token', token)
+      params.set('page', String(Math.max(1, page)))
+      params.set('pageSize', String(REFERENCE_PAGE_SIZE))
 
       const response = await fetch(`/api/admin/social/reference-browse?${params.toString()}`)
       const data = await response.json()
@@ -315,15 +314,19 @@ export default function CreationPage() {
       }
 
       const nextItems: S3ReferenceBrowseItem[] = Array.isArray(data.items) ? data.items : []
+      const resolvedPage = typeof data.page === 'number' && Number.isFinite(data.page) && data.page > 0
+        ? Math.floor(data.page)
+        : Math.max(1, page)
       setReferenceActivePrefix(prefix)
       setReferencePrefixInput(prefix)
-      setReferenceItems((prev) => (append ? [...prev, ...nextItems] : nextItems))
-      setReferenceNextToken(typeof data.nextToken === 'string' ? data.nextToken : null)
+      setReferenceItems(nextItems)
+      setReferencePage(resolvedPage)
+      setReferencePageInput(String(resolvedPage))
+      setReferenceHasNextPage(Boolean(data.hasNextPage))
     } catch (err) {
       setReferencePickerError(err instanceof Error ? err.message : 'Failed to browse S3 reference photos')
     } finally {
       setReferenceLoading(false)
-      setReferenceLoadingMore(false)
     }
   }
 
@@ -575,7 +578,7 @@ export default function CreationPage() {
                 type="button"
                 onClick={() => {
                   setShowReferencePicker(true)
-                  void browseReferencePrefix(referenceActivePrefix || LIVE_REFERENCE_DEFAULT_PREFIX)
+                  void browseReferencePrefix(referenceActivePrefix || LIVE_REFERENCE_DEFAULT_PREFIX, 1)
                 }}
                 className="rounded-lg border border-[#f1d386]/70 bg-[#2e3b5e] px-4 py-2 text-[#f1d386] hover:bg-[#364974]"
               >
@@ -958,7 +961,7 @@ export default function CreationPage() {
               />
               <button
                 type="button"
-                onClick={() => void browseReferencePrefix(referencePrefixInput.trim() || LIVE_REFERENCE_DEFAULT_PREFIX)}
+                onClick={() => void browseReferencePrefix(referencePrefixInput.trim() || LIVE_REFERENCE_DEFAULT_PREFIX, 1)}
                 disabled={referenceLoading}
                 className="px-4 py-2 rounded-lg border border-[#f1d386]/70 text-[#f1d386] hover:bg-[#f1d386]/10 disabled:opacity-60"
               >
@@ -966,7 +969,48 @@ export default function CreationPage() {
               </button>
             </div>
 
-            <p className="text-xs text-[#b9aa87]">Current prefix: {referenceActivePrefix}</p>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-[#b9aa87]">
+              <span>Current prefix: {referenceActivePrefix}</span>
+              <span>Page {referencePage}</span>
+              <span>{REFERENCE_PAGE_SIZE} per page</span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void browseReferencePrefix(referenceActivePrefix, referencePage - 1)}
+                disabled={referenceLoading || referencePage <= 1}
+                className="px-3 py-1.5 rounded-lg border border-[#3d4a68] text-[#f7f1df] hover:bg-[#2e3b5e] disabled:opacity-60"
+              >
+                Prev
+              </button>
+              <button
+                type="button"
+                onClick={() => void browseReferencePrefix(referenceActivePrefix, referencePage + 1)}
+                disabled={referenceLoading || !referenceHasNextPage}
+                className="px-3 py-1.5 rounded-lg border border-[#3d4a68] text-[#f7f1df] hover:bg-[#2e3b5e] disabled:opacity-60"
+              >
+                Next
+              </button>
+              <input
+                value={referencePageInput}
+                onChange={(e) => setReferencePageInput(e.target.value.replace(/[^\d]/g, ''))}
+                placeholder="Page #"
+                className="w-24 px-2 py-1.5 bg-[#0f1729] border border-[#3d4a68] rounded-lg text-[#f7f1df]"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const parsedPage = Number.parseInt(referencePageInput || '1', 10)
+                  const safePage = Number.isNaN(parsedPage) ? 1 : Math.max(1, parsedPage)
+                  void browseReferencePrefix(referenceActivePrefix, safePage)
+                }}
+                disabled={referenceLoading}
+                className="px-3 py-1.5 rounded-lg border border-[#f1d386]/70 text-[#f1d386] hover:bg-[#f1d386]/10 disabled:opacity-60"
+              >
+                Go
+              </button>
+            </div>
 
             {referencePickerError && <p className="text-sm text-red-300">{referencePickerError}</p>}
 
@@ -1005,18 +1049,6 @@ export default function CreationPage() {
               </div>
             )}
 
-            {referenceNextToken && (
-              <div className="flex justify-center">
-                <button
-                  type="button"
-                  onClick={() => void browseReferencePrefix(referenceActivePrefix, referenceNextToken, true)}
-                  disabled={referenceLoadingMore}
-                  className="px-4 py-2 rounded-lg border border-[#3d4a68] text-[#f7f1df] hover:bg-[#2e3b5e] disabled:opacity-60"
-                >
-                  {referenceLoadingMore ? 'Loading more...' : 'Load more'}
-                </button>
-              </div>
-            )}
           </div>
         </div>
       )}
