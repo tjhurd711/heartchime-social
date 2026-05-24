@@ -75,7 +75,7 @@ select
       'order', 4,
       'slide_type', 'ai_generated',
       'photo_source', 'reference_previous',
-      'prompt_recipe', 'Show the same exact two people from the previous photo, now both 5 years older than before. Keep amateur phone-photo realism, era consistency, natural lighting, and candid imperfections.',
+      'prompt_recipe', 'Show the same exact two people from the previous photo, now both 5 years older than before, in a different setting. Keep amateur phone-photo realism, era consistency, natural lighting, and candid imperfections.',
       'overlay_style', 'none',
       'motion_hint', 'Subtle natural movement only: one blink and tiny posture shift. Camera locked off.',
       'motion_style', 'ai_subtle',
