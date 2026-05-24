@@ -197,7 +197,8 @@ export default function CreationPage() {
   }, [selectedTrend, templateReferences])
 
   const activeSlideOrders = useMemo(() => {
-    const orders = [1, 2]
+    const orders = [1]
+    if (slideCount >= 2) orders.push(2)
     if (slideCount >= 3) orders.push(3)
     if (slideCount >= 4) orders.push(4)
     if (includeMemorialSlide) orders.push(5)
@@ -895,10 +896,10 @@ export default function CreationPage() {
                 {savingCaptions ? 'Saving...' : 'Save captions to this trend'}
               </button>
             </div>
-            {captionFieldOrders.map((order) => (
+            {captionFieldOrders.map((order, index) => (
               <div key={order}>
                 <label className="block text-sm text-[#d7c9a6] mb-1">
-                  {order === 5 ? 'Slide 5 (Memorial)' : `Slide ${order}`}
+                  {order === 5 ? `Slide ${index + 1} (Memorial)` : `Slide ${index + 1}`}
                 </label>
                 <input
                   type="text"
