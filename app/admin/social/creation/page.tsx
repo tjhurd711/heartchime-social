@@ -370,11 +370,9 @@ export default function CreationPage() {
       setError('Please choose a reference photo from S3.')
       return
     }
-    if (!isAstronautTrend) {
-      if (slideCount >= 2 && !sceneValues[2]?.trim()) {
-        setError('Slide 2 needs a scene.')
-        return
-      }
+    if (slideCount >= 2 && !sceneValues[2]?.trim()) {
+      setError('Slide 2 needs an activity/scene.')
+      return
     }
     if (isAstronautTrend && !astronautRelationship.trim()) {
       setError('Please enter the relationship for Astronaut.')
@@ -676,7 +674,7 @@ export default function CreationPage() {
             </h2>
             <p className="text-sm text-[#d7c9a6]">
               {isAstronautTrend
-                ? 'Slides 2-4 chain from the immediately previous slide (`reference_previous`) with configurable relationship + age step.'
+                ? 'Slides 2-4 chain from the immediately previous slide (`reference_previous`) with configurable relationship + age step + per-slide activity.'
                 : 'Keep the same exact people from Slide 1 while changing scene. Add extra slides when needed.'}
             </p>
             {isAstronautTrend && (
@@ -731,44 +729,41 @@ export default function CreationPage() {
               return (
                 <div key={order} className="rounded-xl border border-[#3d4a68] bg-[#15213a] p-4 space-y-3">
                   <h3 className={`${cormorant.className} text-xl text-[#f7f1df]`}>Slide {order}</h3>
-                  {isAstronautTrend ? (
+                  {isAstronautTrend && (
                     <p className="text-sm text-[#d7c9a6]">
-                      Uses `reference_previous` from Slide {order - 1} and applies the shared Astronaut age progression prompt.
+                      Uses `reference_previous` from Slide {order - 1} and applies Astronaut age progression.
                     </p>
-                  ) : (
-                    <>
-                      <label className="text-sm text-[#d7c9a6] block">Scene</label>
-                      <select
-                        value={selectValue}
-                        onChange={(e) => {
-                          if (e.target.value === CUSTOM_OPTION_VALUE) {
-                            setSceneCustomMode((prev) => ({ ...prev, [order]: true }))
-                            setSceneValues((prev) => ({ ...prev, [order]: prev[order] || '' }))
-                            return
-                          }
-                          setSceneCustomMode((prev) => ({ ...prev, [order]: false }))
-                          setSceneValues((prev) => ({ ...prev, [order]: e.target.value }))
-                        }}
-                        className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
-                      >
-                        {SCENE_OPTIONS.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                        <option value={CUSTOM_OPTION_VALUE}>Other...</option>
-                      </select>
+                  )}
+                  <label className="text-sm text-[#d7c9a6] block">Activity / scene</label>
+                  <select
+                    value={selectValue}
+                    onChange={(e) => {
+                      if (e.target.value === CUSTOM_OPTION_VALUE) {
+                        setSceneCustomMode((prev) => ({ ...prev, [order]: true }))
+                        setSceneValues((prev) => ({ ...prev, [order]: prev[order] || '' }))
+                        return
+                      }
+                      setSceneCustomMode((prev) => ({ ...prev, [order]: false }))
+                      setSceneValues((prev) => ({ ...prev, [order]: e.target.value }))
+                    }}
+                    className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                  >
+                    {SCENE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                    <option value={CUSTOM_OPTION_VALUE}>Other...</option>
+                  </select>
 
-                      {isCustom && (
-                        <input
-                          type="text"
-                          value={currentScene}
-                          onChange={(e) => setSceneValues((prev) => ({ ...prev, [order]: e.target.value }))}
-                          placeholder="Enter custom scene..."
-                          className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
-                        />
-                      )}
-                    </>
+                  {isCustom && (
+                    <input
+                      type="text"
+                      value={currentScene}
+                      onChange={(e) => setSceneValues((prev) => ({ ...prev, [order]: e.target.value }))}
+                      placeholder="Enter custom scene..."
+                      className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                    />
                   )}
 
                   <div>

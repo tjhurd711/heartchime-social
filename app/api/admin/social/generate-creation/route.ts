@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
     if (!body.reference_pick_key?.trim()) {
       return NextResponse.json({ error: 'Missing required field: reference_pick_key' }, { status: 400 })
     }
-    if (!isAstronautTrend && includeSlide2 && !body.scene_2?.trim()) {
+    if (includeSlide2 && !body.scene_2?.trim()) {
       return NextResponse.json({ error: 'Missing required field: scene_2' }, { status: 400 })
     }
     if (isAstronautTrend && !body.relationship?.trim()) {
@@ -141,6 +141,9 @@ export async function POST(request: NextRequest) {
       memorial_urn_color:
         body.memorial_settings?.memorial_urn_color || 'deep navy blue ceramic with subtle gold accents',
       memorial_keepsake: body.memorial_settings?.memorial_keepsake || '',
+      scene_2: scene2,
+      scene_3: scene3,
+      scene_4: scene4,
       ...(isAstronautTrend
         ? {
             slide_1_reference_pick_key: body.reference_pick_key?.trim() || '',
@@ -149,9 +152,6 @@ export async function POST(request: NextRequest) {
           }
         : {
             slide_1_reference_pick_key: body.reference_pick_key?.trim() || '',
-            scene_2: scene2,
-            scene_3: scene3,
-            scene_4: scene4,
           }),
       ...Object.fromEntries(blurLevelEntries),
     }
