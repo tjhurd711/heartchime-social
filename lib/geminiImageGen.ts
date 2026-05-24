@@ -19,6 +19,33 @@ interface GeminiResponsePart {
   }
 }
 
+function inferImageMimeTypeFromUrl(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl)
+    const pathname = parsed.pathname.toLowerCase()
+    if (pathname.endsWith('.png')) return 'image/png'
+    if (pathname.endsWith('.webp')) return 'image/webp'
+    if (pathname.endsWith('.heic')) return 'image/heic'
+    if (pathname.endsWith('.heif')) return 'image/heif'
+    return 'image/jpeg'
+  } catch {
+    const lower = rawUrl.toLowerCase()
+    if (lower.endsWith('.png')) return 'image/png'
+    if (lower.endsWith('.webp')) return 'image/webp'
+    if (lower.endsWith('.heic')) return 'image/heic'
+    if (lower.endsWith('.heif')) return 'image/heif'
+    return 'image/jpeg'
+  }
+}
+
+function normalizeReferenceMimeType(contentTypeHeader: string | null, referenceUrl: string): string {
+  const raw = (contentTypeHeader || '').split(';')[0].trim().toLowerCase()
+  if (raw.startsWith('image/')) {
+    return raw
+  }
+  return inferImageMimeTypeFromUrl(referenceUrl)
+}
+
 export async function generateAndUploadPhoto(
   prompt: string,
   options: { referenceImageUrl?: string | null; referenceMode?: 'identity' | 'style' } = {}
@@ -39,7 +66,10 @@ export async function generateAndUploadPhoto(
       try {
         const referenceResponse = await fetch(options.referenceImageUrl)
         if (referenceResponse.ok) {
-          const contentType = referenceResponse.headers.get('content-type') || 'image/jpeg'
+          const contentType = normalizeReferenceMimeType(
+            referenceResponse.headers.get('content-type'),
+            options.referenceImageUrl
+          )
           const referenceBuffer = Buffer.from(await referenceResponse.arrayBuffer())
           requestParts.push({
             inlineData: {
