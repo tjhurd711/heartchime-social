@@ -669,7 +669,7 @@ async function mintLiveReferencePresignedUrl(key: string): Promise<string> {
 
 function applyStyleOnlyReferencePrompt(prompt: string): string {
   const styleOnlyConstraint =
-    'STYLE-ONLY REFERENCE LOCK (highest priority): Create another photo just like the reference but with different people and a slightly different setting. Keep the way the photo is composed, framed, and the actions/moment exactly the same in spirit. The people must be different people (not the same identity or face), still reading as the same relationship dynamic (for example, grandfather and grandson when applicable). Keep the awkwardness: imperfect lighting, awkward expressions, slight blur/soft focus, and real phone-photo messiness. This must not look like a stock photo. Use a somewhat different background and furniture/details (for example, a different chair), while preserving the same awkward-real snapshot feel.'
+    'STYLE-ONLY REFERENCE LOCK (highest priority): Create another photo just like this reference photo but with different people and a slightly different setting. Other than that the photo should look the exact same - this should not look like a stock photo, if there was glare keep it, if bad lighting keep it, truly only look to make the people different and thats it (the relationship of the people should be the same). Keep the awkwardness: imperfect lighting, awkward expressions, slight blur/soft focus, and real phone-photo messiness.'
 
   if (!prompt.trim()) {
     return styleOnlyConstraint
