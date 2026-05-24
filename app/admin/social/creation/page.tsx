@@ -19,6 +19,10 @@ interface TrendRow {
   caption_lines: string[] | null
   default_slide_count: number
   memorial_default: boolean
+  slide_plan?: Array<{
+    type: 'reference' | 'text_artifact'
+    live_photo_eligible?: boolean
+  }> | null
 }
 
 interface S3ReferenceBrowseItem {
@@ -158,6 +162,7 @@ export default function CreationPage() {
 
   const [livePhotoSlideOrders, setLivePhotoSlideOrders] = useState<number[]>([])
   const [noteLinesByOrder, setNoteLinesByOrder] = useState<Record<number, string>>({})
+  const [textArtifactPrompt2, setTextArtifactPrompt2] = useState('')
 
   const [memorialSceneType, setMemorialSceneType] = useState<MemorialSceneType>('headstone_classic')
   const [memorialLocation, setMemorialLocation] = useState<MemorialLocation>('cemetery')
@@ -178,6 +183,7 @@ export default function CreationPage() {
     [trends, selectedTrendId]
   )
   const isAstronautTrend = selectedTrend?.name === "I'm an Astronaut"
+  const isDragPathTrend = selectedTrend?.name === 'Drag Path'
   const selectedTrendExample = useMemo(() => {
     if (!selectedTrend) return null
 
@@ -299,6 +305,7 @@ export default function CreationPage() {
       3: 'pointing at something',
       4: 'walking together',
     })
+    setTextArtifactPrompt2('')
   }, [selectedTrend])
 
   useEffect(() => {
@@ -381,7 +388,11 @@ export default function CreationPage() {
       setError('Please choose a reference photo from S3.')
       return
     }
-    if (slideCount >= 2 && !sceneValues[2]?.trim()) {
+    if (isDragPathTrend && slideCount >= 2 && !textArtifactPrompt2.trim()) {
+      setError('Slide 2 needs a note/object description for GPT Image.')
+      return
+    }
+    if (!isDragPathTrend && slideCount >= 2 && !sceneValues[2]?.trim()) {
       setError('Slide 2 needs an activity/scene.')
       return
     }
@@ -422,6 +433,7 @@ export default function CreationPage() {
           scene_2: sceneValues[2] || '',
           scene_3: sceneValues[3] || '',
           scene_4: sceneValues[4] || '',
+          text_artifact_prompt_2: textArtifactPrompt2.trim(),
           action_2: actionValues[2] || '',
           action_3: actionValues[3] || '',
           action_4: actionValues[4] || '',
@@ -693,14 +705,59 @@ export default function CreationPage() {
 
           <section className="rounded-2xl border border-[#7a6738]/60 bg-[#111a2f] p-5 space-y-4">
             <h2 className={`${cormorant.className} text-2xl text-[#f1d386]`}>
-              {isAstronautTrend ? '3) Slides 2..N (Chained Age Progression)' : '3) Slides 2..N (Identity Anchor)'}
+              {isDragPathTrend
+                ? '3) Slide 2 (Text Artifact)'
+                : isAstronautTrend
+                  ? '3) Slides 2..N (Chained Age Progression)'
+                  : '3) Slides 2..N (Identity Anchor)'}
             </h2>
             <p className="text-sm text-[#d7c9a6]">
-              {isAstronautTrend
+              {isDragPathTrend
+                ? 'Slide 2 uses GPT Image (gpt-image-2) from a manual description field. No reference image is sent for this slide.'
+                : isAstronautTrend
                 ? 'Slides 2-4 chain from the immediately previous slide (`reference_previous`) with configurable relationship + age step + per-slide activity.'
                 : 'Keep the same exact people from Slide 1 while changing scene. Add extra slides when needed.'}
             </p>
-            {isAstronautTrend && (
+            {isDragPathTrend ? (
+              <div className="rounded-xl border border-[#3d4a68] bg-[#15213a] p-4 space-y-3">
+                <h3 className={`${cormorant.className} text-xl text-[#f7f1df]`}>Slide 2</h3>
+                <label className="text-sm text-[#d7c9a6] block">Describe the note / object (sent to GPT Image)</label>
+                <textarea
+                  value={textArtifactPrompt2}
+                  onChange={(e) => setTextArtifactPrompt2(e.target.value)}
+                  placeholder="e.g. A wrinkled handwritten note on a kitchen counter that says..."
+                  rows={5}
+                  className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                />
+
+                <div>
+                  <label className="text-sm text-[#d7c9a6] block mb-1">Blur level (Slide 2)</label>
+                  <select
+                    value={blurLevelsByOrder[2] || DEFAULT_BLUR_LEVEL}
+                    onChange={(e) => handleBlurLevelChange(2, Number.parseInt(e.target.value, 10))}
+                    className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                  >
+                    {Array.from({ length: 10 }, (_item, i) => i + 1).map((level) => (
+                      <option key={level} value={level}>
+                        {level}/10
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <label className="flex items-center gap-2 text-sm text-[#f7f1df]">
+                  <input
+                    type="checkbox"
+                    checked={livePhotoSlideOrders.includes(2)}
+                    onChange={(e) => handleToggleLivePhoto(2, e.target.checked)}
+                    className="h-4 w-4 accent-[#f1d386]"
+                  />
+                  Live Photo for Slide 2
+                </label>
+              </div>
+            ) : (
+              <>
+                {isAstronautTrend && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label className="text-sm text-[#d7c9a6] block mb-1">Race</label>
@@ -734,8 +791,8 @@ export default function CreationPage() {
                   />
                 </div>
               </div>
-            )}
-            <div className="flex flex-wrap items-center gap-2">
+                )}
+                <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setSlideCount((prev) => Math.min(4, prev + 1))}
@@ -752,96 +809,99 @@ export default function CreationPage() {
               >
                 - Remove last slide
               </button>
-            </div>
-
-            {[2, 3, 4].filter((order) => order <= slideCount).map((order) => {
-              const currentScene = sceneValues[order] || ''
-              const isCustom = sceneCustomMode[order] || !SCENE_OPTIONS.includes(currentScene)
-              const selectValue = isCustom ? CUSTOM_OPTION_VALUE : currentScene
-
-              return (
-                <div key={order} className="rounded-xl border border-[#3d4a68] bg-[#15213a] p-4 space-y-3">
-                  <h3 className={`${cormorant.className} text-xl text-[#f7f1df]`}>Slide {order}</h3>
-                  {isAstronautTrend && (
-                    <p className="text-sm text-[#d7c9a6]">
-                      Uses `reference_previous` from Slide {order - 1} and applies Astronaut age progression.
-                    </p>
-                  )}
-                  <label className="text-sm text-[#d7c9a6] block">Activity / scene</label>
-                  <select
-                    value={selectValue}
-                    onChange={(e) => {
-                      if (e.target.value === CUSTOM_OPTION_VALUE) {
-                        setSceneCustomMode((prev) => ({ ...prev, [order]: true }))
-                        setSceneValues((prev) => ({ ...prev, [order]: prev[order] || '' }))
-                        return
-                      }
-                      setSceneCustomMode((prev) => ({ ...prev, [order]: false }))
-                      setSceneValues((prev) => ({ ...prev, [order]: e.target.value }))
-                    }}
-                    className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
-                  >
-                    {SCENE_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                    <option value={CUSTOM_OPTION_VALUE}>Other...</option>
-                  </select>
-
-                  {isCustom && (
-                    <input
-                      type="text"
-                      value={currentScene}
-                      onChange={(e) => setSceneValues((prev) => ({ ...prev, [order]: e.target.value }))}
-                      placeholder="Enter custom scene..."
-                      className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
-                    />
-                  )}
-
-                  {isAstronautTrend && (
-                    <div>
-                      <label className="text-sm text-[#d7c9a6] block mb-1">Action</label>
-                      <input
-                        type="text"
-                        value={actionValues[order] || ''}
-                        onChange={(e) => setActionValues((prev) => ({ ...prev, [order]: e.target.value }))}
-                        placeholder='e.g. smiling for a photo, pointing at something'
-                        className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
-                      />
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="text-sm text-[#d7c9a6] block mb-1">Blur level (Slide {order})</label>
-                    <select
-                      value={blurLevelsByOrder[order] || DEFAULT_BLUR_LEVEL}
-                      onChange={(e) => handleBlurLevelChange(order, Number.parseInt(e.target.value, 10))}
-                      className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
-                    >
-                      {Array.from({ length: 10 }, (_item, i) => i + 1).map((level) => (
-                        <option key={level} value={level}>
-                          {level}/10
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <label className="flex items-center gap-2 text-sm text-[#f7f1df]">
-                    <input
-                      type="checkbox"
-                      checked={livePhotoSlideOrders.includes(order)}
-                      onChange={(e) => handleToggleLivePhoto(order, e.target.checked)}
-                      className="h-4 w-4 accent-[#f1d386]"
-                    />
-                    Live Photo for Slide {order}
-                  </label>
                 </div>
-              )
-            })}
+
+                {[2, 3, 4].filter((order) => order <= slideCount).map((order) => {
+                  const currentScene = sceneValues[order] || ''
+                  const isCustom = sceneCustomMode[order] || !SCENE_OPTIONS.includes(currentScene)
+                  const selectValue = isCustom ? CUSTOM_OPTION_VALUE : currentScene
+
+                  return (
+                    <div key={order} className="rounded-xl border border-[#3d4a68] bg-[#15213a] p-4 space-y-3">
+                      <h3 className={`${cormorant.className} text-xl text-[#f7f1df]`}>Slide {order}</h3>
+                      {isAstronautTrend && (
+                        <p className="text-sm text-[#d7c9a6]">
+                          Uses `reference_previous` from Slide {order - 1} and applies Astronaut age progression.
+                        </p>
+                      )}
+                      <label className="text-sm text-[#d7c9a6] block">Activity / scene</label>
+                      <select
+                        value={selectValue}
+                        onChange={(e) => {
+                          if (e.target.value === CUSTOM_OPTION_VALUE) {
+                            setSceneCustomMode((prev) => ({ ...prev, [order]: true }))
+                            setSceneValues((prev) => ({ ...prev, [order]: prev[order] || '' }))
+                            return
+                          }
+                          setSceneCustomMode((prev) => ({ ...prev, [order]: false }))
+                          setSceneValues((prev) => ({ ...prev, [order]: e.target.value }))
+                        }}
+                        className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                      >
+                        {SCENE_OPTIONS.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                        <option value={CUSTOM_OPTION_VALUE}>Other...</option>
+                      </select>
+
+                      {isCustom && (
+                        <input
+                          type="text"
+                          value={currentScene}
+                          onChange={(e) => setSceneValues((prev) => ({ ...prev, [order]: e.target.value }))}
+                          placeholder="Enter custom scene..."
+                          className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                        />
+                      )}
+
+                      {isAstronautTrend && (
+                        <div>
+                          <label className="text-sm text-[#d7c9a6] block mb-1">Action</label>
+                          <input
+                            type="text"
+                            value={actionValues[order] || ''}
+                            onChange={(e) => setActionValues((prev) => ({ ...prev, [order]: e.target.value }))}
+                            placeholder='e.g. smiling for a photo, pointing at something'
+                            className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="text-sm text-[#d7c9a6] block mb-1">Blur level (Slide {order})</label>
+                        <select
+                          value={blurLevelsByOrder[order] || DEFAULT_BLUR_LEVEL}
+                          onChange={(e) => handleBlurLevelChange(order, Number.parseInt(e.target.value, 10))}
+                          className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                        >
+                          {Array.from({ length: 10 }, (_item, i) => i + 1).map((level) => (
+                            <option key={level} value={level}>
+                              {level}/10
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <label className="flex items-center gap-2 text-sm text-[#f7f1df]">
+                        <input
+                          type="checkbox"
+                          checked={livePhotoSlideOrders.includes(order)}
+                          onChange={(e) => handleToggleLivePhoto(order, e.target.checked)}
+                          className="h-4 w-4 accent-[#f1d386]"
+                        />
+                        Live Photo for Slide {order}
+                      </label>
+                    </div>
+                  )
+                })}
+              </>
+            )}
           </section>
 
-          <section className="rounded-2xl border border-[#7a6738]/60 bg-[#111a2f] p-5 space-y-4">
+          {!isDragPathTrend && (
+            <section className="rounded-2xl border border-[#7a6738]/60 bg-[#111a2f] p-5 space-y-4">
             <div className="flex items-center justify-between gap-3">
               <h2 className={`${cormorant.className} text-2xl text-[#f1d386]`}>4) Memorial Slide (Optional)</h2>
               <label className="flex items-center gap-2 text-sm text-[#f7f1df]">
@@ -988,7 +1048,8 @@ export default function CreationPage() {
             )}
 
             <p className="text-xs text-[#b9aa87]">Live Photo is disabled for memorial slide (same as existing flow).</p>
-          </section>
+            </section>
+          )}
 
           <section className="rounded-2xl border border-[#7a6738]/60 bg-[#111a2f] p-5 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">

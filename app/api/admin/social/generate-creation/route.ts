@@ -11,6 +11,7 @@ interface GenerateCreationRequest {
   slide_count: number
   include_memorial: boolean
   reference_pick_key?: string
+  text_artifact_prompt_2?: string
   add_detail: boolean
   detail_text?: string
   scene_2?: string
@@ -51,10 +52,7 @@ export async function POST(request: NextRequest) {
     if (!body.trend_id) {
       return NextResponse.json({ error: 'Missing required field: trend_id' }, { status: 400 })
     }
-    const slideCount = Math.max(1, Math.min(4, Math.floor(body.slide_count || 4)))
-    const includeSlide2 = slideCount >= 2
-    const includeSlide3 = slideCount >= 3
-    const includeSlide4 = slideCount >= 4
+    const requestedSlideCount = Math.max(1, Math.min(4, Math.floor(body.slide_count || 4)))
 
     const { data: trend, error: trendError } = await supabase
       .from('social_trends')
@@ -68,11 +66,20 @@ export async function POST(request: NextRequest) {
     }
 
     const isAstronautTrend = trend.name === "I'm an Astronaut"
+    const isDragPathTrend = trend.name === 'Drag Path'
+    const includeMemorialSlide = isDragPathTrend ? false : Boolean(body.include_memorial)
+    const slideCount = isDragPathTrend ? 2 : requestedSlideCount
+    const includeSlide2 = slideCount >= 2
+    const includeSlide3 = slideCount >= 3
+    const includeSlide4 = slideCount >= 4
 
     if (!body.reference_pick_key?.trim()) {
       return NextResponse.json({ error: 'Missing required field: reference_pick_key' }, { status: 400 })
     }
-    if (includeSlide2 && !body.scene_2?.trim()) {
+    if (isDragPathTrend && !body.text_artifact_prompt_2?.trim()) {
+      return NextResponse.json({ error: 'Missing required field: text_artifact_prompt_2' }, { status: 400 })
+    }
+    if (includeSlide2 && !isDragPathTrend && !body.scene_2?.trim()) {
       return NextResponse.json({ error: 'Missing required field: scene_2' }, { status: 400 })
     }
     if (isAstronautTrend && !body.relationship?.trim()) {
@@ -82,7 +89,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required field: race' }, { status: 400 })
     }
 
-    const scene2 = body.scene_2?.trim() || 'Walking on the beach at sunset'
+    const textArtifactPrompt2 = body.text_artifact_prompt_2?.trim() || ''
+    const scene2 = isDragPathTrend
+      ? textArtifactPrompt2
+      : body.scene_2?.trim() || 'Walking on the beach at sunset'
     const scene3 = body.scene_3?.trim() || scene2
     const scene4 = body.scene_4?.trim() || scene3 || scene2
     const action2 = body.action_2?.trim() || 'smiling for a photo'
@@ -101,7 +111,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const engineTemplateName = isAstronautTrend ? 'Creation Engine Astronaut' : 'Creation Engine'
+    const engineTemplateName = isAstronautTrend
+      ? 'Creation Engine Astronaut'
+      : isDragPathTrend
+        ? 'Creation Engine Drag Path'
+        : 'Creation Engine'
     const { data: engineTemplate, error: templateError } = await supabase
       .from('post_templates')
       .select('id')
@@ -135,7 +149,7 @@ export async function POST(request: NextRequest) {
       include_slide_2: includeSlide2 ? 'yes' : 'no',
       include_slide_3: includeSlide3 ? 'yes' : 'no',
       include_slide_4: includeSlide4 ? 'yes' : 'no',
-      include_memorial_slide: body.include_memorial ? 'yes' : 'no',
+      include_memorial_slide: includeMemorialSlide ? 'yes' : 'no',
       note_line_1: coalesceLine(body.note_lines || [], 0),
       note_line_2: coalesceLine(body.note_lines || [], 1),
       note_line_3: coalesceLine(body.note_lines || [], 2),
@@ -154,6 +168,7 @@ export async function POST(request: NextRequest) {
       scene_2: scene2,
       scene_3: scene3,
       scene_4: scene4,
+      text_artifact_prompt_2: textArtifactPrompt2,
       action_2: action2,
       action_3: action3,
       action_4: action4,

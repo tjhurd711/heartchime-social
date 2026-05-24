@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { generateAndUploadPhoto } from '@/lib/geminiImageGen'
+import { generateAndUploadTextArtifact } from '@/lib/openaiImageGen'
 import { renderAndUploadSocialCard } from '@/lib/socialCardRenderer'
 import { renderAndUploadSlide1, TextStyle } from '@/lib/socialSlide1Renderer'
 import { buildPhotoPrompt } from '@/lib/socialPhotoPrompt'
@@ -26,6 +27,7 @@ type SlideType =
   | 'gravesite'
   | 'object'
   | 'ai_generated'
+  | 'text_artifact'
   | 'text_card'
   | 'heartchime_card'
   | 'photo_upload_display'
@@ -1101,6 +1103,24 @@ export async function POST(request: NextRequest) {
         slideResults.push({ order: slide.order, url: finalUrl, slide_type: slide.slide_type, overlay_text: noteOverlayText })
         latestImageUrl = finalUrl
         referenceImageBySlideOrder.set(slide.order, sourcePhotoUrl)
+        continue
+      }
+
+      if (slide.slide_type === 'text_artifact') {
+        const artifactUrl = await generateAndUploadTextArtifact(interpolatedPrompt)
+        if (!artifactUrl) {
+          throw new Error(`Failed to generate text artifact image for slide order ${slide.order}`)
+        }
+
+        const overlayText = resolveOverlayText(slide, interpolationContext, interpolatedPrompt)
+        const finalUrl =
+          overlayText && overlayText.trim()
+            ? await renderAndUploadSlide1(artifactUrl, overlayText, overlayStyleToTextStyle(slide.overlay_style))
+            : artifactUrl
+
+        slideResults.push({ order: slide.order, url: finalUrl, slide_type: slide.slide_type, overlay_text: noteOverlayText })
+        latestImageUrl = finalUrl
+        referenceImageBySlideOrder.set(slide.order, artifactUrl)
         continue
       }
 
