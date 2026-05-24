@@ -54,21 +54,21 @@ const DEFAULT_BLUR_LEVEL = 1
 const REFERENCE_PAGE_SIZE = 24
 
 const SCENE_OPTIONS = [
-  'Walking on the beach at sunset',
-  'Baking together in a cozy kitchen',
   'Sitting on a porch swing',
-  'Fishing at a calm lake',
   'Reading on the couch together',
-  'Walking through an autumn park',
   'Dancing in the living room',
-  'Gardening in the backyard',
-  'Picnic in a sunny meadow',
-  'Looking through old photo albums',
-  'Riding bikes down a quiet street',
-  'Sitting by a campfire at night',
-  'Watching sunrise on a hilltop',
   'Decorating a Christmas tree',
-  'Coffee at the kitchen table',
+  'Eating fast food in the car',
+  'Standing around in the kitchen',
+  'Watching TV on the couch',
+  'Pushing a cart through the grocery store',
+  'Sitting in a parked car',
+  'Waiting in a restaurant booth',
+  'Hanging out on the back patio',
+  'Walking through a parking lot',
+  'Sitting at the kitchen table',
+  'Killing time in a living room',
+  'Standing in the driveway',
 ]
 
 const TREND_CAPTION_FALLBACKS: Record<string, string[]> = {
