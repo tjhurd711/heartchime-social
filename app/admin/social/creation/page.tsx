@@ -209,8 +209,8 @@ export default function CreationPage() {
     [activeSlideOrders]
   )
   const captionFieldOrders = useMemo(
-    () => Array.from({ length: slideCount }, (_item, index) => index + 1),
-    [slideCount]
+    () => activeSlideOrders,
+    [activeSlideOrders]
   )
 
   useEffect(() => {
@@ -263,10 +263,21 @@ export default function CreationPage() {
     const fallbackCaptionLines = TREND_CAPTION_FALLBACKS[selectedTrend.name] || []
     const captionSource = savedCaptionLines.length > 0 ? savedCaptionLines : fallbackCaptionLines
 
+    const defaultActiveOrders = [1]
+    if (nextSlideCount >= 2) defaultActiveOrders.push(2)
+    if (nextSlideCount >= 3) defaultActiveOrders.push(3)
+    if (nextSlideCount >= 4) defaultActiveOrders.push(4)
+    if (Boolean(selectedTrend.memorial_default)) defaultActiveOrders.push(5)
+
     const nextNotes: Record<number, string> = {}
-    for (let order = 1; order <= nextSlideCount; order += 1) {
-      nextNotes[order] = captionSource[order - 1] || ''
-    }
+    defaultActiveOrders.forEach((order, index) => {
+      // Support both storage styles:
+      // - Absolute slide index (order-1), including memorial at index 4
+      // - Legacy sequential captions by active slide position
+      const bySlideOrder = captionSource[order - 1]
+      const byActivePosition = captionSource[index]
+      nextNotes[order] = bySlideOrder || byActivePosition || ''
+    })
     setNoteLinesByOrder(nextNotes)
   }, [selectedTrend])
 
@@ -356,7 +367,7 @@ export default function CreationPage() {
 
     setSubmitting(true)
     try {
-      const noteLines = captionFieldOrders.map((order) => noteLinesByOrder[order] || '')
+      const noteLines = [1, 2, 3, 4, 5].map((order) => noteLinesByOrder[order] || '')
 
       const response = await fetch('/api/admin/social/generate-creation', {
         method: 'POST',
@@ -428,7 +439,7 @@ export default function CreationPage() {
     setSaveCaptionsMessage(null)
     setError(null)
     try {
-      const captionLines = captionFieldOrders.map((order) => noteLinesByOrder[order] || '')
+      const captionLines = [1, 2, 3, 4, 5].map((order) => noteLinesByOrder[order] || '')
       const response = await fetch('/api/admin/social/trends', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -887,7 +898,7 @@ export default function CreationPage() {
             {captionFieldOrders.map((order) => (
               <div key={order}>
                 <label className="block text-sm text-[#d7c9a6] mb-1">
-                  Slide {order}
+                  {order === 5 ? 'Slide 5 (Memorial)' : `Slide ${order}`}
                 </label>
                 <input
                   type="text"
