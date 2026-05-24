@@ -16,6 +16,7 @@ interface GenerateCreationRequest {
   scene_2?: string
   scene_3?: string
   scene_4?: string
+  blur_levels?: Record<string, number>
   note_lines: string[]
   live_photo_slide_orders?: number[]
   sound_name?: string
@@ -90,6 +91,15 @@ export async function POST(request: NextRequest) {
         ? `Additional requested detail: ${body.detail_text.trim()}.`
         : ' '
 
+    const blurLevelEntries: Array<[string, string]> = []
+    const blurLevelsByOrder = body.blur_levels || {}
+    for (const order of [1, 2, 3, 4, 5]) {
+      const raw = blurLevelsByOrder[String(order)]
+      const parsed = Number.isFinite(raw) ? Math.floor(raw) : Number.parseInt(String(raw ?? ''), 10)
+      const clamped = Number.isNaN(parsed) ? 1 : Math.min(10, Math.max(1, parsed))
+      blurLevelEntries.push([`photo_blur_level_${order}`, String(clamped)])
+    }
+
     const variables: Record<string, string> = {
       slide_1_reference_pick_key: body.reference_pick_key.trim(),
       slide_1_extra_detail_clause: detailClause,
@@ -115,6 +125,7 @@ export async function POST(request: NextRequest) {
       memorial_urn_color:
         body.memorial_settings?.memorial_urn_color || 'deep navy blue ceramic with subtle gold accents',
       memorial_keepsake: body.memorial_settings?.memorial_keepsake || '',
+      ...Object.fromEntries(blurLevelEntries),
     }
 
     const livePhotoOrders = Array.isArray(body.live_photo_slide_orders)

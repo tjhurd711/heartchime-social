@@ -50,6 +50,7 @@ const dmSans = DM_Sans({
 
 const LIVE_REFERENCE_DEFAULT_PREFIX = 'uploads/'
 const CUSTOM_OPTION_VALUE = '__custom__'
+const DEFAULT_BLUR_LEVEL = 1
 
 const SCENE_OPTIONS = [
   'Walking on the beach at sunset',
@@ -137,6 +138,13 @@ export default function CreationPage() {
     4: getDefaultScene(4),
   })
   const [sceneCustomMode, setSceneCustomMode] = useState<Record<number, boolean>>({})
+  const [blurLevelsByOrder, setBlurLevelsByOrder] = useState<Record<number, number>>({
+    1: DEFAULT_BLUR_LEVEL,
+    2: DEFAULT_BLUR_LEVEL,
+    3: DEFAULT_BLUR_LEVEL,
+    4: DEFAULT_BLUR_LEVEL,
+    5: DEFAULT_BLUR_LEVEL,
+  })
 
   const [livePhotoSlideOrders, setLivePhotoSlideOrders] = useState<number[]>([])
   const [noteLinesByOrder, setNoteLinesByOrder] = useState<Record<number, string>>({})
@@ -319,6 +327,13 @@ export default function CreationPage() {
     })
   }
 
+  const handleBlurLevelChange = (order: number, level: number) => {
+    setBlurLevelsByOrder((prev) => ({
+      ...prev,
+      [order]: Math.min(10, Math.max(1, level)),
+    }))
+  }
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     setError(null)
@@ -354,6 +369,13 @@ export default function CreationPage() {
           scene_3: sceneValues[3] || '',
           scene_4: sceneValues[4] || '',
           note_lines: noteLines,
+          blur_levels: {
+            1: blurLevelsByOrder[1] || DEFAULT_BLUR_LEVEL,
+            2: blurLevelsByOrder[2] || DEFAULT_BLUR_LEVEL,
+            3: blurLevelsByOrder[3] || DEFAULT_BLUR_LEVEL,
+            4: blurLevelsByOrder[4] || DEFAULT_BLUR_LEVEL,
+            5: blurLevelsByOrder[5] || DEFAULT_BLUR_LEVEL,
+          },
           live_photo_slide_orders: livePhotoSlideOrders,
           sound_name: soundName || null,
           sound_url: soundUrl || null,
@@ -572,6 +594,21 @@ export default function CreationPage() {
               />
             )}
 
+            <div>
+              <label className="text-sm text-[#d7c9a6] block mb-1">Blur level (Slide 1)</label>
+              <select
+                value={blurLevelsByOrder[1] || DEFAULT_BLUR_LEVEL}
+                onChange={(e) => handleBlurLevelChange(1, Number.parseInt(e.target.value, 10))}
+                className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+              >
+                {Array.from({ length: 10 }, (_item, i) => i + 1).map((level) => (
+                  <option key={level} value={level}>
+                    {level}/10
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <label className="flex items-center gap-2 text-sm text-[#f7f1df]">
               <input
                 type="checkbox"
@@ -646,6 +683,21 @@ export default function CreationPage() {
                       className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
                     />
                   )}
+
+                  <div>
+                    <label className="text-sm text-[#d7c9a6] block mb-1">Blur level (Slide {order})</label>
+                    <select
+                      value={blurLevelsByOrder[order] || DEFAULT_BLUR_LEVEL}
+                      onChange={(e) => handleBlurLevelChange(order, Number.parseInt(e.target.value, 10))}
+                      className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                    >
+                      {Array.from({ length: 10 }, (_item, i) => i + 1).map((level) => (
+                        <option key={level} value={level}>
+                          {level}/10
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
                   <label className="flex items-center gap-2 text-sm text-[#f7f1df]">
                     <input
@@ -789,6 +841,21 @@ export default function CreationPage() {
                     />
                   </div>
                 )}
+
+                <div className="md:col-span-2">
+                  <label className="text-sm text-[#d7c9a6]">Blur level (Memorial slide)</label>
+                  <select
+                    value={blurLevelsByOrder[5] || DEFAULT_BLUR_LEVEL}
+                    onChange={(e) => handleBlurLevelChange(5, Number.parseInt(e.target.value, 10))}
+                    className="mt-1 w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                  >
+                    {Array.from({ length: 10 }, (_item, i) => i + 1).map((level) => (
+                      <option key={level} value={level}>
+                        {level}/10
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             )}
 

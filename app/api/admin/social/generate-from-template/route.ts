@@ -373,8 +373,11 @@ function applyPeopleCountConstraint(
   return `${prompt}\n\n${constraintParts.join('\n')}`
 }
 
-function buildPhotoBlurDescription(variables: TemplateVariables): string {
-  const rawLevel = Number.parseInt(getStringVariable(variables, 'photo_blur_level'), 10)
+function buildPhotoBlurDescription(variables: TemplateVariables, slideOrder?: number): string {
+  const perSlideKey = typeof slideOrder === 'number' ? `photo_blur_level_${slideOrder}` : null
+  const rawValue = perSlideKey ? getStringVariable(variables, perSlideKey) : null
+  const fallbackRawValue = getStringVariable(variables, 'photo_blur_level')
+  const rawLevel = Number.parseInt(rawValue || fallbackRawValue, 10)
   const level = Number.isNaN(rawLevel) ? 1 : Math.min(10, Math.max(1, rawLevel))
 
   if (level <= 1) {
@@ -418,13 +421,13 @@ function buildPhotoFilterDescription(variables: TemplateVariables): string {
   return ''
 }
 
-function applyPhotoGenerationStyle(prompt: string, variables: TemplateVariables): string {
+function applyPhotoGenerationStyle(prompt: string, variables: TemplateVariables, slideOrder?: number): string {
   if (!prompt.trim()) {
     return prompt
   }
 
   const filterDescription = buildPhotoFilterDescription(variables)
-  const blurDescription = buildPhotoBlurDescription(variables)
+  const blurDescription = buildPhotoBlurDescription(variables, slideOrder)
   const styleParts = [filterDescription, blurDescription].filter((part) => part.trim().length > 0)
 
   if (styleParts.length === 0) {
@@ -666,7 +669,7 @@ async function mintLiveReferencePresignedUrl(key: string): Promise<string> {
 
 function applyStyleOnlyReferencePrompt(prompt: string): string {
   const styleOnlyConstraint =
-    'STYLE-ONLY REFERENCE LOCK (highest priority): Create NEW, DIFFERENT people who do not resemble or match anyone in the reference image. Do not preserve identity, face shape, hairline, features, or exact clothing from the reference. Borrow only the visual style/composition: amateur snapshot quality, slight blur/soft focus, imperfect indoor lighting, candid awkward pose, and realistic non-stock-photo vibe. Keep composition and action similar while changing the people and making the setting slightly different.'
+    'STYLE-ONLY REFERENCE LOCK (highest priority): Create another photo just like the reference but with different people and a slightly different setting. Keep the way the photo is composed, framed, and the actions/moment exactly the same in spirit. The people must be different people (not the same identity or face), still reading as the same relationship dynamic (for example, grandfather and grandson when applicable). Keep the awkwardness: imperfect lighting, awkward expressions, slight blur/soft focus, and real phone-photo messiness. This must not look like a stock photo. Use a somewhat different background and furniture/details (for example, a different chair), while preserving the same awkward-real snapshot feel.'
 
   if (!prompt.trim()) {
     return styleOnlyConstraint
@@ -976,7 +979,7 @@ export async function POST(request: NextRequest) {
             variables
           )
           if (cardPhotoPrompt) {
-            evergreenCardPhotoUrl = await generateAndUploadPhoto(applyPhotoGenerationStyle(cardPhotoPrompt, variables))
+            evergreenCardPhotoUrl = await generateAndUploadPhoto(applyPhotoGenerationStyle(cardPhotoPrompt, variables, slide.order))
           }
         }
 
@@ -1054,14 +1057,14 @@ export async function POST(request: NextRequest) {
       } else if (slide.photo_source === 'variable_or_generated') {
         const photoVariableName = resolvePhotoVariableName(slide)
         const variablePhoto = photoVariableName ? getStringRecordValue(interpolationContext, photoVariableName) : null
-        baseImageUrl = variablePhoto || await generateAndUploadPhoto(applyPhotoGenerationStyle(interpolatedPrompt, variables))
+        baseImageUrl = variablePhoto || await generateAndUploadPhoto(applyPhotoGenerationStyle(interpolatedPrompt, variables, slide.order))
       } else if (slide.photo_source === 'reference_previous') {
         referenceImageUrl = referenceImageBySlideOrder.get(slide.order - 1) || latestImageUrl
         if (!referenceImageUrl) {
           throw new Error(`Slide order ${slide.order} requires photo_source=reference_previous, but no previous slide image exists`)
         }
         baseImageUrl = await generateAndUploadPhoto(
-          applyPhotoGenerationStyle(interpolatedPrompt, variables),
+          applyPhotoGenerationStyle(interpolatedPrompt, variables, slide.order),
           { referenceImageUrl, referenceMode: 'identity' }
         )
       } else if (slide.photo_source === 'reference_anchor') {
@@ -1075,7 +1078,7 @@ export async function POST(request: NextRequest) {
           )
         }
         baseImageUrl = await generateAndUploadPhoto(
-          applyPhotoGenerationStyle(interpolatedPrompt, variables),
+          applyPhotoGenerationStyle(interpolatedPrompt, variables, slide.order),
           { referenceImageUrl, referenceMode: 'identity' }
         )
       } else if (slide.photo_source === 'reference_live_pick') {
@@ -1091,12 +1094,12 @@ export async function POST(request: NextRequest) {
         referenceImageUrl = await mintLiveReferencePresignedUrl(referencePickKey)
         const styleOnlyPrompt = applyStyleOnlyReferencePrompt(interpolatedPrompt)
         baseImageUrl = await generateAndUploadPhoto(
-          applyPhotoGenerationStyle(styleOnlyPrompt, variables),
+          applyPhotoGenerationStyle(styleOnlyPrompt, variables, slide.order),
           { referenceImageUrl, referenceMode: 'style' }
         )
         referencePickKeyBySlideOrder.set(slide.order, referencePickKey)
       } else {
-        baseImageUrl = await generateAndUploadPhoto(applyPhotoGenerationStyle(interpolatedPrompt, variables))
+        baseImageUrl = await generateAndUploadPhoto(applyPhotoGenerationStyle(interpolatedPrompt, variables, slide.order))
       }
 
       if (!baseImageUrl) {
