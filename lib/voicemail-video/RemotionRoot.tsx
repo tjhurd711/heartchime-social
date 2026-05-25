@@ -22,12 +22,12 @@ export const RemotionRoot: React.FC = () => {
   return (
     <Composition
       id="VoicemailVideo"
-      component={VoicemailVideoComposition}
+      component={VoicemailVideoComposition as unknown as React.ComponentType<Record<string, unknown>>}
       width={1080}
       height={1920}
       fps={FPS}
       durationInFrames={FPS * 60}
-      defaultProps={defaultProps}
+      defaultProps={defaultProps as unknown as Record<string, unknown>}
     />
   )
 }
