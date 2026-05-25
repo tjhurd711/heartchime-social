@@ -13,6 +13,8 @@ interface GenerateCreationRequest {
   reference_pick_key?: string
   text_artifact_prompt_2?: string
   gpt_edit_prompt_2?: string
+  gemini_custom_prompt_3?: string
+  gemini_custom_reference_source_3?: 'none' | 'previous'
   add_detail: boolean
   detail_text?: string
   scene_2?: string
@@ -69,8 +71,13 @@ export async function POST(request: NextRequest) {
     const isAstronautTrend = trend.name === "I'm an Astronaut"
     const isDragPathTrend = trend.name === 'Drag Path'
     const isWinnerTakesAllTrend = trend.name === 'The Winner Takes It All'
-    const includeMemorialSlide = (isDragPathTrend || isWinnerTakesAllTrend) ? false : Boolean(body.include_memorial)
-    const slideCount = (isDragPathTrend || isWinnerTakesAllTrend) ? 2 : requestedSlideCount
+    const isASignTrend = trend.name === 'A Sign'
+    const includeMemorialSlide = (isDragPathTrend || isWinnerTakesAllTrend || isASignTrend) ? false : Boolean(body.include_memorial)
+    const slideCount = (isDragPathTrend || isWinnerTakesAllTrend)
+      ? 2
+      : isASignTrend
+        ? 3
+        : requestedSlideCount
     const includeSlide2 = slideCount >= 2
     const includeSlide3 = slideCount >= 3
     const includeSlide4 = slideCount >= 4
@@ -84,7 +91,13 @@ export async function POST(request: NextRequest) {
     if (isWinnerTakesAllTrend && !body.gpt_edit_prompt_2?.trim()) {
       return NextResponse.json({ error: 'Missing required field: gpt_edit_prompt_2' }, { status: 400 })
     }
-    if (includeSlide2 && !isDragPathTrend && !isWinnerTakesAllTrend && !body.scene_2?.trim()) {
+    if (isASignTrend && !body.gpt_edit_prompt_2?.trim()) {
+      return NextResponse.json({ error: 'Missing required field: gpt_edit_prompt_2' }, { status: 400 })
+    }
+    if (isASignTrend && !body.gemini_custom_prompt_3?.trim()) {
+      return NextResponse.json({ error: 'Missing required field: gemini_custom_prompt_3' }, { status: 400 })
+    }
+    if (includeSlide2 && !isDragPathTrend && !isWinnerTakesAllTrend && !isASignTrend && !body.scene_2?.trim()) {
       return NextResponse.json({ error: 'Missing required field: scene_2' }, { status: 400 })
     }
     if (isAstronautTrend && !body.relationship?.trim()) {
@@ -96,12 +109,16 @@ export async function POST(request: NextRequest) {
 
     const textArtifactPrompt2 = body.text_artifact_prompt_2?.trim() || ''
     const gptEditPrompt2 = body.gpt_edit_prompt_2?.trim() || ''
+    const geminiCustomPrompt3 = body.gemini_custom_prompt_3?.trim() || ''
+    const geminiCustomReferenceSource3 = body.gemini_custom_reference_source_3 === 'previous' ? 'previous' : 'none'
     const scene2 = isDragPathTrend
       ? textArtifactPrompt2
       : isWinnerTakesAllTrend
         ? gptEditPrompt2
+      : isASignTrend
+        ? gptEditPrompt2
       : body.scene_2?.trim() || 'Walking on the beach at sunset'
-    const scene3 = body.scene_3?.trim() || scene2
+    const scene3 = isASignTrend ? geminiCustomPrompt3 : body.scene_3?.trim() || scene2
     const scene4 = body.scene_4?.trim() || scene3 || scene2
     const action2 = body.action_2?.trim() || 'smiling for a photo'
     const action3 = body.action_3?.trim() || action2
@@ -125,6 +142,8 @@ export async function POST(request: NextRequest) {
         ? 'Creation Engine Drag Path'
         : isWinnerTakesAllTrend
           ? 'Creation Engine Winner Takes It All'
+        : isASignTrend
+          ? 'Creation Engine A Sign'
         : 'Creation Engine'
     const { data: engineTemplate, error: templateError } = await supabase
       .from('post_templates')
@@ -180,6 +199,8 @@ export async function POST(request: NextRequest) {
       scene_4: scene4,
       text_artifact_prompt_2: textArtifactPrompt2,
       gpt_edit_prompt_2: gptEditPrompt2,
+      gemini_custom_prompt_3: geminiCustomPrompt3,
+      slide_3_reference_source: geminiCustomReferenceSource3,
       action_2: action2,
       action_3: action3,
       action_4: action4,

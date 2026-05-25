@@ -29,6 +29,7 @@ type SlideType =
   | 'ai_generated'
   | 'text_artifact'
   | 'gpt_edit'
+  | 'gemini_custom'
   | 'text_card'
   | 'heartchime_card'
   | 'photo_upload_display'
@@ -660,6 +661,16 @@ function getUploadTransformVariableName(slideOrder: number): string {
   return `slide_${slideOrder}_upload_key`
 }
 
+type GeminiCustomReferenceSource = 'none' | 'previous'
+
+function getGeminiCustomReferenceSourceVariableName(slideOrder: number): string {
+  return `slide_${slideOrder}_reference_source`
+}
+
+function resolveGeminiCustomReferenceSource(value: string): GeminiCustomReferenceSource {
+  return value === 'previous' ? 'previous' : 'none'
+}
+
 function isAllowedLiveReferenceKey(key: string): boolean {
   const lower = key.toLowerCase()
   return Array.from(LIVE_REFERENCE_ALLOWED_EXTENSIONS).some((extension) => lower.endsWith(extension))
@@ -715,6 +726,17 @@ function applyIdentityTransformReferencePrompt(prompt: string): string {
   }
 
   return `${transformLead}\n\n${prompt}`
+}
+
+function applyReferencePreviousEditPrompt(prompt: string): string {
+  const referenceLead =
+    'Edit the attached image from the previous slide as the starting frame. Preserve identity and visual continuity unless the prompt explicitly asks to change something.'
+
+  if (!prompt.trim()) {
+    return referenceLead
+  }
+
+  return `${referenceLead}\n\n${prompt}`
 }
 
 function resolveOverlayText(
@@ -1145,6 +1167,45 @@ export async function POST(request: NextRequest) {
         slideResults.push({ order: slide.order, url: finalUrl, slide_type: slide.slide_type, overlay_text: noteOverlayText })
         latestImageUrl = finalUrl
         referenceImageBySlideOrder.set(slide.order, editedImageUrl)
+        continue
+      }
+
+      if (slide.slide_type === 'gemini_custom') {
+        const referenceSourceVariable = getGeminiCustomReferenceSourceVariableName(slide.order)
+        const referenceSource = resolveGeminiCustomReferenceSource(
+          getStringVariable(variables, referenceSourceVariable)
+        )
+
+        let baseImageUrl: string | null = null
+        if (referenceSource === 'previous') {
+          const previousSlideImageUrl = referenceImageBySlideOrder.get(slide.order - 1) || latestImageUrl
+          if (!previousSlideImageUrl) {
+            throw new Error(`Slide order ${slide.order} requires a previous slide image for gemini_custom reference mode`)
+          }
+          const referencePrompt = applyReferencePreviousEditPrompt(interpolatedPrompt)
+          baseImageUrl = await generateAndUploadPhoto(
+            applyPhotoGenerationStyle(referencePrompt, variables, slide.order),
+            { referenceImageUrl: previousSlideImageUrl, referenceMode: 'identity' }
+          )
+        } else {
+          baseImageUrl = await generateAndUploadPhoto(
+            applyPhotoGenerationStyle(interpolatedPrompt, variables, slide.order)
+          )
+        }
+
+        if (!baseImageUrl) {
+          throw new Error(`Failed to generate gemini_custom image for slide order ${slide.order}`)
+        }
+
+        const overlayText = resolveOverlayText(slide, interpolationContext, interpolatedPrompt)
+        const finalUrl =
+          overlayText && overlayText.trim()
+            ? await renderAndUploadSlide1(baseImageUrl, overlayText, overlayStyleToTextStyle(slide.overlay_style))
+            : baseImageUrl
+
+        slideResults.push({ order: slide.order, url: finalUrl, slide_type: slide.slide_type, overlay_text: noteOverlayText })
+        latestImageUrl = finalUrl
+        referenceImageBySlideOrder.set(slide.order, baseImageUrl)
         continue
       }
 

@@ -20,7 +20,7 @@ interface TrendRow {
   default_slide_count: number
   memorial_default: boolean
   slide_plan?: Array<{
-    type: 'reference' | 'text_artifact' | 'gpt_edit'
+    type: 'reference' | 'text_artifact' | 'gpt_edit' | 'gemini_custom'
     live_photo_eligible?: boolean
   }> | null
 }
@@ -171,6 +171,8 @@ export default function CreationPage() {
   const [noteLinesByOrder, setNoteLinesByOrder] = useState<Record<number, string>>({})
   const [textArtifactPrompt2, setTextArtifactPrompt2] = useState('')
   const [gptEditPrompt2, setGptEditPrompt2] = useState('')
+  const [geminiCustomPrompt3, setGeminiCustomPrompt3] = useState('')
+  const [geminiCustomReferenceSource3, setGeminiCustomReferenceSource3] = useState<'none' | 'previous'>('none')
 
   const [memorialSceneType, setMemorialSceneType] = useState<MemorialSceneType>('headstone_classic')
   const [memorialLocation, setMemorialLocation] = useState<MemorialLocation>('cemetery')
@@ -193,6 +195,7 @@ export default function CreationPage() {
   const isAstronautTrend = selectedTrend?.name === "I'm an Astronaut"
   const isDragPathTrend = selectedTrend?.name === 'Drag Path'
   const isWinnerTakesAllTrend = selectedTrend?.name === 'The Winner Takes It All'
+  const isASignTrend = selectedTrend?.name === 'A Sign'
   const selectedTrendExample = useMemo(() => {
     if (!selectedTrend) return null
 
@@ -321,6 +324,8 @@ export default function CreationPage() {
     })
     setTextArtifactPrompt2('')
     setGptEditPrompt2('')
+    setGeminiCustomPrompt3('')
+    setGeminiCustomReferenceSource3('none')
   }, [selectedTrend])
 
   useEffect(() => {
@@ -411,7 +416,15 @@ export default function CreationPage() {
       setError('Slide 2 needs an edit instruction.')
       return
     }
-    if (!isDragPathTrend && !isWinnerTakesAllTrend && slideCount >= 2 && !sceneValues[2]?.trim()) {
+    if (isASignTrend && slideCount >= 2 && !gptEditPrompt2.trim()) {
+      setError('Slide 2 needs a custom GPT edit instruction.')
+      return
+    }
+    if (isASignTrend && slideCount >= 3 && !geminiCustomPrompt3.trim()) {
+      setError('Slide 3 needs a custom Gemini prompt.')
+      return
+    }
+    if (!isDragPathTrend && !isWinnerTakesAllTrend && !isASignTrend && slideCount >= 2 && !sceneValues[2]?.trim()) {
       setError('Slide 2 needs an activity/scene.')
       return
     }
@@ -454,6 +467,8 @@ export default function CreationPage() {
           scene_4: sceneValues[4] || '',
           text_artifact_prompt_2: textArtifactPrompt2.trim(),
           gpt_edit_prompt_2: gptEditPrompt2.trim(),
+          gemini_custom_prompt_3: geminiCustomPrompt3.trim(),
+          gemini_custom_reference_source_3: geminiCustomReferenceSource3,
           action_2: actionValues[2] || '',
           action_3: actionValues[3] || '',
           action_4: actionValues[4] || '',
@@ -729,6 +744,8 @@ export default function CreationPage() {
                 ? '3) Slide 2 (Text Artifact)'
                 : isWinnerTakesAllTrend
                   ? '3) Slide 2 (GPT Edit)'
+                : isASignTrend
+                  ? '3) Slides 2-3 (GPT Edit + Gemini Custom)'
                 : isAstronautTrend
                   ? '3) Slides 2..N (Chained Age Progression)'
                   : '3) Slides 2..N (Identity Anchor)'}
@@ -738,6 +755,8 @@ export default function CreationPage() {
                 ? 'Slide 2 uses GPT Image (gpt-image-2) from a manual description field. No reference image is sent for this slide.'
                 : isWinnerTakesAllTrend
                   ? 'Slide 2 edits Slide 1 with OpenAI gpt-image-2 edits. The free-text instruction is applied to the previous slide image.'
+                : isASignTrend
+                  ? 'Slide 2 edits Slide 1 with gpt-image-2. Slide 3 runs Gemini from a custom prompt and can be independent (no input image) or reference mode editing Slide 2.'
                 : isAstronautTrend
                 ? 'Slides 2-4 chain from the immediately previous slide (`reference_previous`) with configurable relationship + age step + per-slide activity.'
                 : 'Keep the same exact people from Slide 1 while changing scene. Add extra slides when needed.'}
@@ -792,6 +811,112 @@ export default function CreationPage() {
                   />
                   Live Photo for Slide 2
                 </label>
+              </div>
+            ) : isASignTrend ? (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-[#3d4a68] bg-[#15213a] p-4 space-y-3">
+                  <h3 className={`${cormorant.className} text-xl text-[#f7f1df]`}>Slide 2</h3>
+                  <label className="text-sm text-[#d7c9a6] block">
+                    Custom prompt (GPT edit)
+                  </label>
+                  <textarea
+                    value={gptEditPrompt2}
+                    onChange={(e) => setGptEditPrompt2(e.target.value)}
+                    placeholder="Describe how to edit slide 1..."
+                    rows={5}
+                    className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                  />
+
+                  <div>
+                    <label className="text-sm text-[#d7c9a6] block mb-1">Blur level (Slide 2)</label>
+                    <select
+                      value={blurLevelsByOrder[2] || DEFAULT_BLUR_LEVEL}
+                      onChange={(e) => handleBlurLevelChange(2, Number.parseInt(e.target.value, 10))}
+                      className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                    >
+                      {Array.from({ length: 10 }, (_item, i) => i + 1).map((level) => (
+                        <option key={level} value={level}>
+                          {level}/10
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <label className="flex items-center gap-2 text-sm text-[#f7f1df]">
+                    <input
+                      type="checkbox"
+                      checked={livePhotoSlideOrders.includes(2)}
+                      onChange={(e) => handleToggleLivePhoto(2, e.target.checked)}
+                      className="h-4 w-4 accent-[#f1d386]"
+                    />
+                    Live Photo for Slide 2
+                  </label>
+                </div>
+
+                <div className="rounded-xl border border-[#3d4a68] bg-[#15213a] p-4 space-y-3">
+                  <h3 className={`${cormorant.className} text-xl text-[#f7f1df]`}>Slide 3</h3>
+                  <fieldset className="space-y-2">
+                    <legend className="text-sm text-[#d7c9a6]">Mode</legend>
+                    <label className="flex items-center gap-2 text-sm text-[#f7f1df]">
+                      <input
+                        type="radio"
+                        name="slide-3-gemini-mode"
+                        value="none"
+                        checked={geminiCustomReferenceSource3 === 'none'}
+                        onChange={() => setGeminiCustomReferenceSource3('none')}
+                        className="h-4 w-4 accent-[#f1d386]"
+                      />
+                      Independent (from scratch)
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-[#f7f1df]">
+                      <input
+                        type="radio"
+                        name="slide-3-gemini-mode"
+                        value="previous"
+                        checked={geminiCustomReferenceSource3 === 'previous'}
+                        onChange={() => setGeminiCustomReferenceSource3('previous')}
+                        className="h-4 w-4 accent-[#f1d386]"
+                      />
+                      Reference (edit Slide 2 image)
+                    </label>
+                  </fieldset>
+
+                  <label className="text-sm text-[#d7c9a6] block">
+                    Custom prompt (Gemini)
+                  </label>
+                  <textarea
+                    value={geminiCustomPrompt3}
+                    onChange={(e) => setGeminiCustomPrompt3(e.target.value)}
+                    placeholder="Describe slide 3 output..."
+                    rows={5}
+                    className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                  />
+
+                  <div>
+                    <label className="text-sm text-[#d7c9a6] block mb-1">Blur level (Slide 3)</label>
+                    <select
+                      value={blurLevelsByOrder[3] || DEFAULT_BLUR_LEVEL}
+                      onChange={(e) => handleBlurLevelChange(3, Number.parseInt(e.target.value, 10))}
+                      className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                    >
+                      {Array.from({ length: 10 }, (_item, i) => i + 1).map((level) => (
+                        <option key={level} value={level}>
+                          {level}/10
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <label className="flex items-center gap-2 text-sm text-[#f7f1df]">
+                    <input
+                      type="checkbox"
+                      checked={livePhotoSlideOrders.includes(3)}
+                      onChange={(e) => handleToggleLivePhoto(3, e.target.checked)}
+                      className="h-4 w-4 accent-[#f1d386]"
+                    />
+                    Live Photo for Slide 3
+                  </label>
+                </div>
               </div>
             ) : (
               <>
@@ -938,7 +1063,7 @@ export default function CreationPage() {
             )}
           </section>
 
-          {!isDragPathTrend && !isWinnerTakesAllTrend && (
+          {!isDragPathTrend && !isWinnerTakesAllTrend && !isASignTrend && (
             <section className="rounded-2xl border border-[#7a6738]/60 bg-[#111a2f] p-5 space-y-4">
             <div className="flex items-center justify-between gap-3">
               <h2 className={`${cormorant.className} text-2xl text-[#f1d386]`}>4) Memorial Slide (Optional)</h2>
