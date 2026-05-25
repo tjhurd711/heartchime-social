@@ -1362,21 +1362,32 @@ export async function POST(request: NextRequest) {
         )
       } else if (slide.photo_source === 'reference_live_pick') {
         const liveReferenceVariable = getLiveReferenceVariableName(slide.order)
+        const uploadTransformVariable = getUploadTransformVariableName(slide.order)
         const referencePickKey = getStringVariable(variables, liveReferenceVariable)
-        if (!referencePickKey) {
-          throw new Error(`Slide order ${slide.order} is missing ${liveReferenceVariable}`)
-        }
-        if (!isAllowedLiveReferenceKey(referencePickKey)) {
-          throw new Error(`Slide order ${slide.order} has unsupported reference key extension`)
+        const uploadTransformKey = getStringVariable(variables, uploadTransformVariable)
+
+        if (uploadTransformKey) {
+          if (!isAllowedUploadTransformKey(uploadTransformKey)) {
+            throw new Error(`Slide order ${slide.order} has unsupported upload transform key`)
+          }
+          referenceImageUrl = await mintUploadTransformPresignedUrl(uploadTransformKey)
+          referencePickKeyBySlideOrder.set(slide.order, uploadTransformKey)
+        } else {
+          if (!referencePickKey) {
+            throw new Error(`Slide order ${slide.order} is missing ${liveReferenceVariable}`)
+          }
+          if (!isAllowedLiveReferenceKey(referencePickKey)) {
+            throw new Error(`Slide order ${slide.order} has unsupported reference key extension`)
+          }
+          referenceImageUrl = await mintLiveReferencePresignedUrl(referencePickKey)
+          referencePickKeyBySlideOrder.set(slide.order, referencePickKey)
         }
 
-        referenceImageUrl = await mintLiveReferencePresignedUrl(referencePickKey)
         const styleOnlyPrompt = applyStyleOnlyReferencePrompt(interpolatedPrompt)
         baseImageUrl = await generateAndUploadPhoto(
           applyPhotoGenerationStyle(styleOnlyPrompt, variables, slide.order),
           { referenceImageUrl, referenceMode: 'style' }
         )
-        referencePickKeyBySlideOrder.set(slide.order, referencePickKey)
       } else if (slide.photo_source === 'upload_transform') {
         const uploadTransformVariable = getUploadTransformVariableName(slide.order)
         const uploadTransformKey = getStringVariable(variables, uploadTransformVariable)

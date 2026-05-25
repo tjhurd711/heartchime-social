@@ -9,6 +9,7 @@ type MemorialSceneType = 'headstone_classic' | 'headstone_rounded' | 'headstone_
 type MemorialLocation = 'cemetery' | 'backyard' | 'roadside' | 'park' | 'home_garden' | 'shelf'
 type MemorialCameraAngle = 'left' | 'center left' | 'center right' | 'right'
 type MemorialCameraDistance = 'close' | 'medium' | 'far' | 'very far'
+type PianoReferenceSource = 's3' | 'upload'
 
 interface TrendRow {
   id: string
@@ -140,6 +141,10 @@ export default function CreationPage() {
 
   const [referencePickKey, setReferencePickKey] = useState('')
   const [selectedReferencePreviewUrl, setSelectedReferencePreviewUrl] = useState<string | null>(null)
+  const [pianoReferenceSource, setPianoReferenceSource] = useState<PianoReferenceSource>('s3')
+  const [referenceUploadKey, setReferenceUploadKey] = useState('')
+  const [referenceUploadPreviewUrl, setReferenceUploadPreviewUrl] = useState<string | null>(null)
+  const [uploadingReference, setUploadingReference] = useState(false)
   const [showReferencePicker, setShowReferencePicker] = useState(false)
   const [referencePrefixInput, setReferencePrefixInput] = useState(LIVE_REFERENCE_DEFAULT_PREFIX)
   const [referenceActivePrefix, setReferenceActivePrefix] = useState(LIVE_REFERENCE_DEFAULT_PREFIX)
@@ -330,6 +335,9 @@ export default function CreationPage() {
     setNoteLinesByOrder(nextNotes)
     setReferencePickKey('')
     setSelectedReferencePreviewUrl(null)
+    setPianoReferenceSource('s3')
+    setReferenceUploadKey('')
+    setReferenceUploadPreviewUrl(null)
     setShowReferencePicker(false)
     setActionValues({
       2: 'smiling for a photo',
@@ -403,6 +411,33 @@ export default function CreationPage() {
     setShowReferencePicker(false)
   }
 
+  const handleUploadPianoReference = async (file: File | null) => {
+    if (!file) return
+    setError(null)
+    setUploadingReference(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const response = await fetch('/api/admin/social/creation-upload', {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data?.error || data?.details || 'Failed to upload reference photo')
+      }
+      if (!data?.s3Key || !data?.publicUrl) {
+        throw new Error('Upload response missing s3Key/publicUrl')
+      }
+      setReferenceUploadKey(data.s3Key)
+      setReferenceUploadPreviewUrl(data.publicUrl)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to upload reference photo')
+    } finally {
+      setUploadingReference(false)
+    }
+  }
+
   const handleToggleLivePhoto = (order: number, checked: boolean) => {
     setLivePhotoSlideOrders((prev) => {
       if (checked) {
@@ -427,7 +462,13 @@ export default function CreationPage() {
       setError('Please pick a trend.')
       return
     }
-    if (!referencePickKey.trim()) {
+    const usingUploadReference = isPianoTrend && pianoReferenceSource === 'upload'
+    if (usingUploadReference) {
+      if (!referenceUploadKey.trim()) {
+        setError('Please upload a reference photo for Piano slide 1.')
+        return
+      }
+    } else if (!referencePickKey.trim()) {
       setError('Please choose a reference photo from S3.')
       return
     }
@@ -504,6 +545,7 @@ export default function CreationPage() {
           slide_count: slideCount,
           include_memorial: includeMemorialSlide,
           reference_pick_key: referencePickKey,
+          reference_upload_key: usingUploadReference ? referenceUploadKey : '',
           add_detail: addSpecificDetail,
           detail_text: addSpecificDetail ? detailText : '',
           scene_2: sceneValues[2] || '',
@@ -712,33 +754,100 @@ export default function CreationPage() {
             <p className="text-sm text-[#d7c9a6]">
               {isAstronautTrend
                 ? 'Astronaut now uses the same S3 reference picker + style mode as other trends.'
-                : 'Uses `reference_live_pick` style mode: different people, same awkward-real snapshot style.'}
+                : isPianoTrend
+                  ? 'Piano slide 1 can use either S3 reference pick or your own upload, both routed through `reference_live_pick` style mode.'
+                  : 'Uses `reference_live_pick` style mode: different people, same awkward-real snapshot style.'}
             </p>
 
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowReferencePicker(true)
-                  void browseReferencePrefix(referenceActivePrefix || LIVE_REFERENCE_DEFAULT_PREFIX, 1)
-                }}
-                className="rounded-lg border border-[#f1d386]/70 bg-[#2e3b5e] px-4 py-2 text-[#f1d386] hover:bg-[#364974]"
-              >
-                Pick reference photo from S3
-              </button>
-              {referencePickKey ? (
-                <span className="text-xs text-[#f7f1df] break-all">Selected key: {referencePickKey}</span>
-              ) : (
-                <span className="text-xs text-[#b9aa87]">No S3 reference selected yet.</span>
-              )}
-            </div>
+            {isPianoTrend && (
+              <fieldset className="space-y-2">
+                <legend className="text-sm text-[#d7c9a6]">Piano reference source</legend>
+                <label className="flex items-center gap-2 text-sm text-[#f7f1df]">
+                  <input
+                    type="radio"
+                    name="piano-reference-source"
+                    value="s3"
+                    checked={pianoReferenceSource === 's3'}
+                    onChange={() => setPianoReferenceSource('s3')}
+                    className="h-4 w-4 accent-[#f1d386]"
+                  />
+                  Pick from S3
+                </label>
+                <label className="flex items-center gap-2 text-sm text-[#f7f1df]">
+                  <input
+                    type="radio"
+                    name="piano-reference-source"
+                    value="upload"
+                    checked={pianoReferenceSource === 'upload'}
+                    onChange={() => setPianoReferenceSource('upload')}
+                    className="h-4 w-4 accent-[#f1d386]"
+                  />
+                  Upload my own photo
+                </label>
+              </fieldset>
+            )}
 
-            {selectedReferencePreviewUrl && (
-              <img
-                src={selectedReferencePreviewUrl}
-                alt="Selected S3 style reference"
-                className="w-32 h-32 object-cover rounded-lg border border-[#3d4a68]"
-              />
+            {(!isPianoTrend || pianoReferenceSource === 's3') && (
+              <>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowReferencePicker(true)
+                      void browseReferencePrefix(referenceActivePrefix || LIVE_REFERENCE_DEFAULT_PREFIX, 1)
+                    }}
+                    className="rounded-lg border border-[#f1d386]/70 bg-[#2e3b5e] px-4 py-2 text-[#f1d386] hover:bg-[#364974]"
+                  >
+                    Pick reference photo from S3
+                  </button>
+                  {referencePickKey ? (
+                    <span className="text-xs text-[#f7f1df] break-all">Selected key: {referencePickKey}</span>
+                  ) : (
+                    <span className="text-xs text-[#b9aa87]">No S3 reference selected yet.</span>
+                  )}
+                </div>
+
+                {selectedReferencePreviewUrl && (
+                  <img
+                    src={selectedReferencePreviewUrl}
+                    alt="Selected S3 style reference"
+                    className="w-32 h-32 object-cover rounded-lg border border-[#3d4a68]"
+                  />
+                )}
+              </>
+            )}
+
+            {isPianoTrend && pianoReferenceSource === 'upload' && (
+              <>
+                <div className="space-y-2">
+                  <label className="text-sm text-[#d7c9a6] block">Upload reference image (Slide 1)</label>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg,image/webp,image/heic,image/heif,image/avif"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] || null
+                      void handleUploadPianoReference(file)
+                    }}
+                    disabled={uploadingReference}
+                    className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                  />
+                  <p className="text-xs text-[#b9aa87]">
+                    {uploadingReference
+                      ? 'Uploading...'
+                      : referenceUploadKey
+                        ? `Uploaded key: ${referenceUploadKey}`
+                        : 'No uploaded reference yet.'}
+                  </p>
+                </div>
+
+                {referenceUploadPreviewUrl && (
+                  <img
+                    src={referenceUploadPreviewUrl}
+                    alt="Uploaded Piano style reference"
+                    className="w-32 h-32 object-cover rounded-lg border border-[#3d4a68]"
+                  />
+                )}
+              </>
             )}
 
             <label className="flex items-center gap-2 text-sm text-[#f7f1df]">

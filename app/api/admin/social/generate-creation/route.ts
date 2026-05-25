@@ -11,6 +11,7 @@ interface GenerateCreationRequest {
   slide_count: number
   include_memorial: boolean
   reference_pick_key?: string
+  reference_upload_key?: string
   text_artifact_prompt_2?: string
   gpt_edit_prompt_2?: string
   gemini_custom_prompt_3?: string
@@ -90,8 +91,21 @@ export async function POST(request: NextRequest) {
     const includeSlide3 = slideCount >= 3
     const includeSlide4 = slideCount >= 4
 
-    if (!body.reference_pick_key?.trim()) {
-      return NextResponse.json({ error: 'Missing required field: reference_pick_key' }, { status: 400 })
+    const referencePickKey = body.reference_pick_key?.trim() || ''
+    const referenceUploadKey = body.reference_upload_key?.trim() || ''
+    const hasReferencePick = referencePickKey.length > 0
+    const hasReferenceUpload = referenceUploadKey.length > 0
+    const hasReferenceSource = isPianoTrend ? (hasReferencePick || hasReferenceUpload) : hasReferencePick
+
+    if (!hasReferenceSource) {
+      return NextResponse.json(
+        {
+          error: isPianoTrend
+            ? 'Missing required field: reference_pick_key or reference_upload_key'
+            : 'Missing required field: reference_pick_key',
+        },
+        { status: 400 }
+      )
     }
     if (isDragPathTrend && !body.text_artifact_prompt_2?.trim()) {
       return NextResponse.json({ error: 'Missing required field: text_artifact_prompt_2' }, { status: 400 })
@@ -236,12 +250,14 @@ export async function POST(request: NextRequest) {
       ...(isAstronautTrend
         ? {
             slide_1_reference_pick_key: body.reference_pick_key?.trim() || '',
+            slide_1_upload_key: referenceUploadKey,
             relationship: body.relationship?.trim() || '',
             race: body.race?.trim() || '',
             age_step: String(ageStep),
           }
         : {
-            slide_1_reference_pick_key: body.reference_pick_key?.trim() || '',
+            slide_1_reference_pick_key: referencePickKey,
+            slide_1_upload_key: referenceUploadKey,
           }),
       ...Object.fromEntries(blurLevelEntries),
     }
