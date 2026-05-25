@@ -149,6 +149,8 @@ export default function SocialPostDetailPage() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [isSendingToDevice, setIsSendingToDevice] = useState(false);
   const [sendToDeviceResult, setSendToDeviceResult] = useState<SendToDeviceResult | null>(null);
+  const [editPromptBySlideOrder, setEditPromptBySlideOrder] = useState<Record<number, string>>({});
+  const [isEditingSlide, setIsEditingSlide] = useState(false);
 
   // Regenerate state
   const [regeneratingPhoto, setRegeneratingPhoto] = useState(false);
@@ -162,6 +164,7 @@ export default function SocialPostDetailPage() {
   const previewSlides = buildPreviewSlides(post);
   const hasDeviceSlideBundle = previewSlides.length > 0;
   const safeActiveSlide = Math.max(0, Math.min(activeSlide, Math.max(0, previewSlides.length - 1)));
+  const selectedSlide = previewSlides[safeActiveSlide] || null;
 
   useEffect(() => {
     if (activeSlide > Math.max(0, previewSlides.length - 1)) {
@@ -425,6 +428,43 @@ export default function SocialPostDetailPage() {
       showToast(error instanceof Error ? error.message : 'Failed to send to iPhone', 'error');
     } finally {
       setIsSendingToDevice(false);
+    }
+  };
+
+  const handleEditSlideImage = async () => {
+    if (!post || !selectedSlide) return;
+
+    const prompt = (editPromptBySlideOrder[selectedSlide.order] || '').trim();
+    if (!prompt) {
+      showToast('Add an edit instruction first', 'error');
+      return;
+    }
+
+    setIsEditingSlide(true);
+    try {
+      const response = await fetch('/api/admin/social/edit-slide', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          post_id: post.id,
+          slide_order: selectedSlide.order,
+          prompt,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to edit slide');
+      }
+
+      await fetchPost();
+      setSendToDeviceResult(null);
+      setEditPromptBySlideOrder((prev) => ({ ...prev, [selectedSlide.order]: '' }));
+      showToast(`Slide ${selectedSlide.order} updated`, 'success');
+    } catch (error) {
+      console.error('Failed to edit slide image:', error);
+      showToast(error instanceof Error ? error.message : 'Failed to edit slide', 'error');
+    } finally {
+      setIsEditingSlide(false);
     }
   };
 
@@ -1018,6 +1058,34 @@ export default function SocialPostDetailPage() {
               ))}
             </div>
           </div>
+
+          {selectedSlide && (
+            <div className="bg-gray-800 rounded-xl p-4">
+              <h3 className="text-sm font-medium text-white mb-2">
+                Edit Slide {selectedSlide.order} (GPT Image 2)
+              </h3>
+              <p className="text-xs text-gray-400 mb-3">
+                Apply a direct edit before sending to iPhone. This replaces the slide image used in delivery.
+              </p>
+              <textarea
+                value={editPromptBySlideOrder[selectedSlide.order] || ''}
+                onChange={(event) => {
+                  const nextPrompt = event.target.value;
+                  setEditPromptBySlideOrder((prev) => ({ ...prev, [selectedSlide.order]: nextPrompt }));
+                }}
+                rows={3}
+                placeholder="e.g. keep the same composition, change outfit to black, make expression more somber, add an urn on the shelf"
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-orange-500 resize-none"
+              />
+              <button
+                onClick={handleEditSlideImage}
+                disabled={isEditingSlide || !(editPromptBySlideOrder[selectedSlide.order] || '').trim()}
+                className="mt-3 w-full py-2 px-3 bg-violet-600 text-white text-sm rounded-lg hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isEditingSlide ? 'Editing...' : `Edit Slide ${selectedSlide.order}`}
+              </button>
+            </div>
+          )}
 
           {/* Download Buttons */}
           {previewSlides.length > 0 && (

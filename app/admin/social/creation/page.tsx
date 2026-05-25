@@ -88,6 +88,13 @@ const TREND_CAPTION_FALLBACKS: Record<string, string[]> = {
   ],
 }
 
+const CREATION_TREND_EXAMPLE_OVERRIDES: Record<string, { url: string; label: string }> = {
+  'The Winner Takes It All': {
+    url: '/winner-takes-it-all-example.mov',
+    label: 'The Winner Takes It All example',
+  },
+}
+
 function getDefaultScene(order: number): string {
   return SCENE_OPTIONS[(order - 2) % SCENE_OPTIONS.length]
 }
@@ -188,6 +195,11 @@ export default function CreationPage() {
   const isWinnerTakesAllTrend = selectedTrend?.name === 'The Winner Takes It All'
   const selectedTrendExample = useMemo(() => {
     if (!selectedTrend) return null
+
+    const override = CREATION_TREND_EXAMPLE_OVERRIDES[selectedTrend.name]
+    if (override) {
+      return override
+    }
 
     const templateName = resolveTrendTemplateName(selectedTrend.name)
     if (!templateName) return null
