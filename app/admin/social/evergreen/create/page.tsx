@@ -354,7 +354,7 @@ export default function CreateSocialPostPage() {
 
       // Redirect to the post detail page
       setTimeout(() => {
-        router.push(`/admin/social/evergreen/${data.post_id}`);
+        router.push(`/admin/social/delivery/${data.post_id}`);
       }, 1000);
 
     } catch (error) {

@@ -810,7 +810,7 @@ export default function GenerateFromTemplatePage() {
         throw new Error('Generation response missing post_id')
       }
 
-      router.push(`/admin/social/evergreen/${data.post_id}`)
+      router.push(`/admin/social/delivery/${data.post_id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed')
     } finally {
