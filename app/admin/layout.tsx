@@ -48,6 +48,10 @@ const socialNavigation: NavItem[] = [
     href: '/admin/social/engine-test',
   },
   {
+    name: '📞 Voicemail',
+    href: '/admin/social/voicemail',
+  },
+  {
     name: '🔗 Match',
     href: '/admin/social/match',
   },

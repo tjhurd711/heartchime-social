@@ -90,6 +90,10 @@ const TREND_CAPTION_FALLBACKS: Record<string, string[]> = {
 }
 
 const CREATION_TREND_EXAMPLE_OVERRIDES: Record<string, { url: string; label: string }> = {
+  "I'm an Astronaut": {
+    url: '/astronaut-example.mov',
+    label: "I'm an Astronaut example",
+  },
   'Drag Path': {
     url: '/drag-path-example.mov',
     label: 'Drag Path example',
