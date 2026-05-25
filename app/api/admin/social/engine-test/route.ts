@@ -18,7 +18,7 @@ const LIVE_REFERENCE_ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.he
 const OPENAI_EDITS_ENDPOINT = 'https://api.openai.com/v1/images/edits'
 
 const DEFAULT_STYLE_PROMPT =
-  'Authentic candid vertical phone photo with awkward-real, non-polished framing. Keep natural blur, imperfect indoor/outdoor lighting, and believable everyday composition. Make this feel like a real personal snapshot (not studio, not stock). {slide_1_extra_detail_clause}'
+  'Authentic candid vertical phone photo with awkward-real, non-polished framing. Keep natural blur, imperfect indoor/outdoor lighting, and believable everyday composition. Make this feel like a real personal snapshot (not studio, not stock).'
 
 const CREATION_TEMPLATE_PREFERENCE = [
   'Creation Engine',
@@ -42,6 +42,17 @@ interface EngineRunResult {
   imageUrl: string | null
   durationMs: number
   error: string | null
+}
+
+function applyStyleOnlyReferencePrompt(prompt: string): string {
+  const styleOnlyConstraint =
+    'STYLE-ONLY REFERENCE LOCK (highest priority): Create another photo just like this reference photo but with different people and a slightly different setting. Other than that the photo should look the exact same - this should not look like a stock photo, if there was glare keep it, if bad lighting keep it, truly only look to make the people different and thats it. RELATIONSHIP LOCK (highest priority): Preserve the same relationship roles and composition from the reference image. Do not swap who is who (for example, father/daughter must stay father/daughter), do not flip generational roles, and do not change the apparent gender role pairing implied by the reference composition. Keep the awkwardness: imperfect lighting, awkward expressions, slight blur/soft focus, and real phone-photo messiness.'
+
+  if (!prompt.trim()) {
+    return styleOnlyConstraint
+  }
+
+  return `${styleOnlyConstraint}\n\n${prompt}`
 }
 
 function isAllowedLiveReferenceKey(key: string): boolean {
@@ -74,7 +85,7 @@ function getPromptFromTemplateSlides(slides: unknown): string | null {
     return slide.order === 1 && slide.photo_source === 'reference_live_pick'
   })
   if (!slideOne?.prompt_recipe || typeof slideOne.prompt_recipe !== 'string') return null
-  return slideOne.prompt_recipe
+  return slideOne.prompt_recipe.replaceAll('{slide_1_extra_detail_clause}', ' ')
 }
 
 async function resolveDefaultStylePrompt(): Promise<string> {
@@ -155,7 +166,6 @@ async function runGptImageEdits(prompt: string, referenceImageUrl: string, refer
     formData.append('quality', 'high')
     formData.append('prompt', prompt)
     formData.append('size', '1024x1536')
-    formData.append('response_format', 'b64_json')
     formData.append('image', new Blob([referenceBuffer], { type: mimeType }), filename)
 
     const response = await fetch(OPENAI_EDITS_ENDPOINT, {
@@ -225,9 +235,11 @@ export async function POST(request: NextRequest) {
 
     const referenceImageUrl = await mintLiveReferencePresignedUrl(referenceKey)
 
+    const styleLockedPrompt = applyStyleOnlyReferencePrompt(prompt)
+
     const [gemini, gptImage2] = await Promise.all([
-      runGeminiStyleGeneration(prompt, referenceImageUrl),
-      runGptImageEdits(prompt, referenceImageUrl, referenceKey),
+      runGeminiStyleGeneration(styleLockedPrompt, referenceImageUrl),
+      runGptImageEdits(styleLockedPrompt, referenceImageUrl, referenceKey),
     ])
 
     return NextResponse.json({
