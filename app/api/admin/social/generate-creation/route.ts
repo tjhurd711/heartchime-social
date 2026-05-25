@@ -41,6 +41,11 @@ interface GenerateCreationRequest {
     memorial_urn_color?: string
     memorial_keepsake?: string
   }
+  slide_3_option?: 'tattoo' | 'view' | 'framed'
+  tattoo_design?: string
+  tattoo_years?: string
+  view_subject?: string
+  framed_prompt_extra?: string
 }
 
 function coalesceLine(lines: string[], index: number): string {
@@ -72,11 +77,14 @@ export async function POST(request: NextRequest) {
     const isDragPathTrend = trend.name === 'Drag Path'
     const isWinnerTakesAllTrend = trend.name === 'The Winner Takes It All'
     const isASignTrend = trend.name === 'A Sign'
-    const includeMemorialSlide = (isDragPathTrend || isWinnerTakesAllTrend || isASignTrend) ? false : Boolean(body.include_memorial)
+    const isPianoTrend = trend.name === 'Piano'
+    const includeMemorialSlide = (isDragPathTrend || isWinnerTakesAllTrend || isASignTrend || isPianoTrend) ? false : Boolean(body.include_memorial)
     const slideCount = (isDragPathTrend || isWinnerTakesAllTrend)
       ? 2
       : isASignTrend
         ? 3
+        : isPianoTrend
+          ? 3
         : requestedSlideCount
     const includeSlide2 = slideCount >= 2
     const includeSlide3 = slideCount >= 3
@@ -96,6 +104,20 @@ export async function POST(request: NextRequest) {
     }
     if (isASignTrend && !body.gemini_custom_prompt_3?.trim()) {
       return NextResponse.json({ error: 'Missing required field: gemini_custom_prompt_3' }, { status: 400 })
+    }
+    if (isPianoTrend) {
+      if (!body.slide_3_option || !['tattoo', 'view', 'framed'].includes(body.slide_3_option)) {
+        return NextResponse.json({ error: 'Missing required field: slide_3_option' }, { status: 400 })
+      }
+      if (body.slide_3_option === 'tattoo' && !body.tattoo_design?.trim()) {
+        return NextResponse.json({ error: 'Missing required field: tattoo_design' }, { status: 400 })
+      }
+      if (body.slide_3_option === 'tattoo' && !body.tattoo_years?.trim()) {
+        return NextResponse.json({ error: 'Missing required field: tattoo_years' }, { status: 400 })
+      }
+      if (body.slide_3_option === 'view' && !body.view_subject?.trim()) {
+        return NextResponse.json({ error: 'Missing required field: view_subject' }, { status: 400 })
+      }
     }
     if (includeSlide2 && !isDragPathTrend && !isWinnerTakesAllTrend && !isASignTrend && !body.scene_2?.trim()) {
       return NextResponse.json({ error: 'Missing required field: scene_2' }, { status: 400 })
@@ -144,6 +166,8 @@ export async function POST(request: NextRequest) {
           ? 'Creation Engine Winner Takes It All'
         : isASignTrend
           ? 'Creation Engine A Sign'
+        : isPianoTrend
+          ? 'Creation Engine Piano'
         : 'Creation Engine'
     const { data: engineTemplate, error: templateError } = await supabase
       .from('post_templates')
@@ -201,6 +225,11 @@ export async function POST(request: NextRequest) {
       gpt_edit_prompt_2: gptEditPrompt2,
       gemini_custom_prompt_3: geminiCustomPrompt3,
       slide_3_reference_source: geminiCustomReferenceSource3,
+      slide_3_option: body.slide_3_option?.trim() || '',
+      tattoo_design: body.tattoo_design?.trim() || '',
+      tattoo_years: body.tattoo_years?.trim() || '',
+      view_subject: body.view_subject?.trim() || '',
+      framed_prompt_extra: body.framed_prompt_extra?.trim() || '',
       action_2: action2,
       action_3: action3,
       action_4: action4,

@@ -20,7 +20,7 @@ interface TrendRow {
   default_slide_count: number
   memorial_default: boolean
   slide_plan?: Array<{
-    type: 'reference' | 'text_artifact' | 'gpt_edit' | 'gemini_custom'
+    type: 'reference' | 'text_artifact' | 'gpt_edit' | 'gemini_custom' | 'gpt_memorial' | 'gpt_slide3'
     live_photo_eligible?: boolean
   }> | null
 }
@@ -89,6 +89,14 @@ const TREND_CAPTION_FALLBACKS: Record<string, string[]> = {
 }
 
 const CREATION_TREND_EXAMPLE_OVERRIDES: Record<string, { url: string; label: string }> = {
+  'Drag Path': {
+    url: '/drag-path-example.mov',
+    label: 'Drag Path example',
+  },
+  Piano: {
+    url: '/piano-example.mov',
+    label: 'Piano example',
+  },
   'The Winner Takes It All': {
     url: '/winner-takes-it-all-example.mov',
     label: 'The Winner Takes It All example',
@@ -173,6 +181,11 @@ export default function CreationPage() {
   const [gptEditPrompt2, setGptEditPrompt2] = useState('')
   const [geminiCustomPrompt3, setGeminiCustomPrompt3] = useState('')
   const [geminiCustomReferenceSource3, setGeminiCustomReferenceSource3] = useState<'none' | 'previous'>('none')
+  const [pianoSlide3Option, setPianoSlide3Option] = useState<'tattoo' | 'view' | 'framed'>('tattoo')
+  const [pianoTattooDesign, setPianoTattooDesign] = useState('')
+  const [pianoTattooYears, setPianoTattooYears] = useState('')
+  const [pianoViewSubject, setPianoViewSubject] = useState('')
+  const [pianoFramedPromptExtra, setPianoFramedPromptExtra] = useState('')
 
   const [memorialSceneType, setMemorialSceneType] = useState<MemorialSceneType>('headstone_classic')
   const [memorialLocation, setMemorialLocation] = useState<MemorialLocation>('cemetery')
@@ -196,6 +209,7 @@ export default function CreationPage() {
   const isDragPathTrend = selectedTrend?.name === 'Drag Path'
   const isWinnerTakesAllTrend = selectedTrend?.name === 'The Winner Takes It All'
   const isASignTrend = selectedTrend?.name === 'A Sign'
+  const isPianoTrend = selectedTrend?.name === 'Piano'
   const selectedTrendExample = useMemo(() => {
     if (!selectedTrend) return null
 
@@ -326,6 +340,15 @@ export default function CreationPage() {
     setGptEditPrompt2('')
     setGeminiCustomPrompt3('')
     setGeminiCustomReferenceSource3('none')
+    setPianoSlide3Option('tattoo')
+    setPianoTattooDesign('')
+    setPianoTattooYears('')
+    setPianoViewSubject('')
+    setPianoFramedPromptExtra('')
+    setLivePhotoSlideOrders((prev) => {
+      const filtered = prev.filter((order) => defaultActiveOrders.includes(order))
+      return selectedTrend.name === 'Piano' ? filtered.filter((order) => order !== 2) : filtered
+    })
   }, [selectedTrend])
 
   useEffect(() => {
@@ -424,9 +447,30 @@ export default function CreationPage() {
       setError('Slide 3 needs a custom ChatGPT Image prompt.')
       return
     }
-    if (!isDragPathTrend && !isWinnerTakesAllTrend && !isASignTrend && slideCount >= 2 && !sceneValues[2]?.trim()) {
+    if (
+      !isDragPathTrend &&
+      !isWinnerTakesAllTrend &&
+      !isASignTrend &&
+      !isPianoTrend &&
+      slideCount >= 2 &&
+      !sceneValues[2]?.trim()
+    ) {
       setError('Slide 2 needs an activity/scene.')
       return
+    }
+    if (isPianoTrend && slideCount >= 3) {
+      if (pianoSlide3Option === 'tattoo' && !pianoTattooDesign.trim()) {
+        setError('Slide 3 tattoo mode needs a tattoo design.')
+        return
+      }
+      if (pianoSlide3Option === 'tattoo' && !pianoTattooYears.trim()) {
+        setError('Slide 3 tattoo mode needs tattoo years.')
+        return
+      }
+      if (pianoSlide3Option === 'view' && !pianoViewSubject.trim()) {
+        setError('Slide 3 view mode needs a view subject.')
+        return
+      }
     }
     if (isAstronautTrend && !astronautRelationship.trim()) {
       setError('Please enter the relationship for Astronaut.')
@@ -469,6 +513,11 @@ export default function CreationPage() {
           gpt_edit_prompt_2: gptEditPrompt2.trim(),
           gemini_custom_prompt_3: geminiCustomPrompt3.trim(),
           gemini_custom_reference_source_3: geminiCustomReferenceSource3,
+          slide_3_option: pianoSlide3Option,
+          tattoo_design: pianoTattooDesign.trim(),
+          tattoo_years: pianoTattooYears.trim(),
+          view_subject: pianoViewSubject.trim(),
+          framed_prompt_extra: pianoFramedPromptExtra.trim(),
           action_2: actionValues[2] || '',
           action_3: actionValues[3] || '',
           action_4: actionValues[4] || '',
@@ -746,6 +795,8 @@ export default function CreationPage() {
                   ? '3) Slide 2 (GPT Edit)'
                 : isASignTrend
                   ? '3) Slides 2-3 (GPT Edit + ChatGPT Image Custom)'
+                : isPianoTrend
+                  ? '3) Slides 2-3 (GPT Memorial + 3-Way GPT Picker)'
                 : isAstronautTrend
                   ? '3) Slides 2..N (Chained Age Progression)'
                   : '3) Slides 2..N (Identity Anchor)'}
@@ -757,6 +808,8 @@ export default function CreationPage() {
                   ? 'Slide 2 edits Slide 1 with OpenAI gpt-image-2 edits. The free-text instruction is applied to the previous slide image.'
                 : isASignTrend
                   ? 'Slide 2 edits Slide 1 with gpt-image-2. Slide 3 uses ChatGPT Image (gpt-image-2): independent mode generates from scratch, reference mode edits Slide 2.'
+                : isPianoTrend
+                  ? 'Slide 2 reuses the memorial scene controls but generates from scratch with gpt-image-2. Slide 3 picks tattoo/view/framed: tattoo/view generate from scratch, framed edits Slide 1.'
                 : isAstronautTrend
                 ? 'Slides 2-4 chain from the immediately previous slide (`reference_previous`) with configurable relationship + age step + per-slide activity.'
                 : 'Keep the same exact people from Slide 1 while changing scene. Add extra slides when needed.'}
@@ -891,6 +944,240 @@ export default function CreationPage() {
                     rows={5}
                     className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
                   />
+
+                  <div>
+                    <label className="text-sm text-[#d7c9a6] block mb-1">Blur level (Slide 3)</label>
+                    <select
+                      value={blurLevelsByOrder[3] || DEFAULT_BLUR_LEVEL}
+                      onChange={(e) => handleBlurLevelChange(3, Number.parseInt(e.target.value, 10))}
+                      className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                    >
+                      {Array.from({ length: 10 }, (_item, i) => i + 1).map((level) => (
+                        <option key={level} value={level}>
+                          {level}/10
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <label className="flex items-center gap-2 text-sm text-[#f7f1df]">
+                    <input
+                      type="checkbox"
+                      checked={livePhotoSlideOrders.includes(3)}
+                      onChange={(e) => handleToggleLivePhoto(3, e.target.checked)}
+                      className="h-4 w-4 accent-[#f1d386]"
+                    />
+                    Live Photo for Slide 3
+                  </label>
+                </div>
+              </div>
+            ) : isPianoTrend ? (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-[#3d4a68] bg-[#15213a] p-4 space-y-3">
+                  <h3 className={`${cormorant.className} text-xl text-[#f7f1df]`}>Slide 2 (Memorial via GPT)</h3>
+                  <p className="text-sm text-[#d7c9a6]">
+                    Uses the existing memorial scene builder controls, but routes to `gpt-image-2` generations from scratch.
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-sm text-[#d7c9a6]">Memorial image type</label>
+                      <select
+                        value={memorialSceneType}
+                        onChange={(e) => setMemorialSceneType(e.target.value as MemorialSceneType)}
+                        className="mt-1 w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                      >
+                        <option value="headstone_classic">headstone_classic</option>
+                        <option value="headstone_rounded">headstone_rounded</option>
+                        <option value="headstone_flat">headstone_flat</option>
+                        <option value="urn">urn</option>
+                        <option value="bouquet">bouquet</option>
+                      </select>
+                    </div>
+
+                    {(memorialSceneType === 'urn' || memorialSceneType === 'bouquet') && (
+                      <div>
+                        <label className="text-sm text-[#d7c9a6]">Memorial location</label>
+                        <select
+                          value={memorialLocation}
+                          onChange={(e) => setMemorialLocation(e.target.value as MemorialLocation)}
+                          className="mt-1 w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                        >
+                          <option value="cemetery">cemetery</option>
+                          <option value="backyard">backyard</option>
+                          <option value="roadside">roadside</option>
+                          <option value="park">park</option>
+                          <option value="home_garden">home_garden</option>
+                          <option value="shelf">shelf</option>
+                        </select>
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="text-sm text-[#d7c9a6]">Camera angle</label>
+                      <select
+                        value={memorialCameraAngle}
+                        onChange={(e) => setMemorialCameraAngle(e.target.value as MemorialCameraAngle)}
+                        className="mt-1 w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                      >
+                        <option value="left">left</option>
+                        <option value="center left">center left</option>
+                        <option value="center right">center right</option>
+                        <option value="right">right</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-sm text-[#d7c9a6]">Camera distance</label>
+                      <select
+                        value={memorialCameraDistance}
+                        onChange={(e) => setMemorialCameraDistance(e.target.value as MemorialCameraDistance)}
+                        className="mt-1 w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                      >
+                        <option value="close">close</option>
+                        <option value="medium">medium</option>
+                        <option value="far">far</option>
+                        <option value="very far">very far</option>
+                      </select>
+                    </div>
+
+                    {(memorialSceneType === 'headstone_classic' ||
+                      memorialSceneType === 'headstone_rounded' ||
+                      memorialSceneType === 'headstone_flat') && (
+                      <>
+                        <div className="md:col-span-2">
+                          <label className="text-sm text-[#d7c9a6]">Inscription</label>
+                          <input
+                            type="text"
+                            value={memorialInscription}
+                            onChange={(e) => setMemorialInscription(e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="text-sm text-[#d7c9a6]">Carved flower design</label>
+                          <input
+                            type="text"
+                            value={memorialHeadstoneFlowerDesign}
+                            onChange={(e) => setMemorialHeadstoneFlowerDesign(e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    {memorialSceneType === 'urn' && (
+                      <div className="md:col-span-2">
+                        <label className="text-sm text-[#d7c9a6]">Urn color/material</label>
+                        <input
+                          type="text"
+                          value={memorialUrnColor}
+                          onChange={(e) => setMemorialUrnColor(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                        />
+                      </div>
+                    )}
+
+                    {(memorialSceneType === 'headstone_classic' ||
+                      memorialSceneType === 'headstone_rounded' ||
+                      memorialSceneType === 'headstone_flat' ||
+                      memorialSceneType === 'bouquet') && (
+                      <div className="md:col-span-2">
+                        <label className="text-sm text-[#d7c9a6]">Personal keepsake (optional)</label>
+                        <input
+                          type="text"
+                          value={memorialKeepsake}
+                          onChange={(e) => setMemorialKeepsake(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                        />
+                      </div>
+                    )}
+
+                    <div className="md:col-span-2">
+                      <label className="text-sm text-[#d7c9a6]">Blur level (Slide 2)</label>
+                      <select
+                        value={blurLevelsByOrder[2] || DEFAULT_BLUR_LEVEL}
+                        onChange={(e) => handleBlurLevelChange(2, Number.parseInt(e.target.value, 10))}
+                        className="mt-1 w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                      >
+                        {Array.from({ length: 10 }, (_item, i) => i + 1).map((level) => (
+                          <option key={level} value={level}>
+                            {level}/10
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-[#b9aa87]">Live Photo is disabled for this memorial slide.</p>
+                </div>
+
+                <div className="rounded-xl border border-[#3d4a68] bg-[#15213a] p-4 space-y-3">
+                  <h3 className={`${cormorant.className} text-xl text-[#f7f1df]`}>Slide 3 (GPT 3-way picker)</h3>
+
+                  <div>
+                    <label className="text-sm text-[#d7c9a6] block mb-1">Option</label>
+                    <select
+                      value={pianoSlide3Option}
+                      onChange={(e) => setPianoSlide3Option(e.target.value as 'tattoo' | 'view' | 'framed')}
+                      className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                    >
+                      <option value="tattoo">tattoo</option>
+                      <option value="view">view</option>
+                      <option value="framed">framed</option>
+                    </select>
+                  </div>
+
+                  {pianoSlide3Option === 'tattoo' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-sm text-[#d7c9a6] block mb-1">Tattoo design</label>
+                        <input
+                          type="text"
+                          value={pianoTattooDesign}
+                          onChange={(e) => setPianoTattooDesign(e.target.value)}
+                          placeholder='e.g. a rose with praying hands'
+                          className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm text-[#d7c9a6] block mb-1">Tattoo years</label>
+                        <input
+                          type="text"
+                          value={pianoTattooYears}
+                          onChange={(e) => setPianoTattooYears(e.target.value)}
+                          placeholder='e.g. 1965-2021'
+                          className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {pianoSlide3Option === 'view' && (
+                    <div>
+                      <label className="text-sm text-[#d7c9a6] block mb-1">View subject</label>
+                      <input
+                        type="text"
+                        value={pianoViewSubject}
+                        onChange={(e) => setPianoViewSubject(e.target.value)}
+                        placeholder='e.g. the ocean at sunset'
+                        className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                      />
+                    </div>
+                  )}
+
+                  {pianoSlide3Option === 'framed' && (
+                    <div>
+                      <label className="text-sm text-[#d7c9a6] block mb-1">Optional framed-photo extra text</label>
+                      <textarea
+                        value={pianoFramedPromptExtra}
+                        onChange={(e) => setPianoFramedPromptExtra(e.target.value)}
+                        placeholder="Optional: extra details to append to the framed-photo prompt."
+                        rows={3}
+                        className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                      />
+                    </div>
+                  )}
 
                   <div>
                     <label className="text-sm text-[#d7c9a6] block mb-1">Blur level (Slide 3)</label>
@@ -1063,7 +1350,7 @@ export default function CreationPage() {
             )}
           </section>
 
-          {!isDragPathTrend && !isWinnerTakesAllTrend && !isASignTrend && (
+          {!isDragPathTrend && !isWinnerTakesAllTrend && !isASignTrend && !isPianoTrend && (
             <section className="rounded-2xl border border-[#7a6738]/60 bg-[#111a2f] p-5 space-y-4">
             <div className="flex items-center justify-between gap-3">
               <h2 className={`${cormorant.className} text-2xl text-[#f1d386]`}>4) Memorial Slide (Optional)</h2>

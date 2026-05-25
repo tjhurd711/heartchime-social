@@ -29,6 +29,8 @@ type SlideType =
   | 'ai_generated'
   | 'text_artifact'
   | 'gpt_edit'
+  | 'gpt_memorial'
+  | 'gpt_slide3'
   | 'gemini_custom'
   | 'text_card'
   | 'heartchime_card'
@@ -135,6 +137,12 @@ interface LivePhotoResponse {
     photo_url: string
     video_url: string
   }
+}
+
+interface LivePhotoGenerateApiResponse {
+  pvt_url?: string
+  photo_url?: string
+  video_url?: string
 }
 
 interface SlideBundleItem {
@@ -662,6 +670,7 @@ function getUploadTransformVariableName(slideOrder: number): string {
 }
 
 type GeminiCustomReferenceSource = 'none' | 'previous'
+type GptSlide3Option = 'tattoo' | 'view' | 'framed'
 
 function getGeminiCustomReferenceSourceVariableName(slideOrder: number): string {
   return `slide_${slideOrder}_reference_source`
@@ -669,6 +678,16 @@ function getGeminiCustomReferenceSourceVariableName(slideOrder: number): string 
 
 function resolveGeminiCustomReferenceSource(value: string): GeminiCustomReferenceSource {
   return value === 'previous' ? 'previous' : 'none'
+}
+
+function getGptSlide3OptionVariableName(slideOrder: number): string {
+  return `slide_${slideOrder}_option`
+}
+
+function resolveGptSlide3Option(value: string): GptSlide3Option {
+  if (value === 'view') return 'view'
+  if (value === 'framed') return 'framed'
+  return 'tattoo'
 }
 
 function isAllowedLiveReferenceKey(key: string): boolean {
@@ -737,6 +756,16 @@ function applyReferencePreviousEditPrompt(prompt: string): string {
   }
 
   return `${referenceLead}\n\n${prompt}`
+}
+
+function isMemorialGenerationSlide(slide: PostTemplateSlide, interpolatedPrompt: string): boolean {
+  if (slide.extra_slide_options?.enabled_variable === 'include_memorial_slide') {
+    return true
+  }
+  if ((slide.prompt_recipe || '').includes('memorial_')) {
+    return true
+  }
+  return /memorial|headstone|urn|bouquet/i.test(interpolatedPrompt)
 }
 
 function resolveOverlayText(
@@ -1170,6 +1199,90 @@ export async function POST(request: NextRequest) {
         continue
       }
 
+      if (slide.slide_type === 'gpt_memorial') {
+        const memorialPrompt = getStringRecordValue(interpolationContext, 'memorial_scene_description') || interpolatedPrompt
+        if (!memorialPrompt.trim()) {
+          throw new Error(`Slide order ${slide.order} is missing memorial scene description for gpt_memorial`)
+        }
+
+        const generatedImageUrl = await generateAndUploadGptImage(
+          applyPhotoGenerationStyle(memorialPrompt, variables, slide.order)
+        )
+        if (!generatedImageUrl) {
+          throw new Error(`Failed to generate GPT memorial image for slide order ${slide.order}`)
+        }
+
+        const overlayText = resolveOverlayText(slide, interpolationContext, interpolatedPrompt)
+        const finalUrl =
+          overlayText && overlayText.trim()
+            ? await renderAndUploadSlide1(generatedImageUrl, overlayText, overlayStyleToTextStyle(slide.overlay_style))
+            : generatedImageUrl
+
+        slideResults.push({ order: slide.order, url: finalUrl, slide_type: slide.slide_type, overlay_text: noteOverlayText })
+        latestImageUrl = finalUrl
+        referenceImageBySlideOrder.set(slide.order, generatedImageUrl)
+        continue
+      }
+
+      if (slide.slide_type === 'gpt_slide3') {
+        const optionVariableName = getGptSlide3OptionVariableName(slide.order)
+        const selectedOption = resolveGptSlide3Option(getStringVariable(variables, optionVariableName))
+        let baseImageUrl: string | null = null
+
+        if (selectedOption === 'tattoo') {
+          const tattooDesign = getStringRecordValue(interpolationContext, 'tattoo_design')
+          const tattooYears = getStringRecordValue(interpolationContext, 'tattoo_years')
+          if (!tattooDesign.trim() || !tattooYears.trim()) {
+            throw new Error('slide_3_option=tattoo requires tattoo_design and tattoo_years')
+          }
+          const tattooPrompt =
+            `A realistic close-up photo of a person's forearm with a memorial tattoo. ` +
+            `The tattoo features ${tattooDesign} as the main design, with the years "${tattooYears}" written clearly underneath it. ` +
+            'The tattoo should look real and naturally healed on skin, not a digital overlay. ' +
+            'Soft natural lighting, realistic skin texture, detailed tattoo lines, subtle shading, clean memorial feel. ' +
+            'Emotional, tasteful, authentic, like a real photo someone took of their arm.'
+          baseImageUrl = await generateAndUploadGptImage(applyPhotoGenerationStyle(tattooPrompt, variables, slide.order))
+        } else if (selectedOption === 'view') {
+          const viewSubject = getStringRecordValue(interpolationContext, 'view_subject')
+          if (!viewSubject.trim()) {
+            throw new Error('slide_3_option=view requires view_subject')
+          }
+          const viewPrompt = `A pretty view of ${viewSubject}. Keep it natural and photographic, like a real phone camera photo.`
+          baseImageUrl = await generateAndUploadGptImage(applyPhotoGenerationStyle(viewPrompt, variables, slide.order))
+        } else {
+          const slideOneImageUrl = referenceImageBySlideOrder.get(1)
+          if (!slideOneImageUrl) {
+            throw new Error(`Slide order ${slide.order} requires slide 1 output image for slide_3_option=framed`)
+          }
+          const framedExtra = getStringRecordValue(interpolationContext, 'framed_prompt_extra')
+          const framedPromptBase =
+            'Put this photo in a frame sitting on a desk, as if someone is taking a photo of the framed picture. ' +
+            'Realistic, natural lighting, candid phone-photo feel.'
+          const framedPrompt = framedExtra.trim().length > 0
+            ? `${framedPromptBase} ${framedExtra.trim()}`
+            : framedPromptBase
+          baseImageUrl = await generateAndUploadGptImageEdit(
+            applyPhotoGenerationStyle(framedPrompt, variables, slide.order),
+            slideOneImageUrl
+          )
+        }
+
+        if (!baseImageUrl) {
+          throw new Error(`Failed to generate GPT slide 3 image for slide order ${slide.order}`)
+        }
+
+        const overlayText = resolveOverlayText(slide, interpolationContext, interpolatedPrompt)
+        const finalUrl =
+          overlayText && overlayText.trim()
+            ? await renderAndUploadSlide1(baseImageUrl, overlayText, overlayStyleToTextStyle(slide.overlay_style))
+            : baseImageUrl
+
+        slideResults.push({ order: slide.order, url: finalUrl, slide_type: slide.slide_type, overlay_text: noteOverlayText })
+        latestImageUrl = finalUrl
+        referenceImageBySlideOrder.set(slide.order, baseImageUrl)
+        continue
+      }
+
       if (slide.slide_type === 'gemini_custom') {
         const referenceSourceVariable = getGeminiCustomReferenceSourceVariableName(slide.order)
         const referenceSource = resolveGeminiCustomReferenceSource(
@@ -1212,13 +1325,18 @@ export async function POST(request: NextRequest) {
 
       let baseImageUrl: string | null = null
       let referenceImageUrl: string | null = null
+      const useGptImageForMemorial = isMemorialGenerationSlide(slide, interpolatedPrompt)
       if (slide.photo_source === 'variable') {
         const photoVariableName = resolvePhotoVariableName(slide)
         baseImageUrl = photoVariableName ? getStringRecordValue(interpolationContext, photoVariableName) : null
       } else if (slide.photo_source === 'variable_or_generated') {
         const photoVariableName = resolvePhotoVariableName(slide)
         const variablePhoto = photoVariableName ? getStringRecordValue(interpolationContext, photoVariableName) : null
-        baseImageUrl = variablePhoto || await generateAndUploadPhoto(applyPhotoGenerationStyle(interpolatedPrompt, variables, slide.order))
+        baseImageUrl = variablePhoto || (
+          useGptImageForMemorial
+            ? await generateAndUploadGptImage(applyPhotoGenerationStyle(interpolatedPrompt, variables, slide.order))
+            : await generateAndUploadPhoto(applyPhotoGenerationStyle(interpolatedPrompt, variables, slide.order))
+        )
       } else if (slide.photo_source === 'reference_previous') {
         referenceImageUrl = referenceImageBySlideOrder.get(slide.order - 1) || latestImageUrl
         if (!referenceImageUrl) {
@@ -1277,7 +1395,9 @@ export async function POST(request: NextRequest) {
         )
         referencePickKeyBySlideOrder.set(slide.order, uploadTransformKey)
       } else {
-        baseImageUrl = await generateAndUploadPhoto(applyPhotoGenerationStyle(interpolatedPrompt, variables, slide.order))
+        baseImageUrl = useGptImageForMemorial
+          ? await generateAndUploadGptImage(applyPhotoGenerationStyle(interpolatedPrompt, variables, slide.order))
+          : await generateAndUploadPhoto(applyPhotoGenerationStyle(interpolatedPrompt, variables, slide.order))
       }
 
       if (!baseImageUrl) {
@@ -1372,7 +1492,7 @@ export async function POST(request: NextRequest) {
               })
 
               const responseText = await response.text()
-              let data: any = null
+              let data: LivePhotoGenerateApiResponse | null = null
               try {
                 data = responseText ? JSON.parse(responseText) : null
               } catch {
