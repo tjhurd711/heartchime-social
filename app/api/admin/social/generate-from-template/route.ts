@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { generateAndUploadPhoto } from '@/lib/geminiImageGen'
-import { generateAndUploadTextArtifact } from '@/lib/openaiImageGen'
+import { generateAndUploadGptImageEdit, generateAndUploadTextArtifact } from '@/lib/openaiImageGen'
 import { renderAndUploadSocialCard } from '@/lib/socialCardRenderer'
 import { renderAndUploadSlide1, TextStyle } from '@/lib/socialSlide1Renderer'
 import { buildPhotoPrompt } from '@/lib/socialPhotoPrompt'
@@ -28,6 +28,7 @@ type SlideType =
   | 'object'
   | 'ai_generated'
   | 'text_artifact'
+  | 'gpt_edit'
   | 'text_card'
   | 'heartchime_card'
   | 'photo_upload_display'
@@ -1121,6 +1122,29 @@ export async function POST(request: NextRequest) {
         slideResults.push({ order: slide.order, url: finalUrl, slide_type: slide.slide_type, overlay_text: noteOverlayText })
         latestImageUrl = finalUrl
         referenceImageBySlideOrder.set(slide.order, artifactUrl)
+        continue
+      }
+
+      if (slide.slide_type === 'gpt_edit') {
+        const previousSlideImageUrl = referenceImageBySlideOrder.get(slide.order - 1) || latestImageUrl
+        if (!previousSlideImageUrl) {
+          throw new Error(`Slide order ${slide.order} requires a previous slide image for gpt_edit`)
+        }
+
+        const editedImageUrl = await generateAndUploadGptImageEdit(interpolatedPrompt, previousSlideImageUrl)
+        if (!editedImageUrl) {
+          throw new Error(`Failed to generate GPT edit image for slide order ${slide.order}`)
+        }
+
+        const overlayText = resolveOverlayText(slide, interpolationContext, interpolatedPrompt)
+        const finalUrl =
+          overlayText && overlayText.trim()
+            ? await renderAndUploadSlide1(editedImageUrl, overlayText, overlayStyleToTextStyle(slide.overlay_style))
+            : editedImageUrl
+
+        slideResults.push({ order: slide.order, url: finalUrl, slide_type: slide.slide_type, overlay_text: noteOverlayText })
+        latestImageUrl = finalUrl
+        referenceImageBySlideOrder.set(slide.order, editedImageUrl)
         continue
       }
 

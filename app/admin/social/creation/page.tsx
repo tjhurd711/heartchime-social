@@ -20,7 +20,7 @@ interface TrendRow {
   default_slide_count: number
   memorial_default: boolean
   slide_plan?: Array<{
-    type: 'reference' | 'text_artifact'
+    type: 'reference' | 'text_artifact' | 'gpt_edit'
     live_photo_eligible?: boolean
   }> | null
 }
@@ -163,6 +163,7 @@ export default function CreationPage() {
   const [livePhotoSlideOrders, setLivePhotoSlideOrders] = useState<number[]>([])
   const [noteLinesByOrder, setNoteLinesByOrder] = useState<Record<number, string>>({})
   const [textArtifactPrompt2, setTextArtifactPrompt2] = useState('')
+  const [gptEditPrompt2, setGptEditPrompt2] = useState('')
 
   const [memorialSceneType, setMemorialSceneType] = useState<MemorialSceneType>('headstone_classic')
   const [memorialLocation, setMemorialLocation] = useState<MemorialLocation>('cemetery')
@@ -184,6 +185,7 @@ export default function CreationPage() {
   )
   const isAstronautTrend = selectedTrend?.name === "I'm an Astronaut"
   const isDragPathTrend = selectedTrend?.name === 'Drag Path'
+  const isWinnerTakesAllTrend = selectedTrend?.name === 'The Winner Takes It All'
   const selectedTrendExample = useMemo(() => {
     if (!selectedTrend) return null
 
@@ -306,6 +308,7 @@ export default function CreationPage() {
       4: 'walking together',
     })
     setTextArtifactPrompt2('')
+    setGptEditPrompt2('')
   }, [selectedTrend])
 
   useEffect(() => {
@@ -392,7 +395,11 @@ export default function CreationPage() {
       setError('Slide 2 needs a note/object description for GPT Image.')
       return
     }
-    if (!isDragPathTrend && slideCount >= 2 && !sceneValues[2]?.trim()) {
+    if (isWinnerTakesAllTrend && slideCount >= 2 && !gptEditPrompt2.trim()) {
+      setError('Slide 2 needs an edit instruction.')
+      return
+    }
+    if (!isDragPathTrend && !isWinnerTakesAllTrend && slideCount >= 2 && !sceneValues[2]?.trim()) {
       setError('Slide 2 needs an activity/scene.')
       return
     }
@@ -434,6 +441,7 @@ export default function CreationPage() {
           scene_3: sceneValues[3] || '',
           scene_4: sceneValues[4] || '',
           text_artifact_prompt_2: textArtifactPrompt2.trim(),
+          gpt_edit_prompt_2: gptEditPrompt2.trim(),
           action_2: actionValues[2] || '',
           action_3: actionValues[3] || '',
           action_4: actionValues[4] || '',
@@ -707,6 +715,8 @@ export default function CreationPage() {
             <h2 className={`${cormorant.className} text-2xl text-[#f1d386]`}>
               {isDragPathTrend
                 ? '3) Slide 2 (Text Artifact)'
+                : isWinnerTakesAllTrend
+                  ? '3) Slide 2 (GPT Edit)'
                 : isAstronautTrend
                   ? '3) Slides 2..N (Chained Age Progression)'
                   : '3) Slides 2..N (Identity Anchor)'}
@@ -714,21 +724,37 @@ export default function CreationPage() {
             <p className="text-sm text-[#d7c9a6]">
               {isDragPathTrend
                 ? 'Slide 2 uses GPT Image (gpt-image-2) from a manual description field. No reference image is sent for this slide.'
+                : isWinnerTakesAllTrend
+                  ? 'Slide 2 edits Slide 1 with OpenAI gpt-image-2 edits. The free-text instruction is applied to the previous slide image.'
                 : isAstronautTrend
                 ? 'Slides 2-4 chain from the immediately previous slide (`reference_previous`) with configurable relationship + age step + per-slide activity.'
                 : 'Keep the same exact people from Slide 1 while changing scene. Add extra slides when needed.'}
             </p>
-            {isDragPathTrend ? (
+            {(isDragPathTrend || isWinnerTakesAllTrend) ? (
               <div className="rounded-xl border border-[#3d4a68] bg-[#15213a] p-4 space-y-3">
                 <h3 className={`${cormorant.className} text-xl text-[#f7f1df]`}>Slide 2</h3>
-                <label className="text-sm text-[#d7c9a6] block">Describe the note / object (sent to GPT Image)</label>
-                <textarea
-                  value={textArtifactPrompt2}
-                  onChange={(e) => setTextArtifactPrompt2(e.target.value)}
-                  placeholder="e.g. A wrinkled handwritten note on a kitchen counter that says..."
-                  rows={5}
-                  className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
-                />
+                <label className="text-sm text-[#d7c9a6] block">
+                  {isWinnerTakesAllTrend
+                    ? 'Edit instruction'
+                    : 'Describe the note / object (sent to GPT Image)'}
+                </label>
+                {isWinnerTakesAllTrend ? (
+                  <textarea
+                    value={gptEditPrompt2}
+                    onChange={(e) => setGptEditPrompt2(e.target.value)}
+                    placeholder="recreate this so it's just the woman, different clothing, looking sadder, with an urn on the shelf behind her"
+                    rows={5}
+                    className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                  />
+                ) : (
+                  <textarea
+                    value={textArtifactPrompt2}
+                    onChange={(e) => setTextArtifactPrompt2(e.target.value)}
+                    placeholder="e.g. A wrinkled handwritten note on a kitchen counter that says..."
+                    rows={5}
+                    className="w-full rounded-lg border border-[#3d4a68] bg-[#0f1729] px-3 py-2 text-[#f7f1df]"
+                  />
+                )}
 
                 <div>
                   <label className="text-sm text-[#d7c9a6] block mb-1">Blur level (Slide 2)</label>
@@ -900,7 +926,7 @@ export default function CreationPage() {
             )}
           </section>
 
-          {!isDragPathTrend && (
+          {!isDragPathTrend && !isWinnerTakesAllTrend && (
             <section className="rounded-2xl border border-[#7a6738]/60 bg-[#111a2f] p-5 space-y-4">
             <div className="flex items-center justify-between gap-3">
               <h2 className={`${cormorant.className} text-2xl text-[#f1d386]`}>4) Memorial Slide (Optional)</h2>

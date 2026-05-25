@@ -12,6 +12,7 @@ interface GenerateCreationRequest {
   include_memorial: boolean
   reference_pick_key?: string
   text_artifact_prompt_2?: string
+  gpt_edit_prompt_2?: string
   add_detail: boolean
   detail_text?: string
   scene_2?: string
@@ -67,8 +68,9 @@ export async function POST(request: NextRequest) {
 
     const isAstronautTrend = trend.name === "I'm an Astronaut"
     const isDragPathTrend = trend.name === 'Drag Path'
-    const includeMemorialSlide = isDragPathTrend ? false : Boolean(body.include_memorial)
-    const slideCount = isDragPathTrend ? 2 : requestedSlideCount
+    const isWinnerTakesAllTrend = trend.name === 'The Winner Takes It All'
+    const includeMemorialSlide = (isDragPathTrend || isWinnerTakesAllTrend) ? false : Boolean(body.include_memorial)
+    const slideCount = (isDragPathTrend || isWinnerTakesAllTrend) ? 2 : requestedSlideCount
     const includeSlide2 = slideCount >= 2
     const includeSlide3 = slideCount >= 3
     const includeSlide4 = slideCount >= 4
@@ -79,7 +81,10 @@ export async function POST(request: NextRequest) {
     if (isDragPathTrend && !body.text_artifact_prompt_2?.trim()) {
       return NextResponse.json({ error: 'Missing required field: text_artifact_prompt_2' }, { status: 400 })
     }
-    if (includeSlide2 && !isDragPathTrend && !body.scene_2?.trim()) {
+    if (isWinnerTakesAllTrend && !body.gpt_edit_prompt_2?.trim()) {
+      return NextResponse.json({ error: 'Missing required field: gpt_edit_prompt_2' }, { status: 400 })
+    }
+    if (includeSlide2 && !isDragPathTrend && !isWinnerTakesAllTrend && !body.scene_2?.trim()) {
       return NextResponse.json({ error: 'Missing required field: scene_2' }, { status: 400 })
     }
     if (isAstronautTrend && !body.relationship?.trim()) {
@@ -90,8 +95,11 @@ export async function POST(request: NextRequest) {
     }
 
     const textArtifactPrompt2 = body.text_artifact_prompt_2?.trim() || ''
+    const gptEditPrompt2 = body.gpt_edit_prompt_2?.trim() || ''
     const scene2 = isDragPathTrend
       ? textArtifactPrompt2
+      : isWinnerTakesAllTrend
+        ? gptEditPrompt2
       : body.scene_2?.trim() || 'Walking on the beach at sunset'
     const scene3 = body.scene_3?.trim() || scene2
     const scene4 = body.scene_4?.trim() || scene3 || scene2
@@ -115,6 +123,8 @@ export async function POST(request: NextRequest) {
       ? 'Creation Engine Astronaut'
       : isDragPathTrend
         ? 'Creation Engine Drag Path'
+        : isWinnerTakesAllTrend
+          ? 'Creation Engine Winner Takes It All'
         : 'Creation Engine'
     const { data: engineTemplate, error: templateError } = await supabase
       .from('post_templates')
@@ -169,6 +179,7 @@ export async function POST(request: NextRequest) {
       scene_3: scene3,
       scene_4: scene4,
       text_artifact_prompt_2: textArtifactPrompt2,
+      gpt_edit_prompt_2: gptEditPrompt2,
       action_2: action2,
       action_3: action3,
       action_4: action4,
