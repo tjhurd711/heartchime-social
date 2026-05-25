@@ -1004,16 +1004,28 @@ export async function POST(request: NextRequest) {
         }
       } else if (slide.photo_source === 'reference_live_pick') {
         const liveReferenceKeyVariable = getLiveReferenceVariableName(slide.order)
+        const uploadTransformVariable = getUploadTransformVariableName(slide.order)
         const referencePickKey = getStringVariable(variables, liveReferenceKeyVariable)
-        if (!referencePickKey) {
+        const uploadTransformKey = getStringVariable(variables, uploadTransformVariable)
+        if (!referencePickKey && !uploadTransformKey) {
           return NextResponse.json(
-            { error: `Slide order ${slide.order} uses photo_source=reference_live_pick but is missing ${liveReferenceKeyVariable}` },
+            {
+              error:
+                `Slide order ${slide.order} uses photo_source=reference_live_pick but is missing ` +
+                `${liveReferenceKeyVariable} or ${uploadTransformVariable}`,
+            },
             { status: 400 }
           )
         }
-        if (!isAllowedLiveReferenceKey(referencePickKey)) {
+        if (referencePickKey && !isAllowedLiveReferenceKey(referencePickKey)) {
           return NextResponse.json(
             { error: `Slide order ${slide.order} has invalid reference pick key extension: ${referencePickKey}` },
+            { status: 400 }
+          )
+        }
+        if (uploadTransformKey && !isAllowedUploadTransformKey(uploadTransformKey)) {
+          return NextResponse.json(
+            { error: `Slide order ${slide.order} has invalid upload transform key: ${uploadTransformKey}` },
             { status: 400 }
           )
         }
