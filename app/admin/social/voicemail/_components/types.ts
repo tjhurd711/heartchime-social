@@ -3,7 +3,7 @@ export interface VoiceOption {
   label: string
 }
 
-export type VoicemailTheme = 'classic_dark' | 'soft_blur' | 'minimal_black'
+export type VoicemailTheme = 'ios_voicemail' | 'classic_dark' | 'soft_blur' | 'minimal_black'
 
 export interface VoicemailPreviewData {
   profileImageUrl: string | null

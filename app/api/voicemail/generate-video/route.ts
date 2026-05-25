@@ -14,7 +14,7 @@ interface GenerateVoicemailVideoRequest {
   metadataLine?: string
   topLabel?: string
   transcriptText?: string
-  theme?: 'classic_dark' | 'soft_blur' | 'minimal_black'
+  theme?: 'ios_voicemail' | 'classic_dark' | 'soft_blur' | 'minimal_black'
   script?: string
   voiceId?: string
   profileImageDataUrl?: string | null
@@ -56,10 +56,10 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as GenerateVoicemailVideoRequest
     const contactName = body.contactName?.trim() || 'Mom'
     const emoji = body.emoji?.trim() || ''
-    const metadataLine = body.metadataLine?.trim() || 'home • Dec 16, 2022 at 1:54 PM'
+    const metadataLine = body.metadataLine?.trim() || 'home - Oct 15, 2025 at 7:16 PM'
     const topLabel = body.topLabel?.trim() || 'Voicemail'
-    const transcriptText = body.transcriptText?.trim() || 'Transcript unavailable'
-    const theme = body.theme || 'classic_dark'
+    const transcriptText = body.transcriptText?.trim() || 'Transcript (low confidence)'
+    const theme = body.theme || 'ios_voicemail'
     const script = body.script?.trim() || ''
     const voiceId = body.voiceId?.trim() || ''
     const audioKey = body.audioKey?.trim() || ''

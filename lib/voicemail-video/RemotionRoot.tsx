@@ -7,13 +7,13 @@ const FPS = 30
 
 const defaultProps: VoicemailVideoInputProps = {
   profileImageSrc: null,
-  contactName: 'Mom',
-  emoji: '❤️',
-  metadataLine: 'home • Dec 16, 2022 at 1:54 PM',
-  topLabel: 'Voicemail',
-  transcriptText: 'Transcript unavailable',
-  theme: 'classic_dark',
-  script: 'Voicemail preview script',
+  contactName: 'Patrick',
+  emoji: '',
+  metadataLine: 'home - Oct 15, 2025 at 7:16 PM',
+  topLabel: '',
+  transcriptText: 'Transcript (low confidence)',
+  theme: 'ios_voicemail',
+  script: 'Hey',
   audioSrc: '',
   durationInFrames: FALLBACK_DURATION_SECONDS * FPS,
 }

@@ -1,12 +1,11 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { VoicemailTheme } from './types'
-
+import { IOS_VOICEMAIL_LAYOUT } from '@/lib/voicemail-video/iosVoicemailLayout'
 interface VoicemailPlayerProps {
   audioUrl: string | null
   durationSeconds?: number | null
-  theme: VoicemailTheme
 }
 
 function formatTimestamp(totalSeconds: number): string {
@@ -17,63 +16,20 @@ function formatTimestamp(totalSeconds: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
-const THEME_CLASSES: Record<
-  VoicemailTheme,
-  {
-    shell: string
-    timelineTrack: string
-    timelineFill: string
-    knob: string
-    time: string
-    iconButton: string
-    iconButtonPrimary: string
-    helper: string
-  }
-> = {
-  classic_dark: {
-    shell: 'bg-[#17181f]',
-    timelineTrack: 'bg-[#2a2d36]',
-    timelineFill: 'bg-cyan-300',
-    knob: 'bg-cyan-100 ring-4 ring-cyan-300/25',
-    time: 'text-gray-400',
-    iconButton: 'bg-[#1f2330] border border-[#343a49] text-gray-200 hover:bg-[#252a39]',
-    iconButtonPrimary: 'bg-cyan-300 border border-cyan-200 text-[#032332] hover:bg-cyan-200',
-    helper: 'text-gray-500',
-  },
-  soft_blur: {
-    shell: 'bg-white/5 backdrop-blur-sm',
-    timelineTrack: 'bg-white/20',
-    timelineFill: 'bg-[#bfd8ff]',
-    knob: 'bg-white ring-4 ring-[#bfd8ff]/35',
-    time: 'text-[#dde4f5]',
-    iconButton: 'bg-white/10 border border-white/20 text-[#e9effd] hover:bg-white/20',
-    iconButtonPrimary: 'bg-[#bfd8ff] border border-[#d8e8ff] text-[#12203c] hover:bg-[#d8e8ff]',
-    helper: 'text-[#c4cce0]',
-  },
-  minimal_black: {
-    shell: 'bg-black',
-    timelineTrack: 'bg-[#1c1c1c]',
-    timelineFill: 'bg-white',
-    knob: 'bg-white ring-4 ring-white/20',
-    time: 'text-gray-300',
-    iconButton: 'bg-[#111] border border-[#222] text-gray-200 hover:bg-[#181818]',
-    iconButtonPrimary: 'bg-white border border-white text-black hover:bg-gray-200',
-    helper: 'text-gray-500',
-  },
-}
-
 function IconButton({
   label,
   icon,
   onClick,
   disabled,
-  className,
+  active,
+  size,
 }: {
   label: string
-  icon: string
+  icon: ReactNode
   onClick?: () => void
   disabled?: boolean
-  className: string
+  active?: boolean
+  size: number
 }) {
   return (
     <button
@@ -82,15 +38,71 @@ function IconButton({
       disabled={disabled}
       aria-label={label}
       title={label}
-      className={`h-11 w-11 rounded-full text-lg transition disabled:opacity-45 ${className}`}
+      className={`rounded-full border transition disabled:opacity-45 ${
+        active
+          ? 'border-white/80 bg-white text-black'
+          : 'border-white/20 bg-transparent text-white hover:bg-white/10'
+      }`}
+      style={{ width: size, height: size }}
     >
       {icon}
     </button>
   )
 }
 
-export function VoicemailPlayer({ audioUrl, durationSeconds, theme }: VoicemailPlayerProps) {
-  const palette = THEME_CLASSES[theme]
+function IconShare() {
+  return (
+    <svg viewBox="0 0 24 24" className="mx-auto h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.8}>
+      <path d="M12 16V4M12 4l-4 4M12 4l4 4" />
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+    </svg>
+  )
+}
+
+function IconBack() {
+  return (
+    <svg viewBox="0 0 24 24" className="mx-auto h-5 w-5" fill="currentColor">
+      <path d="M15.8 5.2a1 1 0 0 1 0 1.4L10.4 12l5.4 5.4a1 1 0 1 1-1.4 1.4l-6.1-6.1a1 1 0 0 1 0-1.4l6.1-6.1a1 1 0 0 1 1.4 0Z" />
+    </svg>
+  )
+}
+
+function IconPlay({ paused }: { paused: boolean }) {
+  if (!paused) {
+    return (
+      <svg viewBox="0 0 24 24" className="mx-auto h-5 w-5" fill="currentColor">
+        <rect x="6" y="5" width="4" height="14" rx="1" />
+        <rect x="14" y="5" width="4" height="14" rx="1" />
+      </svg>
+    )
+  }
+  return (
+    <svg viewBox="0 0 24 24" className="mx-auto h-5 w-5" fill="currentColor">
+      <path d="M8 5.6c0-1 1.1-1.6 2-1.1l8.5 5.4c.8.5.8 1.7 0 2.2L10 17.5c-.9.6-2 .1-2-1V5.6Z" />
+    </svg>
+  )
+}
+
+function IconSpeaker() {
+  return (
+    <svg viewBox="0 0 24 24" className="mx-auto h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.8}>
+      <path d="M4 14h3l4 4V6L7 10H4v4Z" />
+      <path d="M16 9c1.3.9 2 2 2 3s-.7 2.1-2 3" />
+      <path d="M18.8 6.4C20.8 7.8 22 9.8 22 12c0 2.2-1.2 4.2-3.2 5.6" />
+    </svg>
+  )
+}
+
+function IconTrash() {
+  return (
+    <svg viewBox="0 0 24 24" className="mx-auto h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.8}>
+      <path d="M5 7h14M9 7V5h6v2M8 7l1 12h6l1-12" />
+    </svg>
+  )
+}
+
+export function VoicemailPlayer({ audioUrl, durationSeconds }: VoicemailPlayerProps) {
+  const ui = IOS_VOICEMAIL_LAYOUT.scrubber
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -162,19 +174,29 @@ export function VoicemailPlayer({ audioUrl, durationSeconds, theme }: VoicemailP
   }
 
   return (
-    <div className={`rounded-[24px] p-4 ${palette.shell}`}>
+    <div className="px-1">
       <audio ref={audioRef} src={audioUrl || undefined} preload="metadata" />
 
-      <div className={`mb-2 flex items-center justify-between text-[11px] ${palette.time}`}>
+      <div
+        className="mb-2 flex items-center justify-between leading-none text-white"
+        style={{ fontSize: ui.timeFontSize }}
+      >
         <span>{formatTimestamp(currentTime)}</span>
         <span>-{formatTimestamp(remainingSeconds)}</span>
       </div>
 
-      <div className={`relative mb-4 h-1.5 rounded-full ${palette.timelineTrack}`}>
-        <div className={`h-full rounded-full ${palette.timelineFill}`} style={{ width: `${progressPercent}%` }} />
+      <div
+        className="relative mb-7 rounded-full bg-[#1f2126]"
+        style={{ height: ui.timelineHeight, marginTop: ui.timelineTopMargin }}
+      >
+        <div className="h-full rounded-full bg-[#bfc4ce]" style={{ width: `${progressPercent}%` }} />
         <div
-          className={`absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full ${palette.knob}`}
-          style={{ left: `calc(${progressPercent}% - 6px)` }}
+          className="absolute top-1/2 h-11 w-20 -translate-y-1/2 rounded-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.25)]"
+          style={{
+            left: `calc(${progressPercent}% - ${ui.knobWidth / 2}px)`,
+            width: ui.knobWidth,
+            height: ui.knobHeight,
+          }}
         />
         <input
           type="range"
@@ -188,24 +210,40 @@ export function VoicemailPlayer({ audioUrl, durationSeconds, theme }: VoicemailP
         />
       </div>
 
-      <div className="flex items-center justify-center gap-4">
+      <div className="flex items-center justify-between px-1" style={{ gap: ui.controlGap, marginTop: ui.controlsTopMargin }}>
         <IconButton
-          label="Rewind 10 seconds"
-          icon="↺"
+          label="Share"
+          icon={<IconShare />}
+          disabled
+          size={ui.controlSize}
+        />
+        <IconButton
+          label="Skip back"
+          icon={<IconBack />}
           onClick={rewindTenSeconds}
           disabled={!audioUrl}
-          className={palette.iconButton}
+          size={ui.controlSize}
         />
         <IconButton
-          label={isPlaying ? 'Pause voicemail' : 'Play voicemail'}
-          icon={isPlaying ? '⏸' : '▶'}
+          label={isPlaying ? 'Pause' : 'Play'}
+          icon={<IconPlay paused={!isPlaying} />}
           onClick={togglePlay}
           disabled={!audioUrl}
-          className={palette.iconButtonPrimary}
+          active
+          size={ui.controlSize}
         />
-        <IconButton label="Speaker" icon="🔊" disabled className={palette.iconButton} />
-        <IconButton label="Delete" icon="🗑" disabled className={palette.iconButton} />
-        <IconButton label="Share" icon="↗" disabled className={palette.iconButton} />
+        <IconButton
+          label="Speaker"
+          icon={<IconSpeaker />}
+          disabled
+          size={ui.controlSize}
+        />
+        <IconButton
+          label="Delete"
+          icon={<IconTrash />}
+          disabled
+          size={ui.controlSize}
+        />
       </div>
 
       {!audioUrl && (
@@ -215,7 +253,6 @@ export function VoicemailPlayer({ audioUrl, durationSeconds, theme }: VoicemailP
       )}
 
       {playerError && <p className="mt-3 text-xs text-red-300">{playerError}</p>}
-      {audioUrl && <p className={`mt-2 text-center text-[11px] ${palette.helper}`}>Voicemail-inspired playback controls</p>}
     </div>
   )
 }

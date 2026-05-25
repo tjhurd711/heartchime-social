@@ -18,19 +18,20 @@ const DEFAULT_VOICES: VoiceOption[] = [
 const DEFAULT_FORM: VoicemailPreviewData = {
   profileImageUrl: null,
   contactName: 'Mom',
-  emoji: '❤️',
-  metadataLine: 'home • Dec 16, 2022 at 1:54 PM',
-  topLabel: 'Voicemail',
-  transcriptText: 'Transcript unavailable',
-  theme: 'classic_dark',
+  emoji: '',
+  metadataLine: 'home - Oct 15, 2025 at 7:16 PM',
+  topLabel: '',
+  transcriptText: 'Transcript (low confidence)',
+  theme: 'ios_voicemail',
   script:
     'Hey honey. Just checking in to say I love you and I am proud of you. If you get this, call me back when you have a minute.',
 }
 
 const THEME_OPTIONS: Array<{ id: VoicemailTheme; label: string }> = [
-  { id: 'classic_dark', label: 'Classic Dark' },
-  { id: 'soft_blur', label: 'Soft Blur' },
-  { id: 'minimal_black', label: 'Minimal Black' },
+  { id: 'ios_voicemail', label: 'iOS Voicemail' },
+  { id: 'classic_dark', label: 'Classic Dark (legacy)' },
+  { id: 'soft_blur', label: 'Soft Blur (legacy)' },
+  { id: 'minimal_black', label: 'Minimal Black (legacy)' },
 ]
 
 interface GenerateAudioResponse {
@@ -52,6 +53,17 @@ interface GenerateVideoResponse {
   error?: string
   details?: string
 }
+
+type ScriptTone = 'Warm' | 'Funny' | 'Bittersweet' | 'Comforting' | 'Casual'
+type ScriptLength = 'short_10_15' | 'medium_20_30'
+
+interface GenerateScriptResponse {
+  script?: string
+  error?: string
+  details?: string
+}
+
+const SCRIPT_TONE_OPTIONS: ScriptTone[] = ['Warm', 'Funny', 'Bittersweet', 'Comforting', 'Casual']
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -89,6 +101,7 @@ function resolveAudioDuration(audioSourceUrl: string): Promise<number> {
 }
 
 export default function VoicemailTesterPage() {
+  const isDevMode = process.env.NODE_ENV !== 'production'
   const previewRef = useRef<HTMLDivElement | null>(null)
   const [formData, setFormData] = useState<VoicemailPreviewData>(DEFAULT_FORM)
   const [previewData, setPreviewData] = useState<VoicemailPreviewData>(DEFAULT_FORM)
@@ -102,6 +115,17 @@ export default function VoicemailTesterPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false)
   const [isRenderingVideo, setIsRenderingVideo] = useState(false)
+  const [isGeneratingScript, setIsGeneratingScript] = useState(false)
+  const [showReferenceOverlay, setShowReferenceOverlay] = useState(false)
+  const [referenceOverlayOpacity, setReferenceOverlayOpacity] = useState(0.4)
+  const [referenceOverlayScale, setReferenceOverlayScale] = useState(1)
+  const [referenceOverlayOffsetX, setReferenceOverlayOffsetX] = useState(0)
+  const [referenceOverlayOffsetY, setReferenceOverlayOffsetY] = useState(0)
+  const [scriptRelationship, setScriptRelationship] = useState('Mom')
+  const [scriptTone, setScriptTone] = useState<ScriptTone>('Warm')
+  const [scriptOccasion, setScriptOccasion] = useState('just thinking of you')
+  const [scriptMemoryDetails, setScriptMemoryDetails] = useState('')
+  const [scriptLength, setScriptLength] = useState<ScriptLength>('short_10_15')
 
   const selectedVoiceLabel = useMemo(
     () => DEFAULT_VOICES.find((voice) => voice.id === voiceId)?.label || voiceId,
@@ -238,6 +262,40 @@ export default function VoicemailTesterPage() {
     }
   }
 
+  const handleGenerateScript = async () => {
+    setStatusMessage(null)
+    setErrorMessage(null)
+    setIsGeneratingScript(true)
+    try {
+      const response = await fetch('/api/voicemail/generate-script', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          relationship: scriptRelationship,
+          tone: scriptTone,
+          occasion: scriptOccasion,
+          memoryDetails: scriptMemoryDetails,
+          length: scriptLength,
+        }),
+      })
+
+      const data = (await response.json()) as GenerateScriptResponse
+      if (!response.ok) {
+        throw new Error(data.details || data.error || 'Script generation failed.')
+      }
+      if (!data.script) {
+        throw new Error('Script generation returned no script.')
+      }
+
+      setFormData((prev) => ({ ...prev, script: data.script || prev.script }))
+      setStatusMessage('Script generated. Edit it if needed, then generate audio.')
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unexpected script generation failure.')
+    } finally {
+      setIsGeneratingScript(false)
+    }
+  }
+
   return (
     <div className="space-y-6 p-6 lg:p-8">
       <div>
@@ -320,6 +378,71 @@ export default function VoicemailTesterPage() {
             />
           </label>
 
+          <section className="space-y-3 rounded-xl border border-gray-800 bg-[#0f1420] p-4">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-cyan-200">Generate Script</h3>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="space-y-1.5">
+                <span className="block text-xs text-gray-300">Relationship</span>
+                <input
+                  value={scriptRelationship}
+                  onChange={(event) => setScriptRelationship(event.target.value)}
+                  className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100"
+                />
+              </label>
+              <label className="space-y-1.5">
+                <span className="block text-xs text-gray-300">Tone</span>
+                <select
+                  value={scriptTone}
+                  onChange={(event) => setScriptTone(event.target.value as ScriptTone)}
+                  className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100"
+                >
+                  {SCRIPT_TONE_OPTIONS.map((tone) => (
+                    <option key={tone} value={tone}>
+                      {tone}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1.5 md:col-span-2">
+                <span className="block text-xs text-gray-300">Occasion / reason</span>
+                <input
+                  value={scriptOccasion}
+                  onChange={(event) => setScriptOccasion(event.target.value)}
+                  className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100"
+                />
+              </label>
+              <label className="space-y-1.5 md:col-span-2">
+                <span className="block text-xs text-gray-300">Memory details</span>
+                <textarea
+                  value={scriptMemoryDetails}
+                  onChange={(event) => setScriptMemoryDetails(event.target.value)}
+                  placeholder="Mention a small memory, phrase, habit, or thing they loved..."
+                  rows={3}
+                  className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100"
+                />
+              </label>
+              <label className="space-y-1.5">
+                <span className="block text-xs text-gray-300">Length</span>
+                <select
+                  value={scriptLength}
+                  onChange={(event) => setScriptLength(event.target.value as ScriptLength)}
+                  className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100"
+                >
+                  <option value="short_10_15">Short, 10-15 seconds</option>
+                  <option value="medium_20_30">Medium, 20-30 seconds</option>
+                </select>
+              </label>
+            </div>
+            <button
+              type="button"
+              onClick={handleGenerateScript}
+              disabled={isGeneratingScript}
+              className="rounded-lg border border-cyan-300/60 bg-cyan-300/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/20 disabled:opacity-60"
+            >
+              {isGeneratingScript ? 'Generating Script...' : 'Generate Script'}
+            </button>
+          </section>
+
           <label className="space-y-2">
             <span className="block text-sm text-gray-300">Voicemail script</span>
             <textarea
@@ -375,9 +498,81 @@ export default function VoicemailTesterPage() {
         <section ref={previewRef} className="space-y-3 rounded-2xl border border-gray-800 bg-[#121620] p-5">
           <h2 className="text-lg font-semibold text-white">Voicemail preview (9:16)</h2>
           <p className="text-xs text-gray-400">
-            Screen is custom voicemail-inspired UI (no Apple assets). Audio progress and playback sync automatically.
+            iOS-voicemail inspired layout. Audio progress and playback sync automatically.
           </p>
-          <VoicemailPreview data={previewData} audioUrl={audioUrl} durationSeconds={durationSeconds} />
+          {isDevMode ? (
+            <div className="space-y-2 rounded-lg border border-gray-800 bg-[#0d111a] p-3">
+              <label className="inline-flex items-center gap-2 text-xs text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={showReferenceOverlay}
+                  onChange={(event) => setShowReferenceOverlay(event.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-gray-500 bg-[#0f1729]"
+                />
+                Show reference overlay
+              </label>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <label className="text-xs text-gray-300">
+                  Opacity: {referenceOverlayOpacity.toFixed(2)}
+                  <input
+                    type="range"
+                    min={0.1}
+                    max={0.8}
+                    step={0.01}
+                    value={referenceOverlayOpacity}
+                    onChange={(event) => setReferenceOverlayOpacity(Number(event.target.value))}
+                    className="mt-1 w-full accent-cyan-300"
+                  />
+                </label>
+                <label className="text-xs text-gray-300">
+                  Scale: {referenceOverlayScale.toFixed(2)}
+                  <input
+                    type="range"
+                    min={0.9}
+                    max={1.1}
+                    step={0.01}
+                    value={referenceOverlayScale}
+                    onChange={(event) => setReferenceOverlayScale(Number(event.target.value))}
+                    className="mt-1 w-full accent-cyan-300"
+                  />
+                </label>
+                <label className="text-xs text-gray-300">
+                  Offset X: {referenceOverlayOffsetX}px
+                  <input
+                    type="range"
+                    min={-50}
+                    max={50}
+                    step={1}
+                    value={referenceOverlayOffsetX}
+                    onChange={(event) => setReferenceOverlayOffsetX(Number(event.target.value))}
+                    className="mt-1 w-full accent-cyan-300"
+                  />
+                </label>
+                <label className="text-xs text-gray-300">
+                  Offset Y: {referenceOverlayOffsetY}px
+                  <input
+                    type="range"
+                    min={-50}
+                    max={50}
+                    step={1}
+                    value={referenceOverlayOffsetY}
+                    onChange={(event) => setReferenceOverlayOffsetY(Number(event.target.value))}
+                    className="mt-1 w-full accent-cyan-300"
+                  />
+                </label>
+              </div>
+            </div>
+          ) : null}
+          <VoicemailPreview
+            data={previewData}
+            audioUrl={audioUrl}
+            durationSeconds={durationSeconds}
+            showReferenceOverlay={isDevMode && showReferenceOverlay}
+            referenceOverlayOpacity={referenceOverlayOpacity}
+            referenceOverlayScale={referenceOverlayScale}
+            referenceOverlayOffsetX={referenceOverlayOffsetX}
+            referenceOverlayOffsetY={referenceOverlayOffsetY}
+          />
         </section>
       </div>
     </div>
