@@ -101,6 +101,48 @@ export async function generateAndUploadTextArtifact(prompt: string): Promise<str
   }
 }
 
+export async function generateAndUploadGptImage(prompt: string): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY
+  if (!apiKey) {
+    console.error('[openai-image] OPENAI_API_KEY not set')
+    return null
+  }
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: OPENAI_IMAGE_MODEL,
+        prompt,
+        size: OPENAI_IMAGE_SIZE,
+        quality: OPENAI_IMAGE_QUALITY,
+      }),
+    })
+
+    const payload = (await response.json()) as OpenAiImageGenerationResponse
+    if (!response.ok || payload.error) {
+      console.error('[openai-image] GPT generation API error:', payload.error?.message || `HTTP ${response.status}`)
+      return null
+    }
+
+    const base64 = payload.data?.[0]?.b64_json
+    if (!base64) {
+      console.error('[openai-image] GPT generation response missing b64_json')
+      return null
+    }
+
+    const buffer = Buffer.from(base64, 'base64')
+    return await uploadBufferToGeneratedMedia(buffer)
+  } catch (error) {
+    console.error('[openai-image] Unexpected GPT generation error:', error)
+    return null
+  }
+}
+
 export async function generateAndUploadGptImageEdit(
   prompt: string,
   inputImageUrl: string

@@ -421,7 +421,7 @@ export default function CreationPage() {
       return
     }
     if (isASignTrend && slideCount >= 3 && !geminiCustomPrompt3.trim()) {
-      setError('Slide 3 needs a custom Gemini prompt.')
+      setError('Slide 3 needs a custom ChatGPT Image prompt.')
       return
     }
     if (!isDragPathTrend && !isWinnerTakesAllTrend && !isASignTrend && slideCount >= 2 && !sceneValues[2]?.trim()) {
@@ -745,7 +745,7 @@ export default function CreationPage() {
                 : isWinnerTakesAllTrend
                   ? '3) Slide 2 (GPT Edit)'
                 : isASignTrend
-                  ? '3) Slides 2-3 (GPT Edit + Gemini Custom)'
+                  ? '3) Slides 2-3 (GPT Edit + ChatGPT Image Custom)'
                 : isAstronautTrend
                   ? '3) Slides 2..N (Chained Age Progression)'
                   : '3) Slides 2..N (Identity Anchor)'}
@@ -756,7 +756,7 @@ export default function CreationPage() {
                 : isWinnerTakesAllTrend
                   ? 'Slide 2 edits Slide 1 with OpenAI gpt-image-2 edits. The free-text instruction is applied to the previous slide image.'
                 : isASignTrend
-                  ? 'Slide 2 edits Slide 1 with gpt-image-2. Slide 3 runs Gemini from a custom prompt and can be independent (no input image) or reference mode editing Slide 2.'
+                  ? 'Slide 2 edits Slide 1 with gpt-image-2. Slide 3 uses ChatGPT Image (gpt-image-2): independent mode generates from scratch, reference mode edits Slide 2.'
                 : isAstronautTrend
                 ? 'Slides 2-4 chain from the immediately previous slide (`reference_previous`) with configurable relationship + age step + per-slide activity.'
                 : 'Keep the same exact people from Slide 1 while changing scene. Add extra slides when needed.'}
@@ -882,7 +882,7 @@ export default function CreationPage() {
                   </fieldset>
 
                   <label className="text-sm text-[#d7c9a6] block">
-                    Custom prompt (Gemini)
+                    Custom prompt (ChatGPT Image)
                   </label>
                   <textarea
                     value={geminiCustomPrompt3}

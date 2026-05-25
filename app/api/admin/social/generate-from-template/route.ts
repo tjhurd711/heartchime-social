@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { generateAndUploadPhoto } from '@/lib/geminiImageGen'
-import { generateAndUploadGptImageEdit, generateAndUploadTextArtifact } from '@/lib/openaiImageGen'
+import { generateAndUploadGptImage, generateAndUploadGptImageEdit, generateAndUploadTextArtifact } from '@/lib/openaiImageGen'
 import { renderAndUploadSocialCard } from '@/lib/socialCardRenderer'
 import { renderAndUploadSlide1, TextStyle } from '@/lib/socialSlide1Renderer'
 import { buildPhotoPrompt } from '@/lib/socialPhotoPrompt'
@@ -1182,13 +1182,14 @@ export async function POST(request: NextRequest) {
           if (!previousSlideImageUrl) {
             throw new Error(`Slide order ${slide.order} requires a previous slide image for gemini_custom reference mode`)
           }
-          const referencePrompt = applyReferencePreviousEditPrompt(interpolatedPrompt)
-          baseImageUrl = await generateAndUploadPhoto(
-            applyPhotoGenerationStyle(referencePrompt, variables, slide.order),
-            { referenceImageUrl: previousSlideImageUrl, referenceMode: 'identity' }
+          const referencePrompt = applyPhotoGenerationStyle(
+            applyReferencePreviousEditPrompt(interpolatedPrompt),
+            variables,
+            slide.order
           )
+          baseImageUrl = await generateAndUploadGptImageEdit(referencePrompt, previousSlideImageUrl)
         } else {
-          baseImageUrl = await generateAndUploadPhoto(
+          baseImageUrl = await generateAndUploadGptImage(
             applyPhotoGenerationStyle(interpolatedPrompt, variables, slide.order)
           )
         }
