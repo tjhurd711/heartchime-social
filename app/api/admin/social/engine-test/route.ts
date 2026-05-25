@@ -44,6 +44,8 @@ interface EngineRunResult {
   error: string | null
 }
 
+type EngineTestAction = 'generateBase' | 'runEditComparison'
+
 function applyStyleOnlyReferencePrompt(prompt: string): string {
   const styleOnlyConstraint =
     'STYLE-ONLY REFERENCE LOCK (highest priority): Create another photo just like this reference photo but with different people and a slightly different setting. Other than that the photo should look the exact same - this should not look like a stock photo, if there was glare keep it, if bad lighting keep it, truly only look to make the people different and thats it. RELATIONSHIP LOCK (highest priority): Preserve the same relationship roles and composition from the reference image. Do not swap who is who (for example, father/daughter must stay father/daughter), do not flip generational roles, and do not change the apparent gender role pairing implied by the reference composition. Keep the awkwardness: imperfect lighting, awkward expressions, slight blur/soft focus, and real phone-photo messiness.'
@@ -66,6 +68,15 @@ function inferImageMimeTypeFromKey(key: string): string {
   if (lower.endsWith('.webp')) return 'image/webp'
   if (lower.endsWith('.heic')) return 'image/heic'
   return 'image/jpeg'
+}
+
+function inferImageMimeTypeFromUrl(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl)
+    return inferImageMimeTypeFromKey(parsed.pathname)
+  } catch {
+    return inferImageMimeTypeFromKey(rawUrl)
+  }
 }
 
 async function mintLiveReferencePresignedUrl(key: string): Promise<string> {
@@ -142,7 +153,35 @@ async function runGeminiStyleGeneration(prompt: string, referenceImageUrl: strin
   }
 }
 
-async function runGptImageEdits(prompt: string, referenceImageUrl: string, referenceKey: string): Promise<EngineRunResult> {
+async function runGeminiEdit(prompt: string, baseImageUrl: string): Promise<EngineRunResult> {
+  const startedAt = Date.now()
+  try {
+    const imageUrl = await generateAndUploadPhoto(prompt, {
+      referenceImageUrl: baseImageUrl,
+      referenceMode: 'identity',
+    })
+
+    if (!imageUrl) {
+      throw new Error('Gemini returned no edited image')
+    }
+
+    return {
+      ok: true,
+      imageUrl,
+      durationMs: Date.now() - startedAt,
+      error: null,
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      imageUrl: null,
+      durationMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : 'Gemini edit failed',
+    }
+  }
+}
+
+async function runGptImageEdits(prompt: string, inputImageUrl: string): Promise<EngineRunResult> {
   const startedAt = Date.now()
 
   try {
@@ -151,22 +190,22 @@ async function runGptImageEdits(prompt: string, referenceImageUrl: string, refer
       throw new Error('OPENAI_API_KEY not set')
     }
 
-    const referenceResponse = await fetch(referenceImageUrl)
-    if (!referenceResponse.ok) {
-      throw new Error(`Failed to fetch reference image (${referenceResponse.status})`)
+    const inputImageResponse = await fetch(inputImageUrl)
+    if (!inputImageResponse.ok) {
+      throw new Error(`Failed to fetch input image (${inputImageResponse.status})`)
     }
 
-    const referenceBuffer = await referenceResponse.arrayBuffer()
-    const contentType = (referenceResponse.headers.get('content-type') || '').split(';')[0].trim()
-    const mimeType = contentType.startsWith('image/') ? contentType : inferImageMimeTypeFromKey(referenceKey)
-    const filename = referenceKey.split('/').pop() || 'reference.jpg'
+    const inputImageBuffer = await inputImageResponse.arrayBuffer()
+    const contentType = (inputImageResponse.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
+    const mimeType = contentType.startsWith('image/') ? contentType : inferImageMimeTypeFromUrl(inputImageUrl)
+    const filename = 'step1-base-input.png'
 
     const formData = new FormData()
     formData.append('model', 'gpt-image-2')
     formData.append('quality', 'high')
     formData.append('prompt', prompt)
     formData.append('size', '1024x1536')
-    formData.append('image', new Blob([referenceBuffer], { type: mimeType }), filename)
+    formData.append('image', new Blob([inputImageBuffer], { type: mimeType }), filename)
 
     const response = await fetch(OPENAI_EDITS_ENDPOINT, {
       method: 'POST',
@@ -220,33 +259,64 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const referenceKey = typeof body?.referenceKey === 'string' ? body.referenceKey.trim() : ''
-    const prompt = typeof body?.prompt === 'string' ? body.prompt.trim() : ''
+    const action = typeof body?.action === 'string' ? (body.action as EngineTestAction) : null
 
-    if (!referenceKey) {
-      return NextResponse.json({ error: 'Missing required field: referenceKey' }, { status: 400 })
+    if (action === 'generateBase') {
+      const referenceKey = typeof body?.referenceKey === 'string' ? body.referenceKey.trim() : ''
+      const prompt = typeof body?.prompt === 'string' ? body.prompt.trim() : ''
+
+      if (!referenceKey) {
+        return NextResponse.json({ error: 'Missing required field: referenceKey' }, { status: 400 })
+      }
+      if (!prompt) {
+        return NextResponse.json({ error: 'Missing required field: prompt' }, { status: 400 })
+      }
+      if (!isAllowedLiveReferenceKey(referenceKey)) {
+        return NextResponse.json({ error: 'Unsupported reference image file type' }, { status: 400 })
+      }
+
+      const referenceImageUrl = await mintLiveReferencePresignedUrl(referenceKey)
+      const styleLockedPrompt = applyStyleOnlyReferencePrompt(prompt)
+      const base = await runGeminiStyleGeneration(styleLockedPrompt, referenceImageUrl)
+
+      return NextResponse.json({
+        action,
+        referenceImageUrl,
+        base,
+      })
     }
-    if (!prompt) {
-      return NextResponse.json({ error: 'Missing required field: prompt' }, { status: 400 })
+
+    if (action === 'runEditComparison') {
+      const baseImageUrl = typeof body?.baseImageUrl === 'string' ? body.baseImageUrl.trim() : ''
+      const editPrompt = typeof body?.editPrompt === 'string' ? body.editPrompt.trim() : ''
+
+      if (!baseImageUrl) {
+        return NextResponse.json({ error: 'Missing required field: baseImageUrl' }, { status: 400 })
+      }
+      if (!editPrompt) {
+        return NextResponse.json({ error: 'Missing required field: editPrompt' }, { status: 400 })
+      }
+
+      const [gemini, gptImage2] = await Promise.all([
+        runGeminiEdit(editPrompt, baseImageUrl),
+        runGptImageEdits(editPrompt, baseImageUrl),
+      ])
+
+      return NextResponse.json({
+        action,
+        inputImageUrl: baseImageUrl,
+        geminiInputImageUrl: baseImageUrl,
+        gptImage2InputImageUrl: baseImageUrl,
+        gptImage2Endpoint: OPENAI_EDITS_ENDPOINT,
+        gemini,
+        gptImage2,
+      })
     }
-    if (!isAllowedLiveReferenceKey(referenceKey)) {
-      return NextResponse.json({ error: 'Unsupported reference image file type' }, { status: 400 })
-    }
 
-    const referenceImageUrl = await mintLiveReferencePresignedUrl(referenceKey)
-
-    const styleLockedPrompt = applyStyleOnlyReferencePrompt(prompt)
-
-    const [gemini, gptImage2] = await Promise.all([
-      runGeminiStyleGeneration(styleLockedPrompt, referenceImageUrl),
-      runGptImageEdits(styleLockedPrompt, referenceImageUrl, referenceKey),
-    ])
-
-    return NextResponse.json({
-      referenceImageUrl,
-      gemini,
-      gptImage2,
-    })
+    return NextResponse.json(
+      { error: 'Invalid action. Expected "generateBase" or "runEditComparison".' },
+      { status: 400 }
+    )
   } catch (error) {
     return NextResponse.json(
       {
