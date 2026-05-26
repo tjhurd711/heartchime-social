@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getVoicemailS3Url, uploadVoicemailObject } from '@/lib/voicemailStorage'
+import { getVoicemailS3Url, getVoicemailSignedReadUrl, uploadVoicemailObject } from '@/lib/voicemailStorage'
 
 interface GenerateVoicemailAudioRequest {
   mode?: 'text_to_speech' | 'speech_to_speech'
@@ -203,9 +203,11 @@ export async function POST(request: NextRequest) {
     })
 
     const audioUrl = getVoicemailS3Url(audioKey)
+    const audioSignedUrl = await getVoicemailSignedReadUrl(audioKey, 60 * 60 * 24)
 
     return NextResponse.json({
       audioUrl,
+      audioSignedUrl,
       audioKey,
       durationSeconds,
       voiceId,
