@@ -1,6 +1,7 @@
 export interface VoiceOption {
   id: string
   label: string
+  previewUrl?: string | null
 }
 
 export type VoicemailTheme = 'ios_voicemail' | 'classic_dark' | 'soft_blur' | 'minimal_black'

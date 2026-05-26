@@ -6,13 +6,26 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { VoiceSelector } from './_components/VoiceSelector'
 import { VoiceOption } from './_components/types'
 
-const DEFAULT_VOICES: VoiceOption[] = [
-  { id: '21m00Tcm4TlvDq8ikWAM', label: 'Rachel (default)' },
-  { id: 'AZnzlk1XvdvUeBnXmlld', label: 'Domi' },
-  { id: 'EXAVITQu4vr4xnSDxMaL', label: 'Bella' },
-  { id: 'TxGEqnHWrfWFTfGW9XjX', label: 'Josh' },
-  { id: 'VR6AewLTigWG4xSOukaG', label: 'Arnold' },
+const TARGET_VOICE_IDS = [
+  'rCuVrCHOUMY3OwyJBJym',
+  'prqcFePeALHihEWRj5ll',
+  '5u41aNhyCU6hXOcjPPv0',
+  'aAsWcN5jdLdiYG7Hq0YL',
+  'aIu5oHglU5AHNc2x0AZu',
+  '0mLOQqwA3kovxF1ID7z6',
+  'wGcFBfKz5yUQqhqr0mVy',
+  'q1Hhtkt94vkD6q7p50hW',
+  'oHwIxN4uGlD1D3IKyWJZ',
+  'tRhabdS7JjlQ0lVEImuM',
+  'w25dAwxibNES1hcDBvXx',
+  '1G3Huw0biNTSkYJGIuKP',
 ]
+
+const DEFAULT_VOICES: VoiceOption[] = TARGET_VOICE_IDS.map((voiceId) => ({
+  id: voiceId,
+  label: `Voice ${voiceId.slice(0, 6)}`,
+  previewUrl: null,
+}))
 
 const DEFAULT_SCRIPT =
   'Hey honey. Just checking in to say I love you and I am proud of you. If you get this, call me back when you have a minute.'
@@ -32,12 +45,23 @@ interface GenerateAudioResponse {
 
 type VoiceMode = 'speech_to_speech' | 'text_to_speech'
 
+interface VoiceMetadataResponse {
+  voices?: Array<{
+    voiceId?: string
+    name?: string
+    preview_url?: string | null
+  }>
+  error?: string
+  details?: string
+}
+
 export default function VoicemailTesterPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
+  const [voices, setVoices] = useState<VoiceOption[]>(DEFAULT_VOICES)
   const [voiceMode, setVoiceMode] = useState<VoiceMode>('speech_to_speech')
-  const [voiceId, setVoiceId] = useState(DEFAULT_VOICES[0].id)
+  const [voiceId, setVoiceId] = useState(DEFAULT_VOICES[0]?.id || '')
   const [script, setScript] = useState(DEFAULT_SCRIPT)
   const [sourceSpeechFile, setSourceSpeechFile] = useState<File | null>(null)
   const [sourceSpeechObjectUrl, setSourceSpeechObjectUrl] = useState<string | null>(null)
@@ -48,10 +72,11 @@ export default function VoicemailTesterPage() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [isLoadingVoices, setIsLoadingVoices] = useState(false)
 
   const selectedVoiceLabel = useMemo(
-    () => DEFAULT_VOICES.find((voice) => voice.id === voiceId)?.label || voiceId,
-    [voiceId]
+    () => voices.find((voice) => voice.id === voiceId)?.label || voiceId,
+    [voiceId, voices]
   )
 
   useEffect(() => {
@@ -64,6 +89,45 @@ export default function VoicemailTesterPage() {
       }
     }
   }, [sourceSpeechObjectUrl])
+
+  useEffect(() => {
+    const loadVoices = async () => {
+      setIsLoadingVoices(true)
+      try {
+        const response = await fetch('/api/voicemail/voices', { cache: 'no-store' })
+        const data = (await response.json()) as VoiceMetadataResponse
+
+        if (!response.ok) {
+          throw new Error(data.details || data.error || 'Failed to load voice metadata.')
+        }
+
+        const resolvedVoices = (data.voices || [])
+          .map((voice) => {
+            const id = voice.voiceId?.trim()
+            if (!id) return null
+            return {
+              id,
+              label: voice.name?.trim() || `Voice ${id.slice(0, 6)}`,
+              previewUrl: voice.preview_url || null,
+            }
+          })
+          .filter((voice): voice is VoiceOption => Boolean(voice))
+
+        if (resolvedVoices.length === TARGET_VOICE_IDS.length) {
+          setVoices(resolvedVoices)
+          setVoiceId((currentVoiceId) =>
+            resolvedVoices.some((voice) => voice.id === currentVoiceId) ? currentVoiceId : resolvedVoices[0].id
+          )
+        }
+      } catch {
+        // Keep fallback voice labels if metadata lookup fails.
+      } finally {
+        setIsLoadingVoices(false)
+      }
+    }
+
+    void loadVoices()
+  }, [])
 
   const setSpeechFileWithPreview = (file: File | null) => {
     if (sourceSpeechObjectUrl) {
@@ -243,7 +307,8 @@ export default function VoicemailTesterPage() {
             </div>
           </div>
 
-          <VoiceSelector voiceId={voiceId} voices={DEFAULT_VOICES} onChange={setVoiceId} />
+          <VoiceSelector voiceId={voiceId} voices={voices} onChange={setVoiceId} />
+          {isLoadingVoices ? <p className="text-xs text-gray-400">Loading voice names and previews...</p> : null}
 
           {voiceMode === 'text_to_speech' ? (
             <label className="space-y-2">
