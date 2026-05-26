@@ -1,12 +1,9 @@
-import fs from 'node:fs/promises'
-import { execFile } from 'node:child_process'
-import path from 'node:path'
-import { promisify } from 'node:util'
+import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda'
 import { NextRequest, NextResponse } from 'next/server'
-import { getVoicemailS3Url, uploadVoicemailObject } from '@/lib/voicemailStorage'
-import type { VoicemailVideoInputProps } from '@/lib/voicemail-video/VoicemailVideoComposition'
+import { getVoicemailBucketName, getVoicemailRegion, getVoicemailS3Url } from '@/lib/voicemailStorage'
 
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 interface GenerateVoicemailVideoRequest {
   contactName?: string
@@ -18,6 +15,7 @@ interface GenerateVoicemailVideoRequest {
   script?: string
   voiceId?: string
   profileImageDataUrl?: string | null
+  profileImageUrl?: string | null
   audioUrl?: string
   audioKey?: string
   audioBase64?: string
@@ -25,30 +23,23 @@ interface GenerateVoicemailVideoRequest {
   durationSeconds?: number
 }
 
-const execFileAsync = promisify(execFile)
+const lambdaCredentials =
+  process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY
+    ? {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      }
+    : undefined
+
+const lambdaClient = new LambdaClient({
+  region: getVoicemailRegion(),
+  credentials: lambdaCredentials,
+})
 
 function extractJobIdFromAudioKey(audioKey: string | null): string | null {
   if (!audioKey) return null
   const match = audioKey.match(/^voicemail-tester\/([^/]+)\/audio\./)
   return match?.[1] || null
-}
-
-function parseDataUrl(dataUrl: string): { mimeType: string; buffer: Buffer } | null {
-  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/)
-  if (!match) return null
-  const mimeType = match[1]
-  const base64Payload = match[2]
-  return {
-    mimeType,
-    buffer: Buffer.from(base64Payload, 'base64'),
-  }
-}
-
-function extensionFromMimeType(mimeType: string): string {
-  if (mimeType === 'image/png') return 'png'
-  if (mimeType === 'image/webp') return 'webp'
-  if (mimeType === 'image/avif') return 'avif'
-  return 'jpg'
 }
 
 export async function POST(request: NextRequest) {
@@ -77,34 +68,26 @@ export async function POST(request: NextRequest) {
     }
 
     const jobId = extractJobIdFromAudioKey(audioKey || null) || crypto.randomUUID()
-    const fps = 30
-    const durationInFrames = Math.max(1, Math.ceil(durationSeconds * fps))
     const jobPrefix = `voicemail-tester/${jobId}`
-    let profileImageUrl: string | null = null
-    let profileImageKey: string | null = null
+    const videoKey = `${jobPrefix}/video.mp4`
+    const metadataKey = `${jobPrefix}/metadata.json`
 
-    if (body.profileImageDataUrl?.trim()) {
-      const profileInput = body.profileImageDataUrl.trim()
-      if (profileInput.startsWith('data:image/')) {
-        const parsed = parseDataUrl(profileInput)
-        if (parsed) {
-          const ext = extensionFromMimeType(parsed.mimeType)
-          profileImageKey = `${jobPrefix}/profile-image.${ext}`
-          await uploadVoicemailObject({
-            key: profileImageKey,
-            body: parsed.buffer,
-            contentType: parsed.mimeType,
-            cacheControl: 'max-age=31536000',
-          })
-          profileImageUrl = getVoicemailS3Url(profileImageKey)
-        }
-      } else if (/^https?:\/\//i.test(profileInput)) {
-        profileImageUrl = profileInput
-      }
+    const profileDataInput = body.profileImageDataUrl?.trim() || ''
+    const profileUrlInput = body.profileImageUrl?.trim() || ''
+    const profileImageDataUrl = profileDataInput.startsWith('data:image/') ? profileDataInput : undefined
+    const profileImageUrl =
+      profileUrlInput && /^https?:\/\//i.test(profileUrlInput)
+        ? profileUrlInput
+        : /^https?:\/\//i.test(profileDataInput)
+          ? profileDataInput
+          : undefined
+
+    const functionName = process.env.VOICEMAIL_RENDER_LAMBDA_NAME?.trim()
+    if (!functionName) {
+      return NextResponse.json({ error: 'VOICEMAIL_RENDER_LAMBDA_NAME is not configured' }, { status: 500 })
     }
 
-    const inputProps: VoicemailVideoInputProps = {
-      profileImageSrc: profileImageUrl,
+    const payload = {
       contactName,
       emoji,
       metadataLine,
@@ -112,84 +95,57 @@ export async function POST(request: NextRequest) {
       transcriptText,
       theme,
       script,
-      audioSrc: audioUrl || `data:${audioMimeType};base64,${audioBase64}`,
-      durationInFrames,
+      voiceId,
+      audioKey: audioKey || undefined,
+      audioUrl: audioUrl || undefined,
+      audioBase64: audioBase64 || undefined,
+      audioMimeType,
+      durationSeconds,
+      profileImageUrl,
+      profileImageDataUrl,
+      bucket: getVoicemailBucketName(),
+      region: getVoicemailRegion(),
+      jobId,
+      videoKey,
+      metadataKey,
     }
 
-    const outputDirectory = path.join(process.cwd(), 'tmp', 'voicemail-renders', jobId)
-    await fs.mkdir(outputDirectory, { recursive: true })
-    const outputFileName = `video-${Date.now()}.mp4`
-    const outputLocation = path.join(outputDirectory, outputFileName)
-    const tempDirectory = path.join(process.cwd(), 'tmp', 'voicemail-renders')
-    await fs.mkdir(tempDirectory, { recursive: true })
-    const payloadPath = path.join(tempDirectory, `payload-${Date.now()}.json`)
-    const rendererScriptPath = path.join(process.cwd(), 'scripts', 'render-voicemail-video.mjs')
+    const command = new InvokeCommand({
+      FunctionName: functionName,
+      InvocationType: 'RequestResponse',
+      Payload: Buffer.from(JSON.stringify(payload)),
+    })
 
-    await fs.writeFile(
-      payloadPath,
-      JSON.stringify({
-        inputProps,
-        durationInFrames,
-      }),
-      'utf8'
-    )
+    const invokeResult = await lambdaClient.send(command)
+    const lambdaPayloadRaw = invokeResult.Payload
+      ? new TextDecoder().decode(invokeResult.Payload)
+      : '{}'
+    const lambdaPayload = lambdaPayloadRaw ? JSON.parse(lambdaPayloadRaw) : {}
 
-    try {
-      await execFileAsync(process.execPath, [rendererScriptPath, payloadPath, outputLocation], {
-        cwd: process.cwd(),
-        maxBuffer: 1024 * 1024 * 8,
-      })
-    } finally {
-      await fs.unlink(payloadPath).catch(() => undefined)
+    if (invokeResult.FunctionError) {
+      const detail =
+        lambdaPayload?.errorMessage ||
+        lambdaPayload?.errorType ||
+        lambdaPayload?.body ||
+        'Lambda invocation failed'
+      return NextResponse.json({ error: 'Failed to render voicemail video.', details: detail }, { status: 500 })
     }
 
-    const videoBuffer = await fs.readFile(outputLocation)
-    const videoKey = `${jobPrefix}/video.mp4`
-    await uploadVoicemailObject({
-      key: videoKey,
-      body: videoBuffer,
-      contentType: 'video/mp4',
-      cacheControl: 'max-age=31536000',
-    })
+    const normalizedPayload =
+      lambdaPayload && typeof lambdaPayload === 'object' && 'body' in lambdaPayload && typeof lambdaPayload.body === 'string'
+        ? JSON.parse(lambdaPayload.body)
+        : lambdaPayload
 
-    const videoUrl = getVoicemailS3Url(videoKey)
-
-    const metadataKey = `${jobPrefix}/metadata.json`
-    await uploadVoicemailObject({
-      key: metadataKey,
-      body: JSON.stringify(
-        {
-          contactName,
-          emoji,
-          metadataLine,
-          topLabel,
-          transcriptText,
-          theme,
-          script,
-          voiceId,
-          durationSeconds,
-          createdAt: new Date().toISOString(),
-          audioKey: audioKey || null,
-          audioUrl: audioUrl || null,
-          videoKey,
-          profileImageKey,
-        },
-        null,
-        2
-      ),
-      contentType: 'application/json',
-      cacheControl: 'max-age=31536000',
-    })
-
-    await fs.unlink(outputLocation).catch(() => undefined)
-    await fs.rm(outputDirectory, { recursive: true, force: true }).catch(() => undefined)
+    const resolvedVideoKey = normalizedPayload?.videoKey || videoKey
+    const resolvedDurationSeconds = Number(normalizedPayload?.durationSeconds ?? durationSeconds)
+    const resolvedJobId = normalizedPayload?.jobId || jobId
+    const videoUrl = normalizedPayload?.videoUrl || getVoicemailS3Url(resolvedVideoKey)
 
     return NextResponse.json({
       videoUrl,
-      videoKey,
-      durationSeconds,
-      metadataKey,
-      jobId,
+      videoKey: resolvedVideoKey,
+      durationSeconds: resolvedDurationSeconds,
+      jobId: resolvedJobId,
     })
   } catch (error) {
     return NextResponse.json(

@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { bundle } from '@remotion/bundler'
 import { renderMedia, selectComposition } from '@remotion/renderer'
@@ -15,15 +16,22 @@ async function main() {
   const payload = JSON.parse(payloadRaw)
   const inputProps = payload.inputProps
   const durationInFrames = payload.durationInFrames
+  const jobId = payload.jobId || 'default'
 
   if (!inputProps || !durationInFrames) {
     throw new Error('Render payload is missing inputProps or durationInFrames')
   }
 
+  const tempRoot = path.join(os.tmpdir(), 'voicemail-renders')
+  await fs.mkdir(tempRoot, { recursive: true })
+  const jobTempDirectory = path.join(tempRoot, jobId)
+  await fs.mkdir(jobTempDirectory, { recursive: true })
+
   const entryPoint = path.join(process.cwd(), 'lib/voicemail-video/remotion-entry.ts')
   const serveUrl = await bundle({
     entryPoint,
     onProgress: () => undefined,
+    outDir: path.join(jobTempDirectory, 'bundle'),
   })
 
   const composition = await selectComposition({

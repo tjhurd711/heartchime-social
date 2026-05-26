@@ -1,4 +1,4 @@
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 
 const REGION = process.env.AWS_REGION || 'us-east-2'
 const BUCKET_NAME = process.env.S3_BUCKET_NAME || 'heartbeat-photos-prod'
@@ -43,4 +43,20 @@ export async function uploadVoicemailObject(params: {
       CacheControl: params.cacheControl,
     })
   )
+}
+
+export async function getVoicemailObjectBuffer(key: string): Promise<Buffer> {
+  const response = await voicemailS3Client.send(
+    new GetObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: key,
+    })
+  )
+
+  if (!response.Body) {
+    throw new Error(`S3 object body is empty for key: ${key}`)
+  }
+
+  const bodyAsArrayBuffer = await response.Body.transformToByteArray()
+  return Buffer.from(bodyAsArrayBuffer)
 }
