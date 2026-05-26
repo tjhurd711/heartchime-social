@@ -40,6 +40,22 @@ export async function getVoicemailSignedReadUrl(key: string, expiresInSeconds: n
   )
 }
 
+export async function getVoicemailSignedPutUrl(params: {
+  key: string
+  contentType: string
+  expiresInSeconds?: number
+}): Promise<string> {
+  return getSignedUrl(
+    voicemailS3Client,
+    new PutObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: params.key,
+      ContentType: params.contentType,
+    }),
+    { expiresIn: params.expiresInSeconds ?? 15 * 60 }
+  )
+}
+
 export async function uploadVoicemailObject(params: {
   key: string
   body: Buffer | string

@@ -38,6 +38,16 @@ interface SwapVideoAudioResponse {
   details?: string
 }
 
+interface UploadSourceVideoResponse {
+  jobId?: string
+  sourceVideoKey?: string
+  uploadUrl?: string
+  sourceVideoUrl?: string
+  expiresInSeconds?: number
+  error?: string
+  details?: string
+}
+
 type VoiceMode = 'speech_to_speech' | 'text_to_speech'
 
 export default function VoicemailTesterPage() {
@@ -48,6 +58,9 @@ export default function VoicemailTesterPage() {
   const [voiceId, setVoiceId] = useState(DEFAULT_VOICES[0].id)
   const [script, setScript] = useState(DEFAULT_SCRIPT)
   const [screenRecordingFile, setScreenRecordingFile] = useState<File | null>(null)
+  const [sourceVideoKey, setSourceVideoKey] = useState<string | null>(null)
+  const [sourceVideoJobId, setSourceVideoJobId] = useState<string | null>(null)
+  const [isUploadingSourceVideo, setIsUploadingSourceVideo] = useState(false)
   const [sourceSpeechFile, setSourceSpeechFile] = useState<File | null>(null)
   const [sourceSpeechObjectUrl, setSourceSpeechObjectUrl] = useState<string | null>(null)
   const [isRecordingSpeech, setIsRecordingSpeech] = useState(false)
@@ -129,6 +142,69 @@ export default function VoicemailTesterPage() {
     }
   }
 
+  const uploadSourceVideoToS3 = async (file: File): Promise<{ sourceVideoKey: string; jobId: string }> => {
+    const uploadInitResponse = await fetch('/api/voicemail/upload-source-video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fileName: file.name || 'source-video.mp4',
+        contentType: file.type || 'video/mp4',
+        jobId: sourceVideoJobId || undefined,
+      }),
+    })
+    const uploadInitData = (await uploadInitResponse.json()) as UploadSourceVideoResponse
+    if (!uploadInitResponse.ok) {
+      throw new Error(uploadInitData.details || uploadInitData.error || 'Failed to start source video upload.')
+    }
+
+    if (!uploadInitData.uploadUrl || !uploadInitData.sourceVideoKey || !uploadInitData.jobId) {
+      throw new Error('Upload initialization did not return uploadUrl/sourceVideoKey/jobId.')
+    }
+
+    const putResponse = await fetch(uploadInitData.uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': file.type || 'video/mp4',
+      },
+      body: file,
+    })
+
+    if (!putResponse.ok) {
+      throw new Error(`Direct S3 upload failed with status ${putResponse.status}.`)
+    }
+
+    return {
+      sourceVideoKey: uploadInitData.sourceVideoKey,
+      jobId: uploadInitData.jobId,
+    }
+  }
+
+  const handleSourceVideoSelected = async (file: File | null) => {
+    setScreenRecordingFile(file)
+    setSourceVideoKey(null)
+    setSourceVideoJobId(null)
+    setVideoUrl(null)
+    setVideoKey(null)
+
+    if (!file) {
+      return
+    }
+
+    setIsUploadingSourceVideo(true)
+    setStatusMessage('Uploading source video directly to S3...')
+    setErrorMessage(null)
+    try {
+      const uploadResult = await uploadSourceVideoToS3(file)
+      setSourceVideoKey(uploadResult.sourceVideoKey)
+      setSourceVideoJobId(uploadResult.jobId)
+      setStatusMessage('Source video uploaded to S3. Ready to generate and swap.')
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to upload source video to S3.')
+    } finally {
+      setIsUploadingSourceVideo(false)
+    }
+  }
+
   const generateVoiceAudio = async (): Promise<{ audioKey: string; audioUrl?: string }> => {
     if (voiceMode === 'text_to_speech') {
       if (!script.trim()) {
@@ -177,21 +253,19 @@ export default function VoicemailTesterPage() {
     return { audioKey: data.audioKey, audioUrl: data.audioUrl }
   }
 
-  const swapAudioOnVideo = async (audioKey: string, audioUrl?: string) => {
-    if (!screenRecordingFile) {
-      throw new Error('Upload a screen recording first.')
-    }
-
-    const body = new FormData()
-    body.append('video', screenRecordingFile, screenRecordingFile.name || 'screen-recording.mp4')
-    body.append('audioKey', audioKey)
-    if (audioUrl) {
-      body.append('audioUrl', audioUrl)
+  const swapAudioOnVideo = async (audioKey: string, sourceVideoKeyValue: string, audioUrl?: string) => {
+    if (!sourceVideoKeyValue) {
+      throw new Error('Upload the source video to S3 first.')
     }
 
     const response = await fetch('/api/voicemail/swap-video-audio', {
       method: 'POST',
-      body,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourceVideoKey: sourceVideoKeyValue,
+        audioKey,
+        ...(audioUrl ? { audioUrl } : {}),
+      }),
     })
     const data = (await response.json()) as SwapVideoAudioResponse
     if (!response.ok) {
@@ -217,6 +291,10 @@ export default function VoicemailTesterPage() {
       setErrorMessage('Upload the source screen recording first.')
       return
     }
+    if (!sourceVideoKey) {
+      setErrorMessage('Wait for source video upload to S3 to complete before generating.')
+      return
+    }
 
     if (voiceMode === 'text_to_speech' && !script.trim()) {
       setErrorMessage('Type a script for Type it mode.')
@@ -236,7 +314,7 @@ export default function VoicemailTesterPage() {
       setGeneratedAudioUrl(generatedAudio.audioUrl || null)
 
       setStatusMessage('Swapping generated voice onto video...')
-      await swapAudioOnVideo(generatedAudio.audioKey, generatedAudio.audioUrl)
+      await swapAudioOnVideo(generatedAudio.audioKey, sourceVideoKey, generatedAudio.audioUrl)
 
       setStatusMessage(`Done. Voice generated with ${selectedVoiceLabel} and swapped onto your video.`)
     } catch (error) {
@@ -267,11 +345,14 @@ export default function VoicemailTesterPage() {
             <input
               type="file"
               accept="video/mp4,video/quicktime,video/x-m4v,.mp4,.mov,.m4v"
-              onChange={(event) => setScreenRecordingFile(event.target.files?.[0] || null)}
+              onChange={(event) => void handleSourceVideoSelected(event.target.files?.[0] || null)}
               className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100 file:mr-4 file:rounded-md file:border-0 file:bg-cyan-400 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-[#03141c]"
             />
             {screenRecordingFile ? (
-              <p className="text-xs text-gray-400">{screenRecordingFile.name}</p>
+              <p className="text-xs text-gray-400">
+                {screenRecordingFile.name}
+                {isUploadingSourceVideo ? ' - uploading to S3...' : sourceVideoKey ? ' - uploaded to S3' : ''}
+              </p>
             ) : (
               <p className="text-xs text-gray-500">Upload the original iOS voicemail screen recording first.</p>
             )}
@@ -357,7 +438,7 @@ export default function VoicemailTesterPage() {
             <button
               type="button"
               onClick={handleGenerateSwapVideo}
-              disabled={isGenerating}
+              disabled={isGenerating || isUploadingSourceVideo || !sourceVideoKey}
               className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-[#03141c] transition hover:bg-cyan-300 disabled:opacity-60"
             >
               {isGenerating ? 'Generating + swapping...' : 'Generate swapped voicemail video'}
