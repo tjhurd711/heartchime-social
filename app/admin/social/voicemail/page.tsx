@@ -1,11 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useRef, useState } from 'react'
-import { ProfileImageUploader } from './_components/ProfileImageUploader'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { VoiceSelector } from './_components/VoiceSelector'
-import { VoicemailPreview } from './_components/VoicemailPreview'
-import { VoiceOption, VoicemailPreviewData, VoicemailTheme } from './_components/types'
+import { VoiceOption } from './_components/types'
 
 const DEFAULT_VOICES: VoiceOption[] = [
   { id: '21m00Tcm4TlvDq8ikWAM', label: 'Rachel (default)' },
@@ -15,24 +13,8 @@ const DEFAULT_VOICES: VoiceOption[] = [
   { id: 'VR6AewLTigWG4xSOukaG', label: 'Arnold' },
 ]
 
-const DEFAULT_FORM: VoicemailPreviewData = {
-  profileImageUrl: null,
-  contactName: 'Mom',
-  emoji: '',
-  metadataLine: 'home - Oct 15, 2025 at 7:16 PM',
-  topLabel: '',
-  transcriptText: 'Transcript (low confidence)',
-  theme: 'ios_voicemail',
-  script:
-    'Hey honey. Just checking in to say I love you and I am proud of you. If you get this, call me back when you have a minute.',
-}
-
-const THEME_OPTIONS: Array<{ id: VoicemailTheme; label: string }> = [
-  { id: 'ios_voicemail', label: 'iOS Voicemail' },
-  { id: 'classic_dark', label: 'Classic Dark (legacy)' },
-  { id: 'soft_blur', label: 'Soft Blur (legacy)' },
-  { id: 'minimal_black', label: 'Minimal Black (legacy)' },
-]
+const DEFAULT_SCRIPT =
+  'Hey honey. Just checking in to say I love you and I am proud of you. If you get this, call me back when you have a minute.'
 
 interface GenerateAudioResponse {
   audioUrl?: string
@@ -40,259 +22,227 @@ interface GenerateAudioResponse {
   durationSeconds?: number | null
   voiceId?: string
   jobId?: string
+  mode?: 'text_to_speech' | 'speech_to_speech'
   error?: string
   details?: string
   code?: string
 }
 
-interface GenerateVideoResponse {
+interface SwapVideoAudioResponse {
   videoUrl?: string
   videoKey?: string
-  durationSeconds?: number
   jobId?: string
+  audioKey?: string | null
+  sourceVideoKey?: string
   error?: string
   details?: string
 }
 
-type ScriptTone = 'Warm' | 'Funny' | 'Bittersweet' | 'Comforting' | 'Casual'
-type ScriptLength = 'short_10_15' | 'medium_20_30'
-
-interface GenerateScriptResponse {
-  script?: string
-  error?: string
-  details?: string
-}
-
-const SCRIPT_TONE_OPTIONS: ScriptTone[] = ['Warm', 'Funny', 'Bittersweet', 'Comforting', 'Casual']
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        resolve(reader.result)
-      } else {
-        reject(new Error('Failed to read image file as data URL.'))
-      }
-    }
-    reader.onerror = () => reject(new Error('Failed to read selected file.'))
-    reader.readAsDataURL(file)
-  })
-}
-
-function resolveAudioDuration(audioSourceUrl: string): Promise<number> {
-  return new Promise((resolve) => {
-    const audio = new Audio(audioSourceUrl)
-    const cleanup = () => {
-      audio.removeAttribute('src')
-      audio.load()
-    }
-
-    audio.addEventListener('loadedmetadata', () => {
-      const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0
-      cleanup()
-      resolve(duration)
-    })
-    audio.addEventListener('error', () => {
-      cleanup()
-      resolve(0)
-    })
-  })
-}
+type VoiceMode = 'speech_to_speech' | 'text_to_speech'
 
 export default function VoicemailTesterPage() {
-  const isDevMode = process.env.NODE_ENV !== 'production'
-  const previewRef = useRef<HTMLDivElement | null>(null)
-  const [formData, setFormData] = useState<VoicemailPreviewData>(DEFAULT_FORM)
-  const [previewData, setPreviewData] = useState<VoicemailPreviewData>(DEFAULT_FORM)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+  const [voiceMode, setVoiceMode] = useState<VoiceMode>('speech_to_speech')
   const [voiceId, setVoiceId] = useState(DEFAULT_VOICES[0].id)
-  const [audioUrl, setAudioUrl] = useState<string | null>(null)
-  const [audioKey, setAudioKey] = useState<string | null>(null)
-  const [durationSeconds, setDurationSeconds] = useState<number | null>(null)
+  const [script, setScript] = useState(DEFAULT_SCRIPT)
+  const [screenRecordingFile, setScreenRecordingFile] = useState<File | null>(null)
+  const [sourceSpeechFile, setSourceSpeechFile] = useState<File | null>(null)
+  const [sourceSpeechObjectUrl, setSourceSpeechObjectUrl] = useState<string | null>(null)
+  const [isRecordingSpeech, setIsRecordingSpeech] = useState(false)
+  const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null)
+  const [generatedAudioKey, setGeneratedAudioKey] = useState<string | null>(null)
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [videoKey, setVideoKey] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false)
-  const [isRenderingVideo, setIsRenderingVideo] = useState(false)
-  const [isGeneratingScript, setIsGeneratingScript] = useState(false)
-  const [showReferenceOverlay, setShowReferenceOverlay] = useState(false)
-  const [referenceOverlayOpacity, setReferenceOverlayOpacity] = useState(0.4)
-  const [referenceOverlayScale, setReferenceOverlayScale] = useState(1)
-  const [referenceOverlayOffsetX, setReferenceOverlayOffsetX] = useState(0)
-  const [referenceOverlayOffsetY, setReferenceOverlayOffsetY] = useState(0)
-  const [scriptRelationship, setScriptRelationship] = useState('Mom')
-  const [scriptTone, setScriptTone] = useState<ScriptTone>('Warm')
-  const [scriptOccasion, setScriptOccasion] = useState('just thinking of you')
-  const [scriptMemoryDetails, setScriptMemoryDetails] = useState('')
-  const [scriptLength, setScriptLength] = useState<ScriptLength>('short_10_15')
+  const [isGenerating, setIsGenerating] = useState(false)
 
   const selectedVoiceLabel = useMemo(
     () => DEFAULT_VOICES.find((voice) => voice.id === voiceId)?.label || voiceId,
     [voiceId]
   )
 
-  const handleProfileFileSelected = async (file: File | null) => {
-    if (!file) {
-      setFormData((prev) => ({ ...prev, profileImageUrl: null }))
-      return
+  useEffect(() => {
+    return () => {
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop())
+      }
+      if (sourceSpeechObjectUrl) {
+        URL.revokeObjectURL(sourceSpeechObjectUrl)
+      }
     }
+  }, [sourceSpeechObjectUrl])
 
+  const setSpeechFileWithPreview = (file: File | null) => {
+    if (sourceSpeechObjectUrl) {
+      URL.revokeObjectURL(sourceSpeechObjectUrl)
+    }
+    setSourceSpeechFile(file)
+    setSourceSpeechObjectUrl(file ? URL.createObjectURL(file) : null)
+  }
+
+  const handleStartRecordingSpeech = async () => {
     try {
-      const dataUrl = await fileToDataUrl(file)
-      setFormData((prev) => ({ ...prev, profileImageUrl: dataUrl }))
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('Audio recording is not supported in this browser.')
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      mediaStreamRef.current = stream
+
+      const recorder = new MediaRecorder(stream)
+      mediaRecorderRef.current = recorder
+      audioChunksRef.current = []
+
+      recorder.addEventListener('dataavailable', (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data)
+        }
+      })
+
+      recorder.addEventListener('stop', () => {
+        const recordedBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+        const extension = recorder.mimeType.includes('mp4') ? 'm4a' : 'webm'
+        const recordedFile = new File([recordedBlob], `voice-sample.${extension}`, {
+          type: recorder.mimeType || 'audio/webm',
+        })
+        setSpeechFileWithPreview(recordedFile)
+        stream.getTracks().forEach((track) => track.stop())
+        mediaStreamRef.current = null
+      })
+
+      recorder.start()
+      setIsRecordingSpeech(true)
+      setStatusMessage('Recording started. Click Stop Recording when done.')
+      setErrorMessage(null)
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Image upload failed.')
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to start recording.')
     }
   }
 
-  const handlePreview = () => {
-    setPreviewData(formData)
-    setStatusMessage('Preview updated.')
-    setErrorMessage(null)
-    previewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const handleStopRecordingSpeech = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop()
+      setIsRecordingSpeech(false)
+      setStatusMessage('Recorded source speech captured.')
+    }
   }
 
-  const handleGenerateAudio = async () => {
-    setStatusMessage(null)
-    setErrorMessage(null)
-    setVideoUrl(null)
-    setVideoKey(null)
+  const generateVoiceAudio = async (): Promise<{ audioKey: string; audioUrl?: string }> => {
+    if (voiceMode === 'text_to_speech') {
+      if (!script.trim()) {
+        throw new Error('Type a script for Type it mode.')
+      }
 
-    if (!formData.script.trim()) {
-      setErrorMessage('Please add a voicemail script first.')
-      return
-    }
-
-    setIsGeneratingAudio(true)
-    try {
       const response = await fetch('/api/voicemail/generate-audio', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          script: formData.script,
+          mode: 'text_to_speech',
+          script,
           voiceId,
         }),
       })
-
       const data = (await response.json()) as GenerateAudioResponse
       if (!response.ok) {
-        const readable = data.details || data.error || 'Audio generation failed.'
-        setErrorMessage(readable)
-        if (data.code === 'ELEVENLABS_NOT_CONFIGURED') {
-          setStatusMessage('Preview is still available without generated audio.')
-        }
-        return
+        throw new Error(data.details || data.error || 'Audio generation failed.')
       }
-
-      if (!data.audioUrl || !data.audioKey) {
-        setErrorMessage('Audio response did not include audioUrl/audioKey.')
-        return
+      if (!data.audioKey) {
+        throw new Error('Audio generation response did not include audioKey.')
       }
-
-      const metadataDuration = await resolveAudioDuration(data.audioUrl)
-
-      setAudioUrl(data.audioUrl)
-      setAudioKey(data.audioKey)
-      setDurationSeconds(
-        typeof data.durationSeconds === 'number' && Number.isFinite(data.durationSeconds)
-          ? data.durationSeconds
-          : metadataDuration > 0
-            ? metadataDuration
-            : null
-      )
-      setPreviewData(formData)
-      setStatusMessage(`Audio generated with ${selectedVoiceLabel}.`)
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unexpected audio generation failure.')
-    } finally {
-      setIsGeneratingAudio(false)
+      return { audioKey: data.audioKey, audioUrl: data.audioUrl }
     }
+
+    if (!sourceSpeechFile) {
+      throw new Error('Upload or record source speech for Speak it mode.')
+    }
+
+    const body = new FormData()
+    body.append('mode', 'speech_to_speech')
+    body.append('voiceId', voiceId)
+    body.append('audio', sourceSpeechFile, sourceSpeechFile.name || 'source-speech.webm')
+
+    const response = await fetch('/api/voicemail/generate-audio', {
+      method: 'POST',
+      body,
+    })
+    const data = (await response.json()) as GenerateAudioResponse
+    if (!response.ok) {
+      throw new Error(data.details || data.error || 'Speech-to-speech generation failed.')
+    }
+    if (!data.audioKey) {
+      throw new Error('Speech-to-speech response did not include audioKey.')
+    }
+    return { audioKey: data.audioKey, audioUrl: data.audioUrl }
   }
 
-  const handleGenerateVideo = async () => {
+  const swapAudioOnVideo = async (audioKey: string, audioUrl?: string) => {
+    if (!screenRecordingFile) {
+      throw new Error('Upload a screen recording first.')
+    }
+
+    const body = new FormData()
+    body.append('video', screenRecordingFile, screenRecordingFile.name || 'screen-recording.mp4')
+    body.append('audioKey', audioKey)
+    if (audioUrl) {
+      body.append('audioUrl', audioUrl)
+    }
+
+    const response = await fetch('/api/voicemail/swap-video-audio', {
+      method: 'POST',
+      body,
+    })
+    const data = (await response.json()) as SwapVideoAudioResponse
+    if (!response.ok) {
+      throw new Error(data.details || data.error || 'Video audio swap failed.')
+    }
+    if (!data.videoUrl) {
+      throw new Error('Swap route finished but no video URL was returned.')
+    }
+
+    setVideoUrl(data.videoUrl)
+    setVideoKey(data.videoKey || null)
+  }
+
+  const handleGenerateSwapVideo = async () => {
     setStatusMessage(null)
     setErrorMessage(null)
     setVideoUrl(null)
     setVideoKey(null)
+    setGeneratedAudioKey(null)
+    setGeneratedAudioUrl(null)
 
-    if (!audioUrl || !audioKey || !durationSeconds) {
-      setErrorMessage('Generate audio first. Video rendering requires audio URL/key and duration.')
+    if (!screenRecordingFile) {
+      setErrorMessage('Upload the source screen recording first.')
       return
     }
 
-    setIsRenderingVideo(true)
-    try {
-      const response = await fetch('/api/voicemail/generate-video', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contactName: previewData.contactName,
-          emoji: previewData.emoji,
-          metadataLine: previewData.metadataLine,
-          script: previewData.script,
-          topLabel: previewData.topLabel,
-          transcriptText: previewData.transcriptText,
-          theme: previewData.theme,
-          profileImageDataUrl: previewData.profileImageUrl,
-          voiceId,
-          audioUrl,
-          audioKey,
-          durationSeconds,
-        }),
-      })
-
-      const data = (await response.json()) as GenerateVideoResponse
-      if (!response.ok) {
-        throw new Error(data.details || data.error || 'Video render failed.')
-      }
-
-      if (!data.videoUrl) {
-        throw new Error('Video render completed but no video URL was returned.')
-      }
-
-      setVideoUrl(data.videoUrl)
-      setVideoKey(data.videoKey || null)
-      setStatusMessage('Video rendered successfully.')
-      previewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unexpected video rendering failure.')
-    } finally {
-      setIsRenderingVideo(false)
+    if (voiceMode === 'text_to_speech' && !script.trim()) {
+      setErrorMessage('Type a script for Type it mode.')
+      return
     }
-  }
 
-  const handleGenerateScript = async () => {
-    setStatusMessage(null)
-    setErrorMessage(null)
-    setIsGeneratingScript(true)
+    if (voiceMode === 'speech_to_speech' && !sourceSpeechFile) {
+      setErrorMessage('Upload or record source speech for Speak it mode.')
+      return
+    }
+
+    setIsGenerating(true)
     try {
-      const response = await fetch('/api/voicemail/generate-script', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          relationship: scriptRelationship,
-          tone: scriptTone,
-          occasion: scriptOccasion,
-          memoryDetails: scriptMemoryDetails,
-          length: scriptLength,
-        }),
-      })
+      setStatusMessage('Generating transformed voice...')
+      const generatedAudio = await generateVoiceAudio()
+      setGeneratedAudioKey(generatedAudio.audioKey)
+      setGeneratedAudioUrl(generatedAudio.audioUrl || null)
 
-      const data = (await response.json()) as GenerateScriptResponse
-      if (!response.ok) {
-        throw new Error(data.details || data.error || 'Script generation failed.')
-      }
-      if (!data.script) {
-        throw new Error('Script generation returned no script.')
-      }
+      setStatusMessage('Swapping generated voice onto video...')
+      await swapAudioOnVideo(generatedAudio.audioKey, generatedAudio.audioUrl)
 
-      setFormData((prev) => ({ ...prev, script: data.script || prev.script }))
-      setStatusMessage('Script generated. Edit it if needed, then generate audio.')
+      setStatusMessage(`Done. Voice generated with ${selectedVoiceLabel} and swapped onto your video.`)
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unexpected script generation failure.')
+      setErrorMessage(error instanceof Error ? error.message : 'Unexpected generation failure.')
     } finally {
-      setIsGeneratingScript(false)
+      setIsGenerating(false)
     }
   }
 
@@ -302,188 +252,129 @@ export default function VoicemailTesterPage() {
         <Link href="/admin/social" className="mb-2 inline-flex text-sm text-gray-400 hover:text-gray-200">
           ← Back to Social Dashboard
         </Link>
-        <h1 className="text-3xl font-bold text-white">Voicemail Video Tester</h1>
+        <h1 className="text-3xl font-bold text-white">Voicemail Audio-Swap Engine</h1>
         <p className="mt-1 max-w-3xl text-sm text-gray-400">
-          Experimental tool for voicemail-style vertical previews and ElevenLabs audio generation.
+          Upload a real iOS voicemail screen recording, generate voice with ElevenLabs (speech-to-speech or text-to-speech), and output an MP4 with replaced audio.
         </p>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.2fr,1fr]">
+      <div className="grid gap-6 xl:grid-cols-[1.15fr,1fr]">
         <section className="space-y-4 rounded-2xl border border-gray-800 bg-[#151a26] p-5">
-          <h2 className="text-lg font-semibold text-white">Voicemail inputs</h2>
-
-          <ProfileImageUploader imageUrl={formData.profileImageUrl} onFileSelected={handleProfileFileSelected} />
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="space-y-2">
-              <span className="block text-sm text-gray-300">Contact name</span>
-              <input
-                value={formData.contactName}
-                onChange={(event) => setFormData((prev) => ({ ...prev, contactName: event.target.value }))}
-                className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100"
-              />
-            </label>
-            <label className="space-y-2">
-              <span className="block text-sm text-gray-300">Optional emoji</span>
-              <input
-                value={formData.emoji}
-                onChange={(event) => setFormData((prev) => ({ ...prev, emoji: event.target.value }))}
-                className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100"
-              />
-            </label>
-          </div>
+          <h2 className="text-lg font-semibold text-white">Inputs</h2>
 
           <label className="space-y-2">
-            <span className="block text-sm text-gray-300">Metadata line</span>
+            <span className="block text-sm text-gray-300">Screen recording (MP4/MOV)</span>
             <input
-              value={formData.metadataLine}
-              onChange={(event) => setFormData((prev) => ({ ...prev, metadataLine: event.target.value }))}
-              className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100"
+              type="file"
+              accept="video/mp4,video/quicktime,video/x-m4v,.mp4,.mov,.m4v"
+              onChange={(event) => setScreenRecordingFile(event.target.files?.[0] || null)}
+              className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100 file:mr-4 file:rounded-md file:border-0 file:bg-cyan-400 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-[#03141c]"
             />
+            {screenRecordingFile ? (
+              <p className="text-xs text-gray-400">{screenRecordingFile.name}</p>
+            ) : (
+              <p className="text-xs text-gray-500">Upload the original iOS voicemail screen recording first.</p>
+            )}
           </label>
 
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="space-y-2">
-              <span className="block text-sm text-gray-300">Top label</span>
-              <input
-                value={formData.topLabel}
-                onChange={(event) => setFormData((prev) => ({ ...prev, topLabel: event.target.value }))}
-                className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100"
-              />
-            </label>
-            <label className="space-y-2">
-              <span className="block text-sm text-gray-300">Theme</span>
-              <select
-                value={formData.theme}
-                onChange={(event) =>
-                  setFormData((prev) => ({ ...prev, theme: event.target.value as VoicemailTheme }))
-                }
-                className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100"
+          <div className="space-y-2 rounded-xl border border-gray-800 bg-[#0f1420] p-3">
+            <span className="block text-sm font-semibold text-white">Voice mode</span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setVoiceMode('speech_to_speech')}
+                className={`rounded-lg px-3 py-2 text-sm transition ${
+                  voiceMode === 'speech_to_speech'
+                    ? 'bg-cyan-300 text-[#06232e]'
+                    : 'border border-gray-700 bg-[#0f1729] text-gray-200 hover:bg-gray-800'
+                }`}
               >
-                {THEME_OPTIONS.map((theme) => (
-                  <option key={theme.id} value={theme.id}>
-                    {theme.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <label className="space-y-2">
-            <span className="block text-sm text-gray-300">Transcript text</span>
-            <input
-              value={formData.transcriptText}
-              onChange={(event) => setFormData((prev) => ({ ...prev, transcriptText: event.target.value }))}
-              className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100"
-            />
-          </label>
-
-          <section className="space-y-3 rounded-xl border border-gray-800 bg-[#0f1420] p-4">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-cyan-200">Generate Script</h3>
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="space-y-1.5">
-                <span className="block text-xs text-gray-300">Relationship</span>
-                <input
-                  value={scriptRelationship}
-                  onChange={(event) => setScriptRelationship(event.target.value)}
-                  className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100"
-                />
-              </label>
-              <label className="space-y-1.5">
-                <span className="block text-xs text-gray-300">Tone</span>
-                <select
-                  value={scriptTone}
-                  onChange={(event) => setScriptTone(event.target.value as ScriptTone)}
-                  className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100"
-                >
-                  {SCRIPT_TONE_OPTIONS.map((tone) => (
-                    <option key={tone} value={tone}>
-                      {tone}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="space-y-1.5 md:col-span-2">
-                <span className="block text-xs text-gray-300">Occasion / reason</span>
-                <input
-                  value={scriptOccasion}
-                  onChange={(event) => setScriptOccasion(event.target.value)}
-                  className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100"
-                />
-              </label>
-              <label className="space-y-1.5 md:col-span-2">
-                <span className="block text-xs text-gray-300">Memory details</span>
-                <textarea
-                  value={scriptMemoryDetails}
-                  onChange={(event) => setScriptMemoryDetails(event.target.value)}
-                  placeholder="Mention a small memory, phrase, habit, or thing they loved..."
-                  rows={3}
-                  className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100"
-                />
-              </label>
-              <label className="space-y-1.5">
-                <span className="block text-xs text-gray-300">Length</span>
-                <select
-                  value={scriptLength}
-                  onChange={(event) => setScriptLength(event.target.value as ScriptLength)}
-                  className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100"
-                >
-                  <option value="short_10_15">Short, 10-15 seconds</option>
-                  <option value="medium_20_30">Medium, 20-30 seconds</option>
-                </select>
-              </label>
+                Speak it
+              </button>
+              <button
+                type="button"
+                onClick={() => setVoiceMode('text_to_speech')}
+                className={`rounded-lg px-3 py-2 text-sm transition ${
+                  voiceMode === 'text_to_speech'
+                    ? 'bg-cyan-300 text-[#06232e]'
+                    : 'border border-gray-700 bg-[#0f1729] text-gray-200 hover:bg-gray-800'
+                }`}
+              >
+                Type it
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={handleGenerateScript}
-              disabled={isGeneratingScript}
-              className="rounded-lg border border-cyan-300/60 bg-cyan-300/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/20 disabled:opacity-60"
-            >
-              {isGeneratingScript ? 'Generating Script...' : 'Generate Script'}
-            </button>
-          </section>
-
-          <label className="space-y-2">
-            <span className="block text-sm text-gray-300">Voicemail script</span>
-            <textarea
-              value={formData.script}
-              onChange={(event) => setFormData((prev) => ({ ...prev, script: event.target.value }))}
-              rows={6}
-              className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100"
-            />
-          </label>
+          </div>
 
           <VoiceSelector voiceId={voiceId} voices={DEFAULT_VOICES} onChange={setVoiceId} />
+
+          {voiceMode === 'text_to_speech' ? (
+            <label className="space-y-2">
+              <span className="block text-sm text-gray-300">Script (TTS)</span>
+              <textarea
+                value={script}
+                onChange={(event) => setScript(event.target.value)}
+                rows={6}
+                className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100"
+              />
+            </label>
+          ) : (
+            <div className="space-y-3 rounded-xl border border-gray-800 bg-[#0f1420] p-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-cyan-200">Source speech (STS)</h3>
+              <p className="text-xs text-gray-400">
+                Upload or record your own voice. ElevenLabs will preserve your timing and emotion while changing vocal character.
+              </p>
+              <input
+                type="file"
+                accept="audio/*,.mp3,.m4a,.wav,.webm,.ogg"
+                onChange={(event) => setSpeechFileWithPreview(event.target.files?.[0] || null)}
+                className="w-full rounded-lg border border-gray-700 bg-[#0f1729] px-3 py-2 text-sm text-gray-100 file:mr-4 file:rounded-md file:border-0 file:bg-cyan-400 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-[#03141c]"
+              />
+              <div className="flex flex-wrap gap-2">
+                {!isRecordingSpeech ? (
+                  <button
+                    type="button"
+                    onClick={handleStartRecordingSpeech}
+                    className="rounded-lg border border-cyan-300/70 bg-cyan-300/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-300/20"
+                  >
+                    Record voice
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleStopRecordingSpeech}
+                    className="rounded-lg border border-rose-300/70 bg-rose-300/10 px-3 py-1.5 text-xs font-semibold text-rose-100 transition hover:bg-rose-300/20"
+                  >
+                    Stop recording
+                  </button>
+                )}
+              </div>
+              {sourceSpeechFile ? <p className="text-xs text-gray-400">{sourceSpeechFile.name}</p> : null}
+              {sourceSpeechObjectUrl ? <audio controls src={sourceSpeechObjectUrl} className="w-full" /> : null}
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-3 pt-2">
             <button
               type="button"
-              onClick={handleGenerateAudio}
-              disabled={isGeneratingAudio}
+              onClick={handleGenerateSwapVideo}
+              disabled={isGenerating}
               className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-[#03141c] transition hover:bg-cyan-300 disabled:opacity-60"
             >
-              {isGeneratingAudio ? 'Generating Audio...' : 'Generate Audio'}
-            </button>
-            <button
-              type="button"
-              onClick={handlePreview}
-              className="rounded-lg border border-gray-600 px-4 py-2 text-sm text-gray-100 transition hover:bg-gray-800"
-            >
-              Preview Voicemail UI
-            </button>
-            <button
-              type="button"
-              onClick={handleGenerateVideo}
-              disabled={!audioUrl || !audioKey || !durationSeconds || isRenderingVideo}
-              title={!audioUrl || !audioKey ? 'Generate audio first.' : undefined}
-              className="rounded-lg border border-gray-700 px-4 py-2 text-sm text-gray-100 transition hover:bg-gray-800 disabled:text-gray-500 disabled:hover:bg-transparent"
-            >
-              {isRenderingVideo ? 'Rendering video...' : 'Generate Video'}
+              {isGenerating ? 'Generating + swapping...' : 'Generate swapped voicemail video'}
             </button>
           </div>
 
           {statusMessage && <p className="text-sm text-emerald-300">{statusMessage}</p>}
           {errorMessage && <p className="text-sm text-amber-300">{errorMessage}</p>}
+          {generatedAudioUrl && (
+            <p className="text-sm text-cyan-300">
+              Generated audio:{' '}
+              <a href={generatedAudioUrl} target="_blank" rel="noreferrer" className="underline">
+                Open MP3
+              </a>
+              {generatedAudioKey ? <span className="ml-2 text-xs text-gray-400">({generatedAudioKey})</span> : null}
+            </p>
+          )}
           {videoUrl && (
             <p className="text-sm text-cyan-300">
               Video ready:{' '}
@@ -495,84 +386,16 @@ export default function VoicemailTesterPage() {
           )}
         </section>
 
-        <section ref={previewRef} className="space-y-3 rounded-2xl border border-gray-800 bg-[#121620] p-5">
-          <h2 className="text-lg font-semibold text-white">Voicemail preview (9:16)</h2>
-          <p className="text-xs text-gray-400">
-            iOS-voicemail inspired layout. Audio progress and playback sync automatically.
-          </p>
-          {isDevMode ? (
-            <div className="space-y-2 rounded-lg border border-gray-800 bg-[#0d111a] p-3">
-              <label className="inline-flex items-center gap-2 text-xs text-gray-300">
-                <input
-                  type="checkbox"
-                  checked={showReferenceOverlay}
-                  onChange={(event) => setShowReferenceOverlay(event.target.checked)}
-                  className="h-3.5 w-3.5 rounded border-gray-500 bg-[#0f1729]"
-                />
-                Show reference overlay
-              </label>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <label className="text-xs text-gray-300">
-                  Opacity: {referenceOverlayOpacity.toFixed(2)}
-                  <input
-                    type="range"
-                    min={0.1}
-                    max={0.8}
-                    step={0.01}
-                    value={referenceOverlayOpacity}
-                    onChange={(event) => setReferenceOverlayOpacity(Number(event.target.value))}
-                    className="mt-1 w-full accent-cyan-300"
-                  />
-                </label>
-                <label className="text-xs text-gray-300">
-                  Scale: {referenceOverlayScale.toFixed(2)}
-                  <input
-                    type="range"
-                    min={0.9}
-                    max={1.1}
-                    step={0.01}
-                    value={referenceOverlayScale}
-                    onChange={(event) => setReferenceOverlayScale(Number(event.target.value))}
-                    className="mt-1 w-full accent-cyan-300"
-                  />
-                </label>
-                <label className="text-xs text-gray-300">
-                  Offset X: {referenceOverlayOffsetX}px
-                  <input
-                    type="range"
-                    min={-50}
-                    max={50}
-                    step={1}
-                    value={referenceOverlayOffsetX}
-                    onChange={(event) => setReferenceOverlayOffsetX(Number(event.target.value))}
-                    className="mt-1 w-full accent-cyan-300"
-                  />
-                </label>
-                <label className="text-xs text-gray-300">
-                  Offset Y: {referenceOverlayOffsetY}px
-                  <input
-                    type="range"
-                    min={-50}
-                    max={50}
-                    step={1}
-                    value={referenceOverlayOffsetY}
-                    onChange={(event) => setReferenceOverlayOffsetY(Number(event.target.value))}
-                    className="mt-1 w-full accent-cyan-300"
-                  />
-                </label>
-              </div>
+        <section className="space-y-3 rounded-2xl border border-gray-800 bg-[#121620] p-5">
+          <h2 className="text-lg font-semibold text-white">Result</h2>
+          <p className="text-xs text-gray-400">The output MP4 is generated by replacing the uploaded video&apos;s audio track.</p>
+          {videoUrl ? (
+            <video src={videoUrl} controls playsInline className="w-full rounded-lg border border-gray-800 bg-black" />
+          ) : (
+            <div className="rounded-lg border border-dashed border-gray-700 bg-[#0f1420] p-6 text-sm text-gray-400">
+              Generate a swapped video to preview it here.
             </div>
-          ) : null}
-          <VoicemailPreview
-            data={previewData}
-            audioUrl={audioUrl}
-            durationSeconds={durationSeconds}
-            showReferenceOverlay={isDevMode && showReferenceOverlay}
-            referenceOverlayOpacity={referenceOverlayOpacity}
-            referenceOverlayScale={referenceOverlayScale}
-            referenceOverlayOffsetX={referenceOverlayOffsetX}
-            referenceOverlayOffsetY={referenceOverlayOffsetY}
-          />
+          )}
         </section>
       </div>
     </div>

@@ -2,6 +2,11 @@
 
 This Lambda renders the voicemail card background with Pillow, animates scrubber progress with FFmpeg, muxes audio, uploads outputs to S3, and returns render metadata.
 
+Template precedence:
+
+1. Bundled local file: `templates/voicemail_template.png`
+2. Fallback S3 key: `voicemail-templates/ios_dark.png` (override with optional `templateKey` input)
+
 ## Runtime + Region
 
 - Runtime: `python3.12`
@@ -40,6 +45,8 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt -t package
 cp handler.py package/
+cp -R fonts package/
+cp -R templates package/
 cd package
 zip -r ../voicemail-render.zip .
 ```

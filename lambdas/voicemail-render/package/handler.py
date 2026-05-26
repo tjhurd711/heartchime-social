@@ -19,72 +19,39 @@ from PIL import Image, ImageDraw, ImageFont
 FRAME_WIDTH = 1080
 FRAME_HEIGHT = 1920
 
-LAYOUT = {
-    "canvasWidth": 1080,
-    "canvasHeight": 1920,
-    "phoneRadius": 86,
-    "phonePaddingX": 34,
-    "phonePaddingTop": 28,
-    "phonePaddingBottom": 30,
-    "statusTimeFontSize": 36,
-    "statusTopOffset": 6,
-    "island": {"width": 286, "height": 50, "topMargin": 8, "bottomMargin": 34},
-    "nav": {"buttonSize": 92, "iconSize": 32, "labelFontSize": 20, "rowBottomMargin": 38},
-    "profile": {"size": 176, "topMargin": -6, "initialsFontSize": 58},
-    "namePill": {"topMargin": 10, "horizontalPadding": 20, "verticalPadding": 8, "fontSize": 52},
-    "metadata": {"topMargin": 16, "fontSize": 38},
-    "scrubber": {
-        "topMargin": 56,
-        "timeFontSize": 41,
-        "timelineHeight": 10,
-        "timelineTopMargin": 10,
-        "knobWidth": 86,
-        "knobHeight": 44,
-        "controlsTopMargin": 24,
-        "controlSize": 62,
-        "controlGap": 16,
-    },
-    "transcript": {"topMargin": 64, "labelFontSize": 43, "bodyTopMargin": 2, "bodyFontSize": 50},
-    "dock": {
-        "topMargin": 24,
-        "height": 88,
-        "searchSize": 88,
-        "borderRadius": 999,
-        "fontSize": 30,
-        "badgeFontSize": 21,
-        "horizontalPadding": 22,
-        "searchLeftMargin": 14,
-    },
-}
-
-PALETTE = {
-    "shellBorder": "#1f1f1f",
-    "shellBg": "#000000",
-    "text": "#f2f2f2",
-    "muted": "#9b9ca4",
-    "pill": "#1b1b1f",
-    "timelineTrack": "#1f2126",
-    "timelineFill": "#bfc4ce",
-    "knob": "#ffffff",
-    "circleButtonBg": "#141418",
-    "circleButtonBorder": "#404047",
-    "callButtonBg": "#27d05f",
-    "dockBorder": "#2f3033",
-    "dockBg": "#151517",
-    "accentBlue": "#26a8ff",
-}
-
-SHELL_X = 95
-SHELL_Y = 72
-SHELL_WIDTH = 890
-SHELL_HEIGHT = 1776
-CONTENT_X = SHELL_X + LAYOUT["phonePaddingX"]
-CONTENT_Y = SHELL_Y + LAYOUT["phonePaddingTop"]
-CONTENT_WIDTH = SHELL_WIDTH - (2 * LAYOUT["phonePaddingX"])
-CONTENT_BOTTOM = SHELL_Y + SHELL_HEIGHT - LAYOUT["phonePaddingBottom"]
-
 FFMPEG_PATH = "/opt/bin/ffmpeg"
-FONTS_DIR = os.path.join(os.path.dirname(__file__), "fonts")
+BASE_DIR = os.path.dirname(__file__)
+FONTS_DIR = os.path.join(BASE_DIR, "fonts")
+TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+TEMPLATE_PATH = os.path.join(TEMPLATES_DIR, "voicemail_template.png")
+TEMPLATE_S3_KEY_DEFAULT = "voicemail-templates/ios_dark.png"
+
+# Coordinates tuned for a 1080x1920 working frame (template is resized to this).
+NAME_CLEAR_BOX = (274, 514, 806, 590)
+NAME_POS = (540, 552)
+NAME_FONT_SIZE = 56
+
+AVATAR_CENTER = (540, 432)
+AVATAR_RADIUS = 86
+AVATAR_FALLBACK_BG = "#52506d"
+AVATAR_INITIAL_FONT_SIZE = 72
+
+TRANSCRIPT_BOX = (96, 1038, 984, 1424)
+TRANSCRIPT_FONT_SIZE = 50
+TRANSCRIPT_LINE_HEIGHT = 62
+TRANSCRIPT_MAX_LINES = 6
+
+TIMER_LEFT_POS = (96, 742)
+TIMER_RIGHT_POS = (984, 742)  # right-aligned anchor
+TIMER_LEFT_CLEAR_BOX = (84, 730, 220, 790)
+TIMER_RIGHT_CLEAR_BOX = (824, 730, 996, 790)
+TIMER_FONT_SIZE = 42
+
+SLIDER_TRACK_START_X = 144
+SLIDER_TRACK_END_X = 938
+SLIDER_Y = 814  # center y of moving white pill
+SLIDER_PILL_WIDTH = 86
+SLIDER_PILL_HEIGHT = 44
 
 
 def load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -104,13 +71,11 @@ def measure_text(draw: ImageDraw.ImageDraw, value: str, font: ImageFont.ImageFon
     return bbox[2] - bbox[0], bbox[3] - bbox[1]
 
 
-def initials_from_name(name: str) -> str:
-    words = [word.strip() for word in name.split(" ") if word.strip()]
-    if not words:
-        return "VC"
-    if len(words) == 1:
-        return words[0][:2].upper()
-    return f"{words[0][0]}{words[1][0]}".upper()
+def first_initial(name: str) -> str:
+    clean = re.sub(r"\s+", " ", name or "").strip()
+    if not clean:
+        return "L"
+    return clean[0].upper()
 
 
 def format_timestamp(total_seconds: float) -> str:
@@ -200,6 +165,28 @@ def resolve_audio_bytes(event: dict[str, Any], s3_client: Any, bucket_name: str)
     raise ValueError("audioKey, audioUrl, or audioBase64 is required")
 
 
+def resolve_video_bytes(event: dict[str, Any], s3_client: Any, bucket_name: str) -> tuple[bytes, str]:
+    source_video_key = (event.get("sourceVideoKey") or "").strip()
+    source_video_url = (event.get("sourceVideoUrl") or "").strip()
+    source_video_base64 = (event.get("sourceVideoBase64") or "").strip()
+    source_video_mime_type = (event.get("sourceVideoMimeType") or "video/mp4").strip()
+
+    if source_video_key:
+        obj = s3_client.get_object(Bucket=bucket_name, Key=source_video_key)
+        return obj["Body"].read(), source_video_mime_type
+
+    if source_video_url:
+        response = requests.get(source_video_url, timeout=30)
+        response.raise_for_status()
+        mime_type = response.headers.get("content-type", source_video_mime_type).split(";")[0].strip()
+        return response.content, mime_type or source_video_mime_type
+
+    if source_video_base64:
+        return base64.b64decode(source_video_base64), source_video_mime_type
+
+    raise ValueError("sourceVideoKey, sourceVideoUrl, or sourceVideoBase64 is required")
+
+
 def extension_from_audio_mime_type(mime_type: str, audio_key: str | None = None, audio_url: str | None = None) -> str:
     if mime_type == "audio/mpeg":
         return "mp3"
@@ -222,6 +209,24 @@ def extension_from_audio_mime_type(mime_type: str, audio_key: str | None = None,
     return "mp3"
 
 
+def extension_from_video_mime_type(mime_type: str, source_video_key: str | None = None, source_video_url: str | None = None) -> str:
+    if mime_type == "video/quicktime":
+        return "mov"
+    if mime_type in ("video/mp4", "video/x-m4v"):
+        return "mp4"
+
+    for candidate in [source_video_key, source_video_url]:
+        if not candidate:
+            continue
+        parsed = urlparse(candidate)
+        basename = os.path.basename(parsed.path or candidate)
+        if "." in basename:
+            ext = basename.rsplit(".", 1)[1].lower()
+            if ext:
+                return ext
+    return "mp4"
+
+
 def resolve_profile_image(profile_image_url: str | None, profile_image_data_url: str | None) -> Image.Image | None:
     image_bytes = None
     if profile_image_data_url:
@@ -237,246 +242,118 @@ def resolve_profile_image(profile_image_url: str | None, profile_image_data_url:
         return None
 
     profile = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    return profile.resize((LAYOUT["profile"]["size"], LAYOUT["profile"]["size"]), Image.Resampling.LANCZOS)
+    diameter = AVATAR_RADIUS * 2
+    return profile.resize((diameter, diameter), Image.Resampling.LANCZOS)
 
 
-def draw_circle_button(draw: ImageDraw.ImageDraw, cx: int, cy: int, radius: int, fill: str, outline: str | None = None, width: int = 1) -> None:
-    bounds = (cx - radius, cy - radius, cx + radius, cy + radius)
-    draw.ellipse(bounds, fill=fill, outline=outline, width=width)
+def load_template_image(payload: dict[str, Any], s3_client: Any, bucket_name: str) -> Image.Image:
+    template_bytes: bytes | None = None
+
+    if os.path.exists(TEMPLATE_PATH):
+        with open(TEMPLATE_PATH, "rb") as template_file:
+            template_bytes = template_file.read()
+    else:
+        template_s3_key = (payload.get("templateKey") or TEMPLATE_S3_KEY_DEFAULT).strip() or TEMPLATE_S3_KEY_DEFAULT
+        obj = s3_client.get_object(Bucket=bucket_name, Key=template_s3_key)
+        template_bytes = obj["Body"].read()
+
+    if not template_bytes:
+        raise ValueError("Template image bytes are empty")
+
+    template = Image.open(io.BytesIO(template_bytes)).convert("RGB")
+    if template.size != (FRAME_WIDTH, FRAME_HEIGHT):
+        template = template.resize((FRAME_WIDTH, FRAME_HEIGHT), Image.Resampling.LANCZOS)
+    return template
 
 
-def render_voicemail_png(payload: dict[str, Any], output_path: str) -> tuple[int, int, int, int]:
-    image = Image.new("RGB", (FRAME_WIDTH, FRAME_HEIGHT), "#020203")
+def draw_centered_text(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    center: tuple[int, int],
+    font: ImageFont.ImageFont,
+    fill: str = "#ffffff",
+) -> None:
+    text_width, text_height = measure_text(draw, text, font)
+    draw.text((center[0] - (text_width // 2), center[1] - (text_height // 2)), text, fill=fill, font=font)
+
+
+def draw_right_aligned_text(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    right_x: int,
+    y: int,
+    font: ImageFont.ImageFont,
+    fill: str = "#ffffff",
+) -> None:
+    text_width, _ = measure_text(draw, text, font)
+    draw.text((right_x - text_width, y), text, fill=fill, font=font)
+
+
+def render_voicemail_png(payload: dict[str, Any], output_path: str, s3_client: Any, bucket_name: str) -> tuple[int, int, int]:
+    image = load_template_image(payload, s3_client, bucket_name)
     draw = ImageDraw.Draw(image)
 
-    body_font = load_font(30)
-    status_font = load_font(LAYOUT["statusTimeFontSize"])
-    nav_label_font = load_font(LAYOUT["nav"]["labelFontSize"])
-    name_font = load_font(LAYOUT["namePill"]["fontSize"], bold=True)
-    metadata_font = load_font(LAYOUT["metadata"]["fontSize"])
-    scrubber_font = load_font(LAYOUT["scrubber"]["timeFontSize"])
-    transcript_label_font = load_font(LAYOUT["transcript"]["labelFontSize"])
-    transcript_body_font = load_font(LAYOUT["transcript"]["bodyFontSize"])
-    initials_font = load_font(LAYOUT["profile"]["initialsFontSize"], bold=True)
-    dock_font = load_font(LAYOUT["dock"]["fontSize"])
-    dock_badge_font = load_font(LAYOUT["dock"]["badgeFontSize"], bold=True)
-
     contact_name = (payload.get("contactName") or "Mom").strip() or "Mom"
-    emoji = (payload.get("emoji") or "").strip()
-    metadata_line = (payload.get("metadataLine") or "home - Oct 15, 2025 at 7:16 PM").strip() or "home - Oct 15, 2025 at 7:16 PM"
-    top_label = (payload.get("topLabel") or "Voicemail").strip() or "Voicemail"
-    transcript_text = (payload.get("transcriptText") or "Transcript (low confidence)").strip() or "Transcript (low confidence)"
-    script = (payload.get("script") or "Hey").strip() or "Hey"
+    transcript_body = (payload.get("script") or payload.get("transcriptText") or "").strip()
+    if not transcript_body:
+        transcript_body = "Hey."
+    duration_seconds = float(payload.get("durationSeconds") or 0)
 
-    draw.rounded_rectangle(
-        (SHELL_X, SHELL_Y, SHELL_X + SHELL_WIDTH, SHELL_Y + SHELL_HEIGHT),
-        radius=LAYOUT["phoneRadius"],
-        fill=PALETTE["shellBg"],
-        outline=PALETTE["shellBorder"],
-        width=2,
-    )
+    name_font = load_font(NAME_FONT_SIZE, bold=True)
+    timer_font = load_font(TIMER_FONT_SIZE)
+    transcript_font = load_font(TRANSCRIPT_FONT_SIZE)
+    avatar_initial_font = load_font(AVATAR_INITIAL_FONT_SIZE, bold=True)
 
-    current_y = CONTENT_Y
-    draw.text((CONTENT_X + 6, current_y + LAYOUT["statusTopOffset"]), "6:11", fill=PALETTE["text"], font=status_font)
-    battery_w, _ = measure_text(draw, "69%", status_font)
-    draw.text(
-        (CONTENT_X + CONTENT_WIDTH - battery_w, current_y + LAYOUT["statusTopOffset"]),
-        "69%",
-        fill=PALETTE["text"],
-        font=status_font,
-    )
-    current_y += LAYOUT["statusTimeFontSize"] + LAYOUT["island"]["topMargin"]
+    # Hide template's baked name before drawing dynamic contact name.
+    draw.rectangle(NAME_CLEAR_BOX, fill="#000000")
+    draw_centered_text(draw, contact_name, NAME_POS, name_font)
 
-    island_x = SHELL_X + (SHELL_WIDTH - LAYOUT["island"]["width"]) // 2
-    draw.rounded_rectangle(
-        (
-            island_x,
-            current_y,
-            island_x + LAYOUT["island"]["width"],
-            current_y + LAYOUT["island"]["height"],
-        ),
-        radius=999,
-        fill="#0b0b0f",
-        outline="#36363f",
-        width=1,
-    )
-    current_y += LAYOUT["island"]["height"] + LAYOUT["island"]["bottomMargin"]
-
-    nav_center_y = current_y + (LAYOUT["nav"]["buttonSize"] // 2)
-    left_button_cx = CONTENT_X + (LAYOUT["nav"]["buttonSize"] // 2)
-    right_button_cx = CONTENT_X + CONTENT_WIDTH - (LAYOUT["nav"]["buttonSize"] // 2)
-
-    draw_circle_button(
-        draw,
-        left_button_cx,
-        nav_center_y,
-        LAYOUT["nav"]["buttonSize"] // 2,
-        fill=PALETTE["circleButtonBg"],
-        outline=PALETTE["circleButtonBorder"],
-    )
-    draw.text((left_button_cx - 10, nav_center_y - 16), "‹", fill="#ffffff", font=load_font(40))
-
-    top_label_w, top_label_h = measure_text(draw, top_label, nav_label_font)
-    draw.text(
-        (SHELL_X + (SHELL_WIDTH - top_label_w) // 2, nav_center_y - (top_label_h // 2)),
-        top_label,
-        fill=PALETTE["muted"],
-        font=nav_label_font,
-    )
-
-    draw_circle_button(
-        draw,
-        right_button_cx,
-        nav_center_y,
-        LAYOUT["nav"]["buttonSize"] // 2,
-        fill=PALETTE["callButtonBg"],
-    )
-    draw.text((right_button_cx - 16, nav_center_y - 16), "☎", fill="#041508", font=load_font(30))
-
-    current_y += LAYOUT["nav"]["buttonSize"] + LAYOUT["nav"]["rowBottomMargin"] + LAYOUT["profile"]["topMargin"]
-
-    profile_size = LAYOUT["profile"]["size"]
-    profile_left = SHELL_X + (SHELL_WIDTH - profile_size) // 2
-    profile_top = current_y
-    profile_center_x = profile_left + profile_size // 2
-    profile_center_y = profile_top + profile_size // 2
-
+    # Replace the template avatar with provided profile image or fallback initial.
     profile_image = resolve_profile_image(
         (payload.get("profileImageUrl") or "").strip() or None,
         (payload.get("profileImageDataUrl") or "").strip() or None,
     )
+    avatar_left = AVATAR_CENTER[0] - AVATAR_RADIUS
+    avatar_top = AVATAR_CENTER[1] - AVATAR_RADIUS
+    avatar_diameter = AVATAR_RADIUS * 2
     if profile_image:
-        mask = Image.new("L", (profile_size, profile_size), 0)
+        mask = Image.new("L", (avatar_diameter, avatar_diameter), 0)
         mask_draw = ImageDraw.Draw(mask)
-        mask_draw.ellipse((0, 0, profile_size, profile_size), fill=255)
-        image.paste(profile_image, (profile_left, profile_top), mask=mask)
+        mask_draw.ellipse((0, 0, avatar_diameter, avatar_diameter), fill=255)
+        image.paste(profile_image, (avatar_left, avatar_top), mask=mask)
     else:
-        draw_circle_button(draw, profile_center_x, profile_center_y, profile_size // 2, fill="#51506d")
-        initials = initials_from_name(contact_name)
-        initials_w, initials_h = measure_text(draw, initials, initials_font)
-        draw.text(
-            (profile_center_x - initials_w // 2, profile_center_y - initials_h // 2),
-            initials,
-            fill="#ffffff",
-            font=initials_font,
+        draw.ellipse(
+            (
+                AVATAR_CENTER[0] - AVATAR_RADIUS,
+                AVATAR_CENTER[1] - AVATAR_RADIUS,
+                AVATAR_CENTER[0] + AVATAR_RADIUS,
+                AVATAR_CENTER[1] + AVATAR_RADIUS,
+            ),
+            fill=AVATAR_FALLBACK_BG,
         )
-    current_y += profile_size + LAYOUT["namePill"]["topMargin"]
+        draw_centered_text(draw, first_initial(contact_name), AVATAR_CENTER, avatar_initial_font)
 
-    contact_line = f"{contact_name} {emoji}".strip()
-    name_w, name_h = measure_text(draw, contact_line, name_font)
-    arrow_w, _ = measure_text(draw, "›", name_font)
-    pill_h = name_h + (2 * LAYOUT["namePill"]["verticalPadding"])
-    pill_w = (
-        name_w
-        + arrow_w
-        + (2 * LAYOUT["namePill"]["horizontalPadding"])
-        + 26  # spacing between name and arrow
+    # Replace transcript body only; template keeps the "Transcript" heading and controls.
+    draw.rectangle(TRANSCRIPT_BOX, fill="#000000")
+    transcript_lines = wrap_text_to_width(
+        draw,
+        transcript_body,
+        transcript_font,
+        TRANSCRIPT_BOX[2] - TRANSCRIPT_BOX[0],
+        TRANSCRIPT_MAX_LINES,
     )
-    pill_x = SHELL_X + (SHELL_WIDTH - pill_w) // 2
-    draw.rounded_rectangle(
-        (pill_x, current_y, pill_x + pill_w, current_y + pill_h),
-        radius=999,
-        fill=PALETTE["pill"],
-    )
-    text_y = current_y + LAYOUT["namePill"]["verticalPadding"] - 2
-    draw.text((pill_x + LAYOUT["namePill"]["horizontalPadding"], text_y), contact_line, fill=PALETTE["text"], font=name_font)
-    draw.text((pill_x + pill_w - LAYOUT["namePill"]["horizontalPadding"] - arrow_w, text_y), "›", fill="#8b8d96", font=name_font)
+    transcript_y = TRANSCRIPT_BOX[1]
+    for line in transcript_lines:
+        draw.text((TRANSCRIPT_BOX[0], transcript_y), line, fill="#ffffff", font=transcript_font)
+        transcript_y += TRANSCRIPT_LINE_HEIGHT
 
-    current_y += pill_h + LAYOUT["metadata"]["topMargin"]
-    metadata_w, metadata_h = measure_text(draw, metadata_line, metadata_font)
-    draw.text(
-        (SHELL_X + (SHELL_WIDTH - metadata_w) // 2, current_y),
-        metadata_line,
-        fill=PALETTE["muted"],
-        font=metadata_font,
-    )
-
-    current_y += metadata_h + LAYOUT["scrubber"]["topMargin"]
-    elapsed_text = format_timestamp(0)
-    remaining_text = f"-{format_timestamp(float(payload.get('durationSeconds') or 0))}"
-    elapsed_w, elapsed_h = measure_text(draw, elapsed_text, scrubber_font)
-    remaining_w, _ = measure_text(draw, remaining_text, scrubber_font)
-    draw.text((CONTENT_X, current_y), elapsed_text, fill=PALETTE["text"], font=scrubber_font)
-    draw.text((CONTENT_X + CONTENT_WIDTH - remaining_w, current_y), remaining_text, fill=PALETTE["text"], font=scrubber_font)
-
-    scrubber_y = current_y + elapsed_h + LAYOUT["scrubber"]["timelineTopMargin"]
-    scrubber_x = CONTENT_X
-    scrubber_w = CONTENT_WIDTH
-    scrubber_h = LAYOUT["scrubber"]["timelineHeight"]
-    draw.rounded_rectangle(
-        (scrubber_x, scrubber_y, scrubber_x + scrubber_w, scrubber_y + scrubber_h),
-        radius=999,
-        fill=PALETTE["timelineTrack"],
-    )
-
-    controls_y = scrubber_y + scrubber_h + LAYOUT["scrubber"]["controlsTopMargin"]
-    control_size = LAYOUT["scrubber"]["controlSize"]
-    icons = ["↑", "≪", "▶", "🔊", "⌫"]
-    controls_total_w = (control_size * 5) + (LAYOUT["scrubber"]["controlGap"] * 4)
-    controls_start_x = CONTENT_X + (CONTENT_WIDTH - controls_total_w) // 2
-    for idx, icon in enumerate(icons):
-        x = controls_start_x + idx * (control_size + LAYOUT["scrubber"]["controlGap"])
-        is_active = idx == 2
-        draw.rounded_rectangle(
-            (x, controls_y, x + control_size, controls_y + control_size),
-            radius=999,
-            outline="#ffffff" if is_active else "#5a5a62",
-            width=1,
-            fill="#ffffff" if is_active else None,
-        )
-        icon_font = load_font(26)
-        icon_w, icon_h = measure_text(draw, icon, icon_font)
-        draw.text(
-            (x + (control_size - icon_w) // 2, controls_y + (control_size - icon_h) // 2 - 1),
-            icon,
-            fill="#000000" if is_active else "#ffffff",
-            font=icon_font,
-        )
-
-    transcript_y = controls_y + control_size + LAYOUT["transcript"]["topMargin"]
-    draw.text((CONTENT_X, transcript_y), transcript_text, fill="#74757e", font=transcript_label_font)
-
-    script_y = transcript_y + LAYOUT["transcript"]["labelFontSize"] + LAYOUT["transcript"]["bodyTopMargin"]
-    script_lines = wrap_text_to_width(draw, script, transcript_body_font, CONTENT_WIDTH, 4)
-    line_height = int(LAYOUT["transcript"]["bodyFontSize"] * 1.25)
-    for line in script_lines:
-        draw.text((CONTENT_X, script_y), line, fill="#ffffff", font=transcript_body_font)
-        script_y += line_height
-
-    dock_height = LAYOUT["dock"]["height"]
-    search_size = LAYOUT["dock"]["searchSize"]
-    dock_right_margin = LAYOUT["dock"]["searchLeftMargin"]
-    dock_left_w = CONTENT_WIDTH - search_size - dock_right_margin
-    dock_y = CONTENT_BOTTOM - dock_height
-
-    draw.rounded_rectangle(
-        (CONTENT_X, dock_y, CONTENT_X + dock_left_w, dock_y + dock_height),
-        radius=999,
-        fill=PALETTE["dockBg"],
-        outline=PALETTE["dockBorder"],
-        width=1,
-    )
-    search_x = CONTENT_X + dock_left_w + dock_right_margin
-    draw.rounded_rectangle(
-        (search_x, dock_y, search_x + search_size, dock_y + search_size),
-        radius=999,
-        fill=PALETTE["dockBg"],
-        outline=PALETTE["dockBorder"],
-        width=1,
-    )
-
-    dock_text_y = dock_y + (dock_height // 2) - 16
-    draw.text((CONTENT_X + 24, dock_text_y), "⏰", fill=PALETTE["accentBlue"], font=dock_font)
-    draw.text((CONTENT_X + 64, dock_text_y), "Calls", fill=PALETTE["accentBlue"], font=dock_font)
-    badge_x = CONTENT_X + 144
-    draw.rounded_rectangle((badge_x, dock_text_y + 6, badge_x + 44, dock_text_y + 34), radius=999, fill="#ff4b54")
-    draw.text((badge_x + 8, dock_text_y + 8), "53", fill="#ffffff", font=dock_badge_font)
-    draw.text((CONTENT_X + 206, dock_text_y), "👤", fill="#d5d5da", font=dock_font)
-    draw.text((CONTENT_X + 246, dock_text_y), "⋮⋮", fill="#d5d5da", font=dock_font)
-    draw.text((search_x + 26, dock_y + 22), "⌕", fill="#ffffff", font=load_font(42))
+    # Keep left timer from template; only update right timer seed text in the base image.
+    draw.rectangle(TIMER_RIGHT_CLEAR_BOX, fill="#000000")
+    right_text = f"-{format_timestamp(duration_seconds)}"
+    draw_right_aligned_text(draw, right_text, TIMER_RIGHT_POS[0], TIMER_RIGHT_POS[1], timer_font)
 
     image.save(output_path, format="PNG")
-    return scrubber_x, scrubber_y, scrubber_w, scrubber_h
+    return SLIDER_TRACK_START_X, SLIDER_TRACK_END_X, SLIDER_Y
 
 
 def render_video_with_ffmpeg(
@@ -484,74 +361,107 @@ def render_video_with_ffmpeg(
     audio_path: str,
     output_path: str,
     duration_seconds: float,
-    scrubber_x: int,
-    scrubber_y: int,
-    scrubber_w: int,
-    scrubber_h: int,
+    slider_start_x: int,
+    slider_end_x: int,
+    slider_y: int,
 ) -> None:
     duration = max(0.1, float(duration_seconds))
     duration_str = f"{duration:.3f}"
-    knob_width = LAYOUT["scrubber"]["knobWidth"]
-    knob_height = LAYOUT["scrubber"]["knobHeight"]
-    knob_x = scrubber_x - (knob_width // 2)
-    knob_y = scrubber_y - ((knob_height - scrubber_h) // 2)
+    fps = 30
+    total_frames = max(1, int(math.ceil(duration * fps)))
+    slider_span = slider_end_x - slider_start_x
+    half_pill_w = SLIDER_PILL_WIDTH // 2
+    half_pill_h = SLIDER_PILL_HEIGHT // 2
 
-    filter_graph = ",".join(
-        [
-            f"[0:v]scale={FRAME_WIDTH}:{FRAME_HEIGHT}",
-            "format=yuv420p",
-            f"drawbox=x={scrubber_x}:y={scrubber_y}:w={scrubber_w}:h={scrubber_h}:color=white@0.22:t=fill",
-            f"drawbox=x={scrubber_x}:y={scrubber_y}:w={scrubber_w}*t/{duration_str}:h={scrubber_h}:color=white@0.95:t=fill",
-            f"drawbox=x={knob_x}+{scrubber_w}*t/{duration_str}:y={knob_y}:w={knob_width}:h={knob_height}:color=white@0.95:t=fill[v]",
-        ]
-    )
+    base_frame = Image.open(background_png_path).convert("RGB")
+    timer_font = load_font(TIMER_FONT_SIZE)
+    frames_dir = os.path.join(os.path.dirname(output_path), "frames")
+    os.makedirs(frames_dir, exist_ok=True)
 
-    subprocess.run(
-        [
-            FFMPEG_PATH,
-            "-y",
-            "-loop",
-            "1",
-            "-framerate",
-            "30",
-            "-i",
-            background_png_path,
-            "-i",
-            audio_path,
-            "-t",
-            duration_str,
-            "-filter_complex",
-            filter_graph,
-            "-map",
-            "[v]",
-            "-map",
-            "1:a:0",
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            "-r",
-            "30",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-movflags",
-            "+faststart",
-            "-shortest",
-            output_path,
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    for frame_idx in range(total_frames):
+        current_time = min(duration, frame_idx / fps)
+        progress = current_time / duration if duration > 0 else 1.0
+        pill_center_x = int(round(slider_start_x + (slider_span * progress)))
+        elapsed_text = format_timestamp(current_time)
+        remaining_text = f"-{format_timestamp(max(0, duration - current_time))}"
+
+        frame = base_frame.copy()
+        draw = ImageDraw.Draw(frame)
+        draw.rectangle(TIMER_LEFT_CLEAR_BOX, fill="#000000")
+        draw.rectangle(TIMER_RIGHT_CLEAR_BOX, fill="#000000")
+        draw.text(TIMER_LEFT_POS, elapsed_text, fill="#ffffff", font=timer_font)
+        draw_right_aligned_text(draw, remaining_text, TIMER_RIGHT_POS[0], TIMER_RIGHT_POS[1], timer_font)
+        draw.rounded_rectangle(
+            (
+                pill_center_x - half_pill_w,
+                slider_y - half_pill_h,
+                pill_center_x + half_pill_w,
+                slider_y + half_pill_h,
+            ),
+            radius=SLIDER_PILL_HEIGHT // 2,
+            fill="#ffffff",
+        )
+        frame.save(os.path.join(frames_dir, f"frame_{frame_idx:05d}.png"), format="PNG")
+
+    command = [
+        FFMPEG_PATH,
+        "-y",
+        "-framerate",
+        str(fps),
+        "-i",
+        os.path.join(frames_dir, "frame_%05d.png"),
+        "-i",
+        audio_path,
+        "-t",
+        duration_str,
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-r",
+        "30",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-movflags",
+        "+faststart",
+        "-shortest",
+        output_path,
+    ]
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(f"ffmpeg failed: {exc.stderr.strip()}") from exc
+
+
+def swap_video_audio_with_ffmpeg(source_video_path: str, audio_path: str, output_path: str) -> None:
+    command = [
+        FFMPEG_PATH,
+        "-y",
+        "-i",
+        source_video_path,
+        "-i",
+        audio_path,
+        "-map",
+        "0:v",
+        "-map",
+        "1:a",
+        "-c:v",
+        "copy",
+        "-shortest",
+        "-movflags",
+        "+faststart",
+        output_path,
+    ]
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(f"ffmpeg failed: {exc.stderr.strip()}") from exc
 
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
-    duration_seconds = float(event.get("durationSeconds", 0))
-    if not math.isfinite(duration_seconds) or duration_seconds <= 0:
-        raise ValueError("durationSeconds must be a positive number")
-
+    action = (event.get("action") or "render").strip().lower()
     bucket_name = (event.get("bucket") or os.environ.get("S3_BUCKET_NAME") or "heartbeat-photos-prod").strip()
     region = (event.get("region") or os.environ.get("AWS_REGION") or "us-east-2").strip()
     audio_key = (event.get("audioKey") or "").strip() or None
@@ -567,28 +477,63 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     audio_bytes, detected_audio_mime_type = resolve_audio_bytes(event, s3_client, bucket_name)
     audio_extension = extension_from_audio_mime_type(detected_audio_mime_type, audio_key=audio_key, audio_url=audio_url)
 
-    with tempfile.TemporaryDirectory(prefix="voicemail-render-") as temp_dir:
-        background_png_path = os.path.join(temp_dir, "voicemail-base.png")
-        audio_input_path = os.path.join(temp_dir, f"audio-input.{audio_extension}")
-        output_video_path = os.path.join(temp_dir, "video-output.mp4")
-
-        with open(audio_input_path, "wb") as audio_file:
-            audio_file.write(audio_bytes)
-
-        scrubber_x, scrubber_y, scrubber_w, scrubber_h = render_voicemail_png(event, background_png_path)
-        render_video_with_ffmpeg(
-            background_png_path=background_png_path,
-            audio_path=audio_input_path,
-            output_path=output_video_path,
-            duration_seconds=duration_seconds,
-            scrubber_x=scrubber_x,
-            scrubber_y=scrubber_y,
-            scrubber_w=scrubber_w,
-            scrubber_h=scrubber_h,
+    if action == "audio_swap":
+        source_video_key = (event.get("sourceVideoKey") or "").strip() or None
+        source_video_url = (event.get("sourceVideoUrl") or "").strip() or None
+        source_video_bytes, source_video_mime_type = resolve_video_bytes(event, s3_client, bucket_name)
+        source_video_extension = extension_from_video_mime_type(
+            source_video_mime_type, source_video_key=source_video_key, source_video_url=source_video_url
         )
 
-        with open(output_video_path, "rb") as video_file:
-            video_bytes = video_file.read()
+        with tempfile.TemporaryDirectory(prefix="voicemail-audio-swap-") as temp_dir:
+            source_video_path = os.path.join(temp_dir, f"source-video.{source_video_extension}")
+            audio_input_path = os.path.join(temp_dir, f"audio-input.{audio_extension}")
+            output_video_path = os.path.join(temp_dir, "video-output.mp4")
+
+            with open(source_video_path, "wb") as source_video_file:
+                source_video_file.write(source_video_bytes)
+            with open(audio_input_path, "wb") as audio_file:
+                audio_file.write(audio_bytes)
+
+            swap_video_audio_with_ffmpeg(
+                source_video_path=source_video_path,
+                audio_path=audio_input_path,
+                output_path=output_video_path,
+            )
+
+            with open(output_video_path, "rb") as video_file:
+                video_bytes = video_file.read()
+    else:
+        duration_seconds = float(event.get("durationSeconds", 0))
+        if not math.isfinite(duration_seconds) or duration_seconds <= 0:
+            raise ValueError("durationSeconds must be a positive number")
+
+        with tempfile.TemporaryDirectory(prefix="voicemail-render-") as temp_dir:
+            background_png_path = os.path.join(temp_dir, "voicemail-base.png")
+            audio_input_path = os.path.join(temp_dir, f"audio-input.{audio_extension}")
+            output_video_path = os.path.join(temp_dir, "video-output.mp4")
+
+            with open(audio_input_path, "wb") as audio_file:
+                audio_file.write(audio_bytes)
+
+            slider_start_x, slider_end_x, slider_y = render_voicemail_png(
+                event,
+                background_png_path,
+                s3_client,
+                bucket_name,
+            )
+            render_video_with_ffmpeg(
+                background_png_path=background_png_path,
+                audio_path=audio_input_path,
+                output_path=output_video_path,
+                duration_seconds=duration_seconds,
+                slider_start_x=slider_start_x,
+                slider_end_x=slider_end_x,
+                slider_y=slider_y,
+            )
+
+            with open(output_video_path, "rb") as video_file:
+                video_bytes = video_file.read()
 
     s3_client.put_object(
         Bucket=bucket_name,
@@ -598,6 +543,10 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         CacheControl="max-age=31536000",
     )
 
+    metadata_duration = float(event.get("durationSeconds", 0))
+    if not math.isfinite(metadata_duration) or metadata_duration <= 0:
+        metadata_duration = None
+
     metadata_payload = {
         "contactName": (event.get("contactName") or "Mom").strip() or "Mom",
         "emoji": (event.get("emoji") or "").strip(),
@@ -606,13 +555,15 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         "transcriptText": (event.get("transcriptText") or "Transcript (low confidence)").strip() or "Transcript (low confidence)",
         "theme": (event.get("theme") or "ios_voicemail").strip() or "ios_voicemail",
         "script": (event.get("script") or "").strip(),
-        "durationSeconds": duration_seconds,
+        "durationSeconds": metadata_duration,
         "createdAt": datetime.now(timezone.utc).isoformat(),
         "audioKey": audio_key,
         "audioUrl": audio_url,
+        "sourceVideoKey": (event.get("sourceVideoKey") or "").strip() or None,
+        "sourceVideoUrl": (event.get("sourceVideoUrl") or "").strip() or None,
         "videoKey": video_key,
         "metadataKey": metadata_key,
-        "renderer": "lambda-pillow-ffmpeg",
+        "renderer": "lambda-audio-swap-ffmpeg" if action == "audio_swap" else "lambda-pillow-ffmpeg",
     }
 
     s3_client.put_object(
@@ -628,6 +579,6 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         "videoUrl": video_url,
         "videoKey": video_key,
         "metadataKey": metadata_key,
-        "durationSeconds": duration_seconds,
+        "durationSeconds": metadata_duration,
         "jobId": job_id,
     }
