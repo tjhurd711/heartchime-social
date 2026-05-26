@@ -101,17 +101,17 @@ export default function VoicemailTesterPage() {
           throw new Error(data.details || data.error || 'Failed to load voice metadata.')
         }
 
-        const resolvedVoices = (data.voices || [])
-          .map((voice) => {
-            const id = voice.voiceId?.trim()
-            if (!id) return null
-            return {
+        const resolvedVoices: VoiceOption[] = (data.voices || []).flatMap((voice) => {
+          const id = voice.voiceId?.trim()
+          if (!id) return []
+          return [
+            {
               id,
               label: voice.name?.trim() || `Voice ${id.slice(0, 6)}`,
               previewUrl: voice.preview_url || null,
-            }
-          })
-          .filter((voice): voice is VoiceOption => Boolean(voice))
+            },
+          ]
+        })
 
         if (resolvedVoices.length === TARGET_VOICE_IDS.length) {
           setVoices(resolvedVoices)
