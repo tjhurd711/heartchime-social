@@ -1,6 +1,6 @@
 import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda'
 import { NextRequest, NextResponse } from 'next/server'
-import { getVoicemailBucketName, getVoicemailRegion, getVoicemailS3Url } from '@/lib/voicemailStorage'
+import { getVoicemailBucketName, getVoicemailRegion, getVoicemailSignedReadUrl, getVoicemailS3Url } from '@/lib/voicemailStorage'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -139,7 +139,10 @@ export async function POST(request: NextRequest) {
     const resolvedVideoKey = normalizedPayload?.videoKey || videoKey
     const resolvedDurationSeconds = Number(normalizedPayload?.durationSeconds ?? durationSeconds)
     const resolvedJobId = normalizedPayload?.jobId || jobId
-    const videoUrl = normalizedPayload?.videoUrl || getVoicemailS3Url(resolvedVideoKey)
+    const fallbackVideoUrl = normalizedPayload?.videoUrl || getVoicemailS3Url(resolvedVideoKey)
+    const videoUrl = resolvedVideoKey
+      ? await getVoicemailSignedReadUrl(resolvedVideoKey, 60 * 60)
+      : fallbackVideoUrl
 
     return NextResponse.json({
       videoUrl,

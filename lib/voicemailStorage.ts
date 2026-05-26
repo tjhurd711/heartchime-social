@@ -1,4 +1,5 @@
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 const REGION = process.env.AWS_REGION || 'us-east-2'
 const BUCKET_NAME = process.env.S3_BUCKET_NAME || 'heartbeat-photos-prod'
@@ -26,6 +27,17 @@ export function getVoicemailRegion(): string {
 
 export function getVoicemailS3Url(key: string): string {
   return `https://${BUCKET_NAME}.s3.${REGION}.amazonaws.com/${key}`
+}
+
+export async function getVoicemailSignedReadUrl(key: string, expiresInSeconds: number = 60 * 60): Promise<string> {
+  return getSignedUrl(
+    voicemailS3Client,
+    new GetObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: key,
+    }),
+    { expiresIn: expiresInSeconds }
+  )
 }
 
 export async function uploadVoicemailObject(params: {
