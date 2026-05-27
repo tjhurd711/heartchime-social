@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "fix:quote-overlays-alpha": "node scripts/fix-quote-overlays-alpha.mjs",
+    "guard:quote-overlays": "node scripts/guard-quote-overlays.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -19,11 +21,13 @@
     "@remotion/renderer": "^4.0.466",
     "@sparticuz/chromium": "^148.0.0",
     "@supabase/supabase-js": "^2.98.0",
+    "@vercel/og": "^0.11.1",
     "date-fns-tz": "^3.2.0",
     "google-auth-library": "^10.6.1",
     "heic2any": "^0.0.4",
     "jsonwebtoken": "^9.0.3",
     "jszip": "^3.10.1",
+    "music-metadata": "^11.12.3",
     "next": "16.1.6",
     "puppeteer-core": "^25.0.4",
     "react": "19.2.3",

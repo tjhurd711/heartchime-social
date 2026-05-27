@@ -8,6 +8,8 @@ import { renderAndUploadSocialCard } from '@/lib/socialCardRenderer'
 import { renderAndUploadSlide1, TextStyle } from '@/lib/socialSlide1Renderer'
 import { buildPhotoPrompt } from '@/lib/socialPhotoPrompt'
 import { s3Client } from '@/lib/s3'
+import { applyPhotoGenerationStyle } from '@/lib/socialPhotoStyle'
+import { mintLiveReferencePresignedUrl } from '@/lib/socialReferenceS3'
 
 export const maxDuration = 300
 export const runtime = 'nodejs'
@@ -179,7 +181,6 @@ const SAILOR_SONG_HARDCODED_NOTE_LINES = {
 const TRANSPARENT_PX =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlAbQAAAABJRU5ErkJggg=='
 const CURRENT_YEAR = 2026
-const LIVE_REFERENCE_SOURCE_BUCKET = 'order-by-age-uploads'
 const LIVE_REFERENCE_ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.heic', '.webp'])
 const UPLOAD_TRANSFORM_ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.heic', '.heif', '.webp', '.avif'])
 const GENERATED_MEDIA_BUCKET = process.env.S3_BUCKET_NAME || 'heartbeat-photos-prod'
@@ -385,71 +386,6 @@ function applyPeopleCountConstraint(
     .filter((part) => part.trim().length > 0)
 
   return `${prompt}\n\n${constraintParts.join('\n')}`
-}
-
-function buildPhotoBlurDescription(variables: TemplateVariables, slideOrder?: number): string {
-  const perSlideKey = typeof slideOrder === 'number' ? `photo_blur_level_${slideOrder}` : null
-  const rawValue = perSlideKey ? getStringVariable(variables, perSlideKey) : null
-  const fallbackRawValue = getStringVariable(variables, 'photo_blur_level')
-  const rawLevel = Number.parseInt(rawValue || fallbackRawValue, 10)
-  const level = Number.isNaN(rawLevel) ? 1 : Math.min(10, Math.max(1, rawLevel))
-
-  if (level <= 1) {
-    return 'Blur level 1/10: mostly clear handheld phone photo, no intentional blur.'
-  }
-
-  if (level <= 3) {
-    return `Blur level ${level}/10: slight natural softness and minor motion blur on edges.`
-  }
-
-  if (level <= 6) {
-    return `Blur level ${level}/10: noticeable handheld blur across people and background; avoid tack-sharp edges.`
-  }
-
-  if (level <= 8) {
-    return `Blur level ${level}/10: strong handheld motion blur and soft focus; faces and clothing should not look crisp.`
-  }
-
-  return `Blur level ${level}/10: very strong blur with heavy motion smear; scene still recognizable but no sharp facial detail.`
-}
-
-function buildPhotoFilterDescription(variables: TemplateVariables): string {
-  const filterStyle = getStringVariable(variables, 'photo_filter_style')
-
-  if (!filterStyle || filterStyle === 'none') {
-    return ''
-  }
-
-  if (filterStyle === 'black_and_white') {
-    return 'Filter: black-and-white monochrome with realistic grayscale contrast.'
-  }
-
-  if (filterStyle === 'old_timey') {
-    return 'Filter: old-timey vintage film with soft sepia, gentle grain, and lightly faded highlights.'
-  }
-
-  if (filterStyle === 'faded_film') {
-    return 'Filter: faded film look with mild desaturation, warm highlights, soft contrast, and light grain.'
-  }
-
-  return ''
-}
-
-function applyPhotoGenerationStyle(prompt: string, variables: TemplateVariables, slideOrder?: number): string {
-  if (!prompt.trim()) {
-    return prompt
-  }
-
-  const filterDescription = buildPhotoFilterDescription(variables)
-  const blurDescription = buildPhotoBlurDescription(variables, slideOrder)
-  const styleParts = [filterDescription, blurDescription].filter((part) => part.trim().length > 0)
-
-  if (styleParts.length === 0) {
-    return prompt
-  }
-
-  const styleLock = `STYLE LOCK (high priority): ${styleParts.join(' ')}`
-  return `${styleLock}\n\n${prompt}`
 }
 
 function applyTemplateOrientationConstraint(
@@ -703,17 +639,6 @@ function isAllowedUploadTransformKey(key: string): boolean {
   return Array.from(UPLOAD_TRANSFORM_ALLOWED_EXTENSIONS).some((extension) => lower.endsWith(extension))
 }
 
-async function mintLiveReferencePresignedUrl(key: string): Promise<string> {
-  return getSignedUrl(
-    s3Client,
-    new GetObjectCommand({
-      Bucket: LIVE_REFERENCE_SOURCE_BUCKET,
-      Key: key,
-    }),
-    { expiresIn: 60 * 60 }
-  )
-}
-
 async function mintUploadTransformPresignedUrl(key: string): Promise<string> {
   return getSignedUrl(
     s3Client,
@@ -727,7 +652,7 @@ async function mintUploadTransformPresignedUrl(key: string): Promise<string> {
 
 function applyStyleOnlyReferencePrompt(prompt: string): string {
   const styleOnlyConstraint =
-    'STYLE-ONLY REFERENCE LOCK (highest priority): Create another photo just like this reference photo but with different people and a slightly different setting. Other than that the photo should look the exact same - this should not look like a stock photo, if there was glare keep it, if bad lighting keep it, truly only look to make the people different and thats it. RELATIONSHIP LOCK (highest priority): Preserve the same relationship roles and composition from the reference image. Do not swap who is who (for example, father/daughter must stay father/daughter), do not flip generational roles, and do not change the apparent gender role pairing implied by the reference composition. Keep the awkwardness: imperfect lighting, awkward expressions, slight blur/soft focus, and real phone-photo messiness.'
+    'STYLE-ONLY REFERENCE LOCK (highest priority): Create another photo just like this reference photo but with completely different people with different clothing and a slightly different setting. Other than that the photo should look the exact same - this should not look like a stock photo, if there was glare keep it, if bad lighting keep it, truly only look to make the people different and thats it. RELATIONSHIP LOCK (highest priority): Preserve the same relationship roles and composition from the reference image. Do not swap who is who (for example, father/daughter must stay father/daughter), do not flip generational roles, and do not change the apparent gender role pairing implied by the reference composition. Keep the awkwardness: imperfect lighting, awkward expressions, slight blur/soft focus, and real phone-photo messiness.'
 
   if (!prompt.trim()) {
     return styleOnlyConstraint

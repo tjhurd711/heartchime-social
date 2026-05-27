@@ -24,6 +24,12 @@ interface OpenAiImageGenerationResponse {
   }
 }
 
+interface TextArtifactOptions {
+  timeoutMs?: number
+  size?: string
+  quality?: string
+}
+
 function inferImageMimeTypeFromPath(pathOrUrl: string): string {
   const lower = pathOrUrl.toLowerCase()
   if (lower.endsWith('.png')) return 'image/png'
@@ -59,7 +65,10 @@ function uploadBufferToGeneratedMedia(buffer: Buffer): Promise<string> {
     .then(() => `https://${bucketName}.s3.us-east-2.amazonaws.com/${key}`)
 }
 
-export async function generateAndUploadTextArtifact(prompt: string): Promise<string | null> {
+export async function generateAndUploadTextArtifact(
+  prompt: string,
+  options: TextArtifactOptions = {}
+): Promise<string | null> {
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) {
     console.error('[openai-image] OPENAI_API_KEY not set')
@@ -67,8 +76,14 @@ export async function generateAndUploadTextArtifact(prompt: string): Promise<str
   }
 
   try {
+    const timeoutMs = Number.isFinite(options.timeoutMs) ? Math.max(1000, Math.floor(options.timeoutMs!)) : 55000
+    const size = options.size?.trim() || OPENAI_IMAGE_SIZE
+    const quality = options.quality?.trim() || OPENAI_IMAGE_QUALITY
+    const timeoutSignal = AbortSignal.timeout(timeoutMs)
+
     const response = await fetch('https://api.openai.com/v1/images/generations', {
       method: 'POST',
+      signal: timeoutSignal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
@@ -76,8 +91,8 @@ export async function generateAndUploadTextArtifact(prompt: string): Promise<str
       body: JSON.stringify({
         model: OPENAI_IMAGE_MODEL,
         prompt,
-        size: OPENAI_IMAGE_SIZE,
-        quality: OPENAI_IMAGE_QUALITY,
+        size,
+        quality,
       }),
     })
 
@@ -96,6 +111,10 @@ export async function generateAndUploadTextArtifact(prompt: string): Promise<str
     const buffer = Buffer.from(base64, 'base64')
     return await uploadBufferToGeneratedMedia(buffer)
   } catch (error) {
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      console.error('[openai-image] Text artifact generation timed out')
+      return null
+    }
     console.error('[openai-image] Unexpected error:', error)
     return null
   }

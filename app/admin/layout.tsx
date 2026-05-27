@@ -52,6 +52,22 @@ const socialNavigation: NavItem[] = [
     href: '/admin/social/voicemail',
   },
   {
+    name: '🕯️ Memorial Video',
+    href: '/admin/social/memorial-video',
+  },
+  {
+    name: '🖼️ Quote Cards',
+    href: '/admin/social/quote-cards',
+  },
+  {
+    name: '🌄 Scenic Video',
+    href: '/admin/social/scenic-video',
+  },
+  {
+    name: '📝 Poem Video',
+    href: '/admin/social/poem-video',
+  },
+  {
     name: '🔗 Match',
     href: '/admin/social/match',
   },

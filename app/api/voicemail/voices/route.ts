@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server'
 export const runtime = 'nodejs'
 
 const TARGET_VOICE_IDS = [
+  'uIZsnBL0YK1S5j69bAih',
+  'NDTYOmYEjbDIVCKB35i3',
   'rCuVrCHOUMY3OwyJBJym',
   'prqcFePeALHihEWRj5ll',
   '5u41aNhyCU6hXOcjPPv0',
@@ -16,6 +18,11 @@ const TARGET_VOICE_IDS = [
   'w25dAwxibNES1hcDBvXx',
   '1G3Huw0biNTSkYJGIuKP',
 ] as const
+
+const VOICE_NAME_OVERRIDES: Record<string, string> = {
+  uIZsnBL0YK1S5j69bAih: 'Poem Voice',
+  NDTYOmYEjbDIVCKB35i3: 'Poem Voice 2',
+}
 
 interface ElevenLabsVoice {
   voice_id?: string
@@ -88,7 +95,10 @@ export async function GET() {
       const voice = listVoicesById.get(voiceId)
       return {
         voiceId,
-        name: voice?.name?.trim() || `Voice ${voiceId.slice(0, 6)}`,
+        name:
+          VOICE_NAME_OVERRIDES[voiceId] ||
+          voice?.name?.trim() ||
+          `Voice ${voiceId.slice(0, 6)}`,
         preview_url: voice?.preview_url || null,
       }
     })
