@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Cormorant_Garamond, DM_Sans } from 'next/font/google'
 
 const headingFont = Cormorant_Garamond({
@@ -69,9 +69,6 @@ interface ScenicLibraryItem {
 }
 
 const POLL_MS = 8000
-const SOCIAL_VIDEO_LIBRARY_STORAGE_KEY = 'socialVideoLibrary.v1'
-const S3_REGION = 'us-east-2'
-const S3_BUCKET = 'heartbeat-photos-prod'
 const DEFAULT_PROMPT =
   'A serene sunrise over rolling Appalachian hills, mist drifting through pine trees, gentle camera glide, cinematic natural light.'
 const SCENE_PRESETS: Array<{ id: ScenePresetId; label: string; prompt: string }> = [
@@ -110,10 +107,6 @@ function getScenePromptById(id: ScenePresetId): string {
   return SCENE_PRESETS.find((preset) => preset.id === id)?.prompt || ''
 }
 
-function getS3VideoUrl(key: string): string {
-  return `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/${key}`
-}
-
 export default function ScenicVideoPage() {
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT)
   const [scenePresetId, setScenePresetId] = useState<ScenePresetId>('sunrise')
@@ -145,10 +138,8 @@ export default function ScenicVideoPage() {
   const [isSendingToDevice, setIsSendingToDevice] = useState(false)
   const [sendToDeviceResult, setSendToDeviceResult] = useState<SendToDeviceResult | null>(null)
   const [scenicLibrary, setScenicLibrary] = useState<ScenicLibraryItem[]>([])
-  const [isLibraryLoaded, setIsLibraryLoaded] = useState(false)
   const [startedAtMs, setStartedAtMs] = useState<number | null>(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
-  const librarySyncedJobIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     if ((status !== 'generating' && status !== 'stitching') || !startedAtMs) return
@@ -178,40 +169,22 @@ export default function ScenicVideoPage() {
     }
   }, [maxUniqueClipCount, uniqueClipCount])
 
-  useEffect(() => {
+  const loadLibrary = useCallback(async () => {
     try {
-      const raw = window.localStorage.getItem(SOCIAL_VIDEO_LIBRARY_STORAGE_KEY)
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        if (Array.isArray(parsed)) {
-          const normalized = parsed
-            .filter(
-              (item): item is ScenicLibraryItem =>
-                item &&
-                typeof item === 'object' &&
-                typeof item.id === 'string' &&
-                typeof item.source === 'string' &&
-                typeof item.key === 'string' &&
-                typeof item.url === 'string' &&
-                typeof item.durationSeconds === 'number' &&
-                typeof item.memoryThought === 'string' &&
-                typeof item.savedAtIso === 'string'
-            )
-            .slice(0, 40)
-          setScenicLibrary(normalized)
-        }
+      const response = await fetch('/api/social-video/library', { cache: 'no-store' })
+      const data = (await response.json()) as { items?: ScenicLibraryItem[]; error?: string; details?: string }
+      if (!response.ok) {
+        throw new Error(data.details || data.error || 'Failed to load shared video library.')
       }
-    } catch {
-      // Ignore malformed localStorage contents.
-    } finally {
-      setIsLibraryLoaded(true)
+      setScenicLibrary(Array.isArray(data.items) ? data.items : [])
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to load shared video library.')
     }
   }, [])
 
   useEffect(() => {
-    if (!isLibraryLoaded) return
-    window.localStorage.setItem(SOCIAL_VIDEO_LIBRARY_STORAGE_KEY, JSON.stringify(scenicLibrary))
-  }, [isLibraryLoaded, scenicLibrary])
+    void loadLibrary()
+  }, [loadLibrary])
 
   useEffect(() => {
     if ((status !== 'generating' && status !== 'stitching') || !jobId) return
@@ -311,7 +284,6 @@ export default function ScenicVideoPage() {
     setProgressTotal(clipCount)
     setStartedAtMs(Date.now())
     setElapsedSeconds(0)
-    librarySyncedJobIdRef.current = null
 
     try {
       const endpoint = clipCount === 1 ? '/api/scenic-video/generate' : '/api/scenic-video/generate-long'
@@ -374,16 +346,8 @@ export default function ScenicVideoPage() {
     }
   }
 
-  const upsertLibraryItem = (item: ScenicLibraryItem) => {
-    setScenicLibrary((prev) => {
-      const existingIndex = prev.findIndex((entry) => entry.key === item.key)
-      if (existingIndex >= 0) {
-        const updated = [...prev]
-        updated[existingIndex] = item
-        return updated
-      }
-      return [item, ...prev].slice(0, 40)
-    })
+  const upsertLibraryItem = () => {
+    // Server-side DB is the source of truth.
   }
 
   const resolveLatestVideoUrl = async (
@@ -411,44 +375,9 @@ export default function ScenicVideoPage() {
   }
 
   useEffect(() => {
-    if (status !== 'done' || !jobId || !videoKey || !videoUrl) return
-    if (librarySyncedJobIdRef.current === jobId) return
-
-    const now = new Date().toISOString()
-    upsertLibraryItem({
-      id: crypto.randomUUID(),
-      source: 'scenic-final',
-      jobId,
-      parentJobId: activeClipCount > 1 ? jobId : undefined,
-      clipCount: activeClipCount,
-      durationSeconds: activeClipCount === 1 ? durationSeconds : activeClipCount * 8,
-      key: videoKey,
-      url: videoUrl,
-      memoryThought: memoryThought.trim(),
-      savedAtIso: now,
-    })
-
-    if (activeClipCount > 1) {
-      for (let index = 0; index < activeClipCount; index += 1) {
-        const childJobId = `${jobId}-c${index}`
-        const childKey = `scenic-video/${childJobId}/clip-0.mp4`
-        upsertLibraryItem({
-          id: crypto.randomUUID(),
-          source: 'scenic-clip',
-          jobId: childJobId,
-          parentJobId: jobId,
-          clipCount: 1,
-          durationSeconds: 8,
-          key: childKey,
-          url: getS3VideoUrl(childKey),
-          memoryThought: memoryThought.trim(),
-          savedAtIso: now,
-        })
-      }
-    }
-
-    librarySyncedJobIdRef.current = jobId
-  }, [activeClipCount, durationSeconds, jobId, memoryThought, status, videoKey, videoUrl])
+    if (status !== 'done') return
+    void loadLibrary()
+  }, [loadLibrary, status])
 
   const handleDownloadCurrentVideo = async () => {
     if (!videoUrl || !videoKey || !jobId) {

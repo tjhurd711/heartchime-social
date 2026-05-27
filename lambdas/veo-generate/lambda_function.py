@@ -1,7 +1,10 @@
 import json
 import os
+import re
 import time
 from datetime import datetime, timezone
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 import boto3
 from google import genai
@@ -14,6 +17,7 @@ VALID_DURATIONS = {4, 6, 8}
 POLL_INTERVAL_SECONDS = 10
 
 s3_client = boto3.client('s3')
+CHILD_JOB_SUFFIX_RE = re.compile(r'^(?P<parent>.+)-c\d+$')
 
 
 def _parse_duration(raw_value) -> int:
@@ -59,6 +63,41 @@ def _write_error_marker(job_id: str, error_text: str):
     )
   except Exception as marker_exc:
     print(f'ERROR_MARKER_WRITE_FAILED jobId={job_id} msg={marker_exc}')
+
+
+def _infer_parent_job_id(job_id: str):
+  match = CHILD_JOB_SUFFIX_RE.match((job_id or '').strip())
+  if not match:
+    return None
+  return match.group('parent')
+
+
+def _insert_social_video_library_row(row):
+  supabase_url = os.environ.get('SUPABASE_URL', '').strip()
+  service_role_key = os.environ.get('SUPABASE_SERVICE_ROLE_KEY', '').strip()
+  if not supabase_url or not service_role_key:
+    raise RuntimeError('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required')
+
+  endpoint = f"{supabase_url.rstrip('/')}/rest/v1/social_video_library"
+  payload = json.dumps(row, separators=(',', ':')).encode('utf-8')
+  req = urllib_request.Request(
+    endpoint,
+    data=payload,
+    method='POST',
+    headers={
+      'apikey': service_role_key,
+      'Authorization': f'Bearer {service_role_key}',
+      'Content-Type': 'application/json',
+      'Prefer': 'resolution=merge-duplicates,return=minimal',
+    },
+  )
+  try:
+    with urllib_request.urlopen(req, timeout=10) as response:
+      if response.status not in (200, 201):
+        raise RuntimeError(f'social_video_library insert failed with status {response.status}')
+  except urllib_error.HTTPError as exc:
+    detail = exc.read().decode('utf-8', errors='replace')
+    raise RuntimeError(f'social_video_library insert failed: {exc.code} {detail}') from exc
 
 
 def handler(event, context):
@@ -140,6 +179,19 @@ def handler(event, context):
       Key=metadata_key,
       Body=json.dumps(metadata, separators=(',', ':')).encode('utf-8'),
       ContentType='application/json',
+    )
+
+    _insert_social_video_library_row(
+      {
+        'source': 'scenic-clip',
+        'job_id': job_id,
+        'parent_job_id': _infer_parent_job_id(job_id),
+        'clip_count': 1,
+        'duration_seconds': duration_seconds,
+        's3_key': clip_key,
+        'bucket': OUTPUT_BUCKET,
+        'prompt': prompt,
+      }
     )
 
     return {

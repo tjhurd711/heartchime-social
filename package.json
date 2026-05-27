@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "fix:quote-overlays-alpha": "node scripts/fix-quote-overlays-alpha.mjs",
-    "guard:quote-overlays": "node scripts/guard-quote-overlays.mjs"
+    "guard:quote-overlays": "node scripts/guard-quote-overlays.mjs",
+    "backfill:social-video-library": "python3 scripts/backfill-social-video-library.py"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

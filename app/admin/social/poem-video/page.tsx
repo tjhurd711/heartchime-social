@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Cormorant_Garamond, DM_Sans } from 'next/font/google'
 
 const headingFont = Cormorant_Garamond({
@@ -70,9 +70,6 @@ interface SharedVideoLibraryItem {
 }
 
 const POLL_MS = 8000
-const SOCIAL_VIDEO_LIBRARY_STORAGE_KEY = 'socialVideoLibrary.v1'
-const S3_REGION = 'us-east-2'
-const S3_BUCKET = 'heartbeat-photos-prod'
 const THEME_OPTIONS: Array<{ value: PoemTheme; label: string; helper: string }> = [
   {
     value: 'presence',
@@ -99,10 +96,6 @@ function formatDuration(seconds: number): string {
   const mins = Math.floor(rounded / 60)
   const secs = rounded % 60
   return `${mins}:${String(secs).padStart(2, '0')}`
-}
-
-function getS3VideoUrl(key: string): string {
-  return `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/${key}`
 }
 
 export default function PoemVideoPage() {
@@ -136,7 +129,6 @@ export default function PoemVideoPage() {
   const [failedChildren, setFailedChildren] = useState<string[]>([])
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false)
   const [videoLibrary, setVideoLibrary] = useState<SharedVideoLibraryItem[]>([])
-  const [isLibraryLoaded, setIsLibraryLoaded] = useState(false)
 
   const clipCountPreview = useMemo(() => {
     if (!voiceDuration) return 0
@@ -175,40 +167,26 @@ export default function PoemVideoPage() {
     }
   }, [])
 
-  useEffect(() => {
+  const loadLibrary = useCallback(async () => {
     try {
-      const raw = window.localStorage.getItem(SOCIAL_VIDEO_LIBRARY_STORAGE_KEY)
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        if (Array.isArray(parsed)) {
-          const normalized = parsed
-            .filter(
-              (item): item is SharedVideoLibraryItem =>
-                item &&
-                typeof item === 'object' &&
-                typeof item.id === 'string' &&
-                typeof item.source === 'string' &&
-                typeof item.key === 'string' &&
-                typeof item.url === 'string' &&
-                typeof item.durationSeconds === 'number' &&
-                typeof item.memoryThought === 'string' &&
-                typeof item.savedAtIso === 'string'
-            )
-            .slice(0, 80)
-          setVideoLibrary(normalized)
-        }
+      const response = await fetch('/api/social-video/library', { cache: 'no-store' })
+      const data = (await response.json()) as {
+        items?: SharedVideoLibraryItem[]
+        error?: string
+        details?: string
       }
-    } catch {
-      // Ignore malformed localStorage contents.
-    } finally {
-      setIsLibraryLoaded(true)
+      if (!response.ok) {
+        throw new Error(data.details || data.error || 'Failed to load shared video library.')
+      }
+      setVideoLibrary(Array.isArray(data.items) ? data.items : [])
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to load shared video library.')
     }
   }, [])
 
   useEffect(() => {
-    if (!isLibraryLoaded) return
-    window.localStorage.setItem(SOCIAL_VIDEO_LIBRARY_STORAGE_KEY, JSON.stringify(videoLibrary))
-  }, [isLibraryLoaded, videoLibrary])
+    void loadLibrary()
+  }, [loadLibrary])
 
   useEffect(() => {
     if (!useDifferentScenes || clipCountPreview <= 0) return
@@ -242,38 +220,6 @@ export default function PoemVideoPage() {
           setStatus('done')
           setIsGeneratingVideo(false)
           setFailedChildren([])
-
-          const now = new Date().toISOString()
-          upsertLibraryItem({
-            id: crypto.randomUUID(),
-            source: 'poem-final',
-            jobId: parentJobId,
-            parentJobId,
-            clipCount: Math.max(1, clipCountPreview),
-            durationSeconds: Math.max(1, Math.round(voiceDuration || clipCountPreview * 8)),
-            key: data.key,
-            url: data.url,
-            memoryThought: '',
-            savedAtIso: now,
-          })
-
-          const totalClips = Math.max(1, clipCountPreview)
-          for (let index = 0; index < totalClips; index += 1) {
-            const childJobId = `${parentJobId}-c${index}`
-            const childKey = `scenic-video/${childJobId}/clip-0.mp4`
-            upsertLibraryItem({
-              id: crypto.randomUUID(),
-              source: 'poem-clip',
-              jobId: childJobId,
-              parentJobId,
-              clipCount: 1,
-              durationSeconds: 8,
-              key: childKey,
-              url: getS3VideoUrl(childKey),
-              memoryThought: '',
-              savedAtIso: now,
-            })
-          }
           return
         }
 
@@ -312,16 +258,8 @@ export default function PoemVideoPage() {
     }
   }, [clipCountPreview, parentJobId, progressDone, progressTotal, status, voiceDuration])
 
-  const upsertLibraryItem = (item: SharedVideoLibraryItem) => {
-    setVideoLibrary((prev) => {
-      const existingIndex = prev.findIndex((entry) => entry.key === item.key)
-      if (existingIndex >= 0) {
-        const updated = [...prev]
-        updated[existingIndex] = item
-        return updated
-      }
-      return [item, ...prev].slice(0, 80)
-    })
+  const upsertLibraryItem = () => {
+    // Server-side DB is the source of truth.
   }
 
   const resolveLatestVideoUrl = async (
@@ -376,6 +314,11 @@ export default function PoemVideoPage() {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to open library video.')
     }
   }
+
+  useEffect(() => {
+    if (status !== 'done') return
+    void loadLibrary()
+  }, [loadLibrary, status])
 
   const handleRetryFailedChildren = async () => {
     if (!parentJobId || failedChildren.length === 0) {
