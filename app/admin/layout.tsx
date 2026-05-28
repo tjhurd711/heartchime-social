@@ -60,6 +60,14 @@ const socialNavigation: NavItem[] = [
     href: '/admin/social/quote-cards',
   },
   {
+    name: '🎣 Bait Library',
+    href: '/admin/social/bait',
+  },
+  {
+    name: '📲 Send To Phone',
+    href: '/admin/social/send-to-phone',
+  },
+  {
     name: '🌄 Scenic Video',
     href: '/admin/social/scenic-video',
   },

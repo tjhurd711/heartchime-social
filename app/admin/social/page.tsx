@@ -205,7 +205,7 @@ export default function SocialMediaCommandCenter() {
       </div>
 
       {/* Pipeline Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
         {/* Evergreen */}
         <Link 
           href="/admin/social/evergreen"
@@ -321,6 +321,50 @@ export default function SocialMediaCommandCenter() {
           </div>
           <div className="mt-4 flex items-center text-amber-300 text-sm font-medium group-hover:translate-x-1 transition-transform">
             Open Reference Bank →
+          </div>
+        </Link>
+
+        {/* Bait Library */}
+        <Link
+          href="/admin/social/bait"
+          className="bg-[#1a1f2e] rounded-2xl p-6 border border-gray-800/50 hover:border-amber-500/50 transition-all group"
+        >
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <span className="text-4xl">🎣</span>
+              <h2 className="text-xl font-bold text-white mt-2">Bait Library</h2>
+              <p className="text-gray-400 text-sm mt-1">Track bait assets and send directly to iPhone</p>
+            </div>
+          </div>
+          <div className="flex gap-4 text-sm">
+            <span className="text-gray-400">
+              <span className="text-amber-400 font-medium">53 assets</span> synced
+            </span>
+          </div>
+          <div className="mt-4 flex items-center text-amber-300 text-sm font-medium group-hover:translate-x-1 transition-transform">
+            Open Bait Library →
+          </div>
+        </Link>
+
+        {/* Send To Phone */}
+        <Link
+          href="/admin/social/send-to-phone"
+          className="bg-[#1a1f2e] rounded-2xl p-6 border border-gray-800/50 hover:border-amber-500/50 transition-all group"
+        >
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <span className="text-4xl">📲</span>
+              <h2 className="text-xl font-bold text-white mt-2">Send To Phone</h2>
+              <p className="text-gray-400 text-sm mt-1">Upload static slide sets and forward them to Mac import</p>
+            </div>
+          </div>
+          <div className="flex gap-4 text-sm">
+            <span className="text-gray-400">
+              <span className="text-amber-400 font-medium">Static image</span> pipeline
+            </span>
+          </div>
+          <div className="mt-4 flex items-center text-amber-300 text-sm font-medium group-hover:translate-x-1 transition-transform">
+            Open Send To Phone →
           </div>
         </Link>
       </div>

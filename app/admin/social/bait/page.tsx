@@ -40,6 +40,11 @@ interface BaitPatchResponse {
   item: BaitItem
 }
 
+interface SendToDeviceResult {
+  imported_count?: number
+  note_created?: boolean
+}
+
 interface BaitCard {
   cardId: string
   itemIds: string[]
@@ -64,6 +69,8 @@ export default function BaitLibraryAdminPage() {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [slideshowIndexes, setSlideshowIndexes] = useState<Record<string, number>>({})
+  const [isSendingByCard, setIsSendingByCard] = useState<Record<string, boolean>>({})
+  const [sendResultByCard, setSendResultByCard] = useState<Record<string, SendToDeviceResult>>({})
   const pendingTimersRef = useRef<Record<string, number>>({})
   const itemsRef = useRef<BaitItem[]>([])
 
@@ -289,6 +296,79 @@ export default function BaitLibraryAdminPage() {
     })
   }
 
+  const formatPostedAt = (iso: string | null): string => {
+    if (!iso) return ''
+    return new Date(iso).toLocaleString()
+  }
+
+  const getSortedSlidesForCard = (card: BaitCard): BaitItem[] => {
+    if (!card.grouped) return card.items
+    return [...card.items].sort((a, b) =>
+      a.s3_key.localeCompare(b.s3_key, undefined, { numeric: true, sensitivity: 'base' })
+    )
+  }
+
+  const handleSendToIphone = async (card: BaitCard) => {
+    if (isSendingByCard[card.cardId]) return
+
+    const sortedSlides = getSortedSlidesForCard(card)
+    if (sortedSlides.length === 0 || sortedSlides.some((item) => !item.presignedUrl)) {
+      setToast({ type: 'error', message: 'Missing media URL. Refresh and try again.' })
+      return
+    }
+
+    setIsSendingByCard((previous) => ({ ...previous, [card.cardId]: true }))
+    try {
+      const response = await fetch('/api/admin/social/send-to-device', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          post_id: `bait-${card.cardId}`,
+          trend_name: 'Bait Library',
+          album_name: 'HC-Business',
+          slides: sortedSlides.map((item, index) => ({
+            order: index + 1,
+            image_url: item.presignedUrl,
+            overlay_text: item.notes || '',
+          })),
+        }),
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to send to iPhone.')
+      }
+
+      const responses = await Promise.all(
+        card.itemIds.map((id) =>
+          sendPatch(id, {
+            posted_tiktok: true,
+          })
+        )
+      )
+      mergeUpdatedRows(responses.map((result) => result.item))
+
+      setSendResultByCard((previous) => ({
+        ...previous,
+        [card.cardId]: {
+          imported_count: data.imported_count,
+          note_created: data.note_created,
+        },
+      }))
+      setToast({
+        type: 'success',
+        message: 'Sent to iPhone and marked as posted.',
+      })
+    } catch (err) {
+      setToast({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to send to iPhone.',
+      })
+    } finally {
+      setIsSendingByCard((previous) => ({ ...previous, [card.cardId]: false }))
+    }
+  }
+
   return (
     <div className={`min-h-screen bg-[#0b1220] text-[#f3ead9] p-5 md:p-8 ${dmSans.className}`}>
       <div className="max-w-7xl mx-auto space-y-6">
@@ -352,6 +432,9 @@ export default function BaitLibraryAdminPage() {
               const primaryItem = card.items[0]
               const sourceUrl = card.items.find((item) => item.tiktok_url)?.tiktok_url || null
               const currentSlide = slideshowIndexes[card.cardId] || 0
+              const postedAt = card.items.find((item) => item.posted_at)?.posted_at || null
+              const sendResult = sendResultByCard[card.cardId]
+              const isSendingToDevice = Boolean(isSendingByCard[card.cardId])
 
               return (
                 <article key={card.cardId} className="rounded-2xl border border-[#2c3b59] bg-[#121b2d] overflow-hidden">
@@ -414,6 +497,37 @@ export default function BaitLibraryAdminPage() {
                         <span className="text-xs text-[#907f60]">source unavailable</span>
                       )}
                     </div>
+                    {postedAt ? (
+                      <p className="text-xs text-[#9dd4b5]">Posted on {formatPostedAt(postedAt)}</p>
+                    ) : (
+                      <p className="text-xs text-[#907f60]">Not marked posted yet</p>
+                    )}
+
+                    <button
+                      onClick={() => void handleSendToIphone(card)}
+                      disabled={isSendingToDevice}
+                      className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      type="button"
+                    >
+                      {isSendingToDevice ? 'Sending to iPhone...' : 'Send to iPhone'}
+                    </button>
+                    {sendResult ? (
+                      <div className="rounded-lg border border-[#3f4f6c] bg-[#0f1728] px-3 py-2 text-xs text-[#d7c29b] space-y-1">
+                        <p>
+                          Imported: <span className="text-[#f3ead9]">{sendResult.imported_count ?? 'unknown'}</span>
+                        </p>
+                        <p>
+                          Note created:{' '}
+                          <span className="text-[#f3ead9]">
+                            {sendResult.note_created === undefined
+                              ? 'unknown'
+                              : sendResult.note_created
+                                ? 'yes'
+                                : 'no'}
+                          </span>
+                        </p>
+                      </div>
+                    ) : null}
 
                     <div className="flex gap-2">
                       <button

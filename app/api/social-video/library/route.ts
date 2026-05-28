@@ -46,6 +46,7 @@ export async function GET() {
       .select(
         'id, source, job_id, parent_job_id, clip_count, duration_seconds, s3_key, bucket, prompt, memory_thought, created_at'
       )
+      .eq('source', 'scenic-clip')
       .order('created_at', { ascending: false })
       .limit(200)
 

@@ -740,7 +740,7 @@ export default function PoemVideoPage() {
                 Shared Video Library
               </h3>
               <p className="mt-1 text-xs text-[#f8f1df]/70">
-                Scenic and Poem outputs sync here automatically, including individual generated clips.
+                Raw scenic source clips sync here automatically for reuse.
               </p>
               {videoLibrary.length === 0 ? (
                 <p className="mt-3 text-xs text-[#f8f1df]/65">No saved videos yet.</p>
