@@ -296,11 +296,6 @@ export default function PoemVideoPage() {
         clipCount: item.clipCount,
       })
       const resolvedUrl = latest.url || item.url
-      upsertLibraryItem({
-        ...item,
-        key: latest.key || item.key,
-        url: resolvedUrl,
-      })
 
       const link = document.createElement('a')
       link.href = resolvedUrl

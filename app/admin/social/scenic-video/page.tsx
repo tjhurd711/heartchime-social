@@ -409,7 +409,6 @@ export default function ScenicVideoPage() {
         key: latest.key || item.key,
         url: resolvedUrl,
       }
-      upsertLibraryItem(updated)
 
       const link = document.createElement('a')
       link.href = resolvedUrl
