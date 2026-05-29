@@ -104,6 +104,31 @@ export function pickCloserSymbol(seed: number): string {
   return pickDeterministic(CLOSER_SYMBOLS, seed)
 }
 
+const HER_RELATIONS = ['mom', 'sister', 'grandma', 'wife', 'daughter']
+const HIM_RELATIONS = ['dad', 'brother', 'grandpa', 'husband', 'son']
+
+function subjectPronouns(relation: string): { obj: string; poss: string } {
+  const r = relationPhrase(relation)
+  if (HER_RELATIONS.includes(r)) return { obj: 'her', poss: 'Her' }
+  if (HIM_RELATIONS.includes(r)) return { obj: 'him', poss: 'His' }
+  return { obj: 'them', poss: 'Their' }
+}
+
+// Framed-photo slides use a hardcoded "I keep a photo of them" style caption
+// rather than the LLM memory line, with a small pool so multiple framed slides
+// don't repeat the exact same sentence.
+export function buildFramedPhotoCaption(relation: string, seed: number): string {
+  const { obj, poss } = subjectPronouns(relation)
+  const rel = relationPhrase(relation)
+  const options = [
+    `I keep a photo of ${obj} on my desk`,
+    `I keep a framed photo of my ${rel} on the shelf`,
+    `${poss} photo still sits on my nightstand`,
+    `I keep ${obj} close — ${poss.toLowerCase()} photo on the dresser`,
+  ]
+  return pickDeterministic(options, seed)
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // LLM PROMPT — asks Claude for N concrete, sensory memory items
 // ─────────────────────────────────────────────────────────────────────────
@@ -196,8 +221,10 @@ RESPOND WITH ONLY VALID JSON — an array, no markdown, no commentary:
 
 const PERSON_REF = 'the same person shown in the attached reference photo'
 
+// The intro/anchor replicates the picked reference photo's composition but with
+// DIFFERENT people — same approach as the platform's other S3 "style" references.
 export function buildIntroImagePrompt(): string {
-  return `A warm, natural portrait of ${PERSON_REF}, looking gently toward the camera with a soft, peaceful expression. Cozy domestic background, soft natural window light. Photorealistic, true to the reference identity. Vertical 9:16 aspect ratio.`
+  return `STYLE-ONLY REFERENCE LOCK (highest priority): Create another photo just like this reference photo but with completely different people with different clothing and a slightly different setting. Other than that the photo should look the exact same — this should not look like a stock photo; if there was glare keep it, if bad lighting keep it, truly only make the people different and that's it. RELATIONSHIP LOCK (highest priority): Preserve the same relationship roles and composition from the reference image. Do not swap who is who, do not flip generational roles, and do not change the apparent gender role pairing implied by the reference composition. Keep the awkwardness: imperfect lighting, awkward expressions, slight blur/soft focus, and real phone-photo messiness. Vertical 9:16 aspect ratio.`
 }
 
 export function buildMemoryImagePrompt(item: MemoryItem, seed: number): { prompt: string; usesReference: boolean } {

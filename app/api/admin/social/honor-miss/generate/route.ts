@@ -12,6 +12,7 @@ import {
   SLIDE_COUNT_MIN,
   VisualType,
   buildCloserImagePrompt,
+  buildFramedPhotoCaption,
   buildIntroCaption,
   buildIntroImagePrompt,
   buildItemsPrompt,
@@ -191,11 +192,14 @@ export async function POST(request: NextRequest) {
     // Memory slides
     memoryItems.forEach((item, idx) => {
       const order = idx + 2
-      const { prompt, usesReference } = buildMemoryImagePrompt(item, jobId.charCodeAt(idx % jobId.length) + idx)
+      const seed = jobId.charCodeAt(idx % jobId.length) + idx
+      const { prompt, usesReference } = buildMemoryImagePrompt(item, seed)
+      // Framed photos get a hardcoded "photo of them" caption; others use the LLM line.
+      const caption = item.visual_type === 'framed_photo' ? buildFramedPhotoCaption(relation, seed) : item.item
       slides.push({
         order,
         role: 'memory',
-        caption: item.item,
+        caption,
         visual_type: item.visual_type,
         prompt,
         uses_reference: usesReference,

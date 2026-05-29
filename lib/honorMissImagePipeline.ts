@@ -74,20 +74,27 @@ export async function generateHonorMissSlideImage(args: GenerateArgs): Promise<S
   const { jobId, slide, referenceUrl, subjectReferenceUrl, blurLevel, keySuffix } = args
 
   try {
-    // ── Subject anchor (intro) ──────────────────────────────────────────────
-    // Third-person tributes anchor on the chosen subject reference; first-person
-    // anchors on the persona (which is the subject in that mode).
+    // ── Anchor (intro) ──────────────────────────────────────────────────────
+    // Replicate the picked reference photo's composition with DIFFERENT people,
+    // same as the platform's other S3 "style" references. Uses the chosen subject
+    // reference in third-person, else the persona reference.
     const anchorReference = subjectReferenceUrl || referenceUrl
     if (slide.role === 'intro') {
       const finalKey = withSuffix(s3KeyForAnchor(jobId), keySuffix)
       const url = await generateAndUploadPhoto(slide.prompt, {
         key: finalKey,
         referenceImageUrl: anchorReference,
-        referenceMode: 'identity',
+        referenceMode: 'style',
       })
       if (url) return { url, s3Key: finalKey, pipeline: 'gemini-anchor' }
-      // Fallback uses the standard slide key so it still renders if the anchor key fails.
-      return geminiSingleCall(slide, anchorReference, withSuffix(s3KeyForSlide(jobId, slide.order), keySuffix))
+      // Fallback uses the standard slide key (still style mode) so it still renders.
+      const fallbackKey = withSuffix(s3KeyForSlide(jobId, slide.order), keySuffix)
+      const fallbackUrl = await generateAndUploadPhoto(slide.prompt, {
+        key: fallbackKey,
+        referenceImageUrl: anchorReference,
+        referenceMode: 'style',
+      })
+      return { url: fallbackUrl, s3Key: fallbackUrl ? fallbackKey : null, pipeline: 'gemini-fallback' }
     }
 
     const finalKey = withSuffix(s3KeyForSlide(jobId, slide.order), keySuffix)
