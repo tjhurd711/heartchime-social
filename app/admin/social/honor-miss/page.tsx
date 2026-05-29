@@ -35,6 +35,30 @@ const RELATIONS = [
 
 const SLIDE_COUNTS = [3, 4, 5, 6, 7]
 
+// Curated object pool for object_only slides. Keep in sync with OBJECT_OPTIONS in
+// lib/honorMiss.ts — selecting these (plus any "Other" entries) restricts the
+// objects the AI may use so the object slides stay differentiated.
+const OBJECT_CHOICES = [
+  'a glass Coca-Cola bottle on a kitchen counter',
+  'a cast-iron skillet on a stovetop',
+  'a worn Stetson cowboy hat on a hook',
+  'a red Folgers coffee can on the counter',
+  'a pair of leather work gloves on a workbench',
+  'a wooden rocking chair on a porch',
+  'a fishing rod and tackle box by the door',
+  'a stack of vinyl records beside a record player',
+  'a pocket watch on a dresser',
+  'reading glasses resting on an open book',
+  'a worn leather Bible on a nightstand',
+  'a flannel shirt draped over a chair',
+  'a harmonica on a windowsill',
+  'a deck of well-worn playing cards on a table',
+  'a porcelain tea cup and saucer',
+  'a toolbox with a hammer on a garage shelf',
+  'a knitting basket with yarn and needles',
+  'a watering can in a garden',
+]
+
 interface LovedOne {
   id: string
   name: string
@@ -95,6 +119,10 @@ export default function HonorMissPage() {
   const [slideCount, setSlideCount] = useState<number>(3)
   const [anchor1, setAnchor1] = useState('')
   const [anchor2, setAnchor2] = useState('')
+
+  // Object pool for object_only slides (curated selections + custom "Other" text).
+  const [selectedObjects, setSelectedObjects] = useState<string[]>([])
+  const [objectOther, setObjectOther] = useState('')
 
   // Subject (third-person tribute) state
   const [perspective, setPerspective] = useState<Perspective>('first_person')
@@ -193,6 +221,11 @@ export default function HonorMissPage() {
     setGenerating(true)
     setJob(null)
     try {
+      const customObjects = objectOther
+        .split(/[\n,]/)
+        .map((o) => o.trim())
+        .filter(Boolean)
+      const objectChoices = Array.from(new Set([...selectedObjects, ...customObjects]))
       const res = await fetch('/api/admin/social/honor-miss/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -205,6 +238,7 @@ export default function HonorMissPage() {
           perspective,
           subjectName: subjectName.trim(),
           subjectMasterPhotoUrl: perspective === 'third_person' ? subjectPhotoUrl : '',
+          objectChoices,
         }),
       })
       const { ok, data, errorText } = await parseJsonResponse(res)
@@ -415,6 +449,69 @@ export default function HonorMissPage() {
                 className="mt-1 w-full rounded-lg border border-[#364767] bg-[#0f1728] px-3 py-2 text-sm text-[#f3ead9] focus:outline-none focus:ring-2 focus:ring-[#b58d45]"
               />
             </label>
+          </div>
+
+          {/* Object pool for object-only slides */}
+          <div className="rounded-xl border border-[#33456a] bg-[#0f1728] p-4 space-y-3">
+            <div>
+              <p className="text-sm font-semibold text-[#f1d386]">Objects for object-only slides (optional)</p>
+              <p className="text-xs text-[#7f8db0] mt-1">
+                Pick which objects the AI is allowed to use for the object-only slides. Choose a variety to keep
+                results differentiated. Leave everything unchecked to let the AI decide freely.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {OBJECT_CHOICES.map((obj) => {
+                const checked = selectedObjects.includes(obj)
+                return (
+                  <label
+                    key={obj}
+                    className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer transition-colors ${
+                      checked
+                        ? 'border-[#b58d45] bg-[#1c2740] text-[#f3ead9]'
+                        : 'border-[#364767] bg-[#0b1322] text-[#ceb995] hover:border-[#4a5c82]'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() =>
+                        setSelectedObjects((prev) =>
+                          prev.includes(obj) ? prev.filter((o) => o !== obj) : [...prev, obj]
+                        )
+                      }
+                      className="mt-0.5 accent-[#b58d45]"
+                    />
+                    <span className="leading-snug">{obj}</span>
+                  </label>
+                )
+              })}
+            </div>
+
+            <label className="block text-sm text-[#ceb995]">
+              Other objects (optional, comma- or line-separated)
+              <textarea
+                value={objectOther}
+                onChange={(e) => setObjectOther(e.target.value)}
+                rows={2}
+                placeholder='e.g. "a worn baseball glove on a shelf, a thermos of black coffee"'
+                className="mt-1 w-full rounded-lg border border-[#364767] bg-[#0b1322] px-3 py-2 text-sm text-[#f3ead9] focus:outline-none focus:ring-2 focus:ring-[#b58d45]"
+              />
+            </label>
+
+            {(selectedObjects.length > 0 || objectOther.trim()) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedObjects([])
+                  setObjectOther('')
+                }}
+                className="text-xs text-[#7f8db0] hover:text-red-300"
+              >
+                Clear object selections
+              </button>
+            )}
           </div>
 
           {/* Subject (who the post is about) */}

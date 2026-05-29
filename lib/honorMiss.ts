@@ -46,6 +46,31 @@ export const RELATION_OPTIONS = [
 export const SLIDE_COUNT_MIN = 3
 export const SLIDE_COUNT_MAX = 7
 
+// Curated pool of objects the admin can pre-approve for the "object_only" slides.
+// When the user selects from these (and/or adds their own), Claude must draw every
+// object_only subject from that pool instead of defaulting to its baked-in
+// examples — this is the main lever for keeping objects differentiated run-to-run.
+export const OBJECT_OPTIONS = [
+  'a glass Coca-Cola bottle on a kitchen counter',
+  'a cast-iron skillet on a stovetop',
+  'a worn Stetson cowboy hat on a hook',
+  'a red Folgers coffee can on the counter',
+  'a pair of leather work gloves on a workbench',
+  'a wooden rocking chair on a porch',
+  'a fishing rod and tackle box by the door',
+  'a stack of vinyl records beside a record player',
+  'a pocket watch on a dresser',
+  'reading glasses resting on an open book',
+  'a worn leather Bible on a nightstand',
+  'a flannel shirt draped over a chair',
+  'a harmonica on a windowsill',
+  'a deck of well-worn playing cards on a table',
+  'a porcelain tea cup and saucer',
+  'a toolbox with a hammer on a garage shelf',
+  'a knitting basket with yarn and needles',
+  'a watering can in a garden',
+] as const
+
 // Generic presence symbols used when an item cannot be anchored visually,
 // and for the quiet closer slide.
 export const SYMBOL_PROMPTS: Record<string, string> = {
@@ -146,8 +171,11 @@ export function buildItemsPrompt(params: {
   // byte-for-byte identical to the original first-person prompt.
   perspective?: HonorMissPerspective
   subjectName?: string | null
+  // Optional admin-approved pool of objects for object_only slides. When provided,
+  // every object_only subject must be drawn from this list (kept differentiated).
+  objectPool?: string[]
 }): string {
-  const { mode, relation, count, anchors, lovedOneName, lovedOneDetails, perspective, subjectName } = params
+  const { mode, relation, count, anchors, lovedOneName, lovedOneDetails, perspective, subjectName, objectPool } = params
   const subject = (subjectName || '').trim()
   const isThirdPerson = perspective === 'third_person' && subject.length > 0
 
@@ -173,6 +201,16 @@ export function buildItemsPrompt(params: {
 
   const nameBlock = lovedOneName ? `\nThe loved one's name is ${lovedOneName}.` : ''
   const detailBlock = lovedOneDetails ? `\nBackground on them: ${lovedOneDetails}` : ''
+
+  const objects = (objectPool || []).map((o) => o.trim()).filter(Boolean)
+  const objectPoolBlock =
+    objects.length > 0
+      ? `\nOBJECT POOL (STRICT — applies ONLY to "object_only" items): Every "object_only" item MUST use an object chosen from this list, and nothing else:\n${objects
+          .map((o) => `- ${o}`)
+          .join(
+            '\n'
+          )}\nUse a DIFFERENT object from this list for each object_only slide — do not repeat an object unless there are more object_only slides than listed objects. Do NOT invent other objects, and do NOT fall back on the generic example objects mentioned elsewhere in these instructions (e.g. Coca-Cola, Folgers can, Stetson hat, cast-iron griddle) unless they actually appear in this list. This rule does NOT affect framed_photo, polaroid, or symbol items.\n`
+      : ''
 
   return `You are writing the content for a heartfelt social media slideshow about ${frame}.${nameBlock}${detailBlock}${subjectBlock}
 ${anchorBlock}
@@ -205,7 +243,7 @@ For EACH item also classify the best visual:
 - "symbol": ONLY if the item truly cannot be anchored to a person or object visually
 
 IMPORTANT: Across the ${count} items, include a MIX of visual types, and at least ONE item MUST be "framed_photo" (a framed photo of the person doing something).
-
+${objectPoolBlock}
 Also provide "image_subject": a short, concrete visual description for an image generator.
 - For framed_photo / polaroid: describe what the person is doing (e.g. "reading a newspaper at a kitchen table, morning light").
 - For object_only: describe ONLY the object/scene concretely with no person in frame — even for RITUAL items (e.g. for "I still grab a Coca-Cola in his honor" the image_subject is just "a cold glass Coca-Cola bottle on a kitchen counter, condensation on the glass").

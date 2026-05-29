@@ -53,6 +53,8 @@ interface GenerateBody {
   perspective?: HonorMissPerspective
   subjectName?: string
   subjectMasterPhotoUrl?: string
+  // Admin-approved pool of objects for object_only slides (curated + custom).
+  objectChoices?: string[]
 }
 
 function parseItems(raw: string): MemoryItem[] | null {
@@ -82,6 +84,9 @@ export async function POST(request: NextRequest) {
     const relation = (body.relation || '').trim()
     const slideCount = Number(body.slideCount)
     const anchors = Array.isArray(body.anchors) ? body.anchors.filter((a) => typeof a === 'string') : []
+    const objectChoices = Array.isArray(body.objectChoices)
+      ? body.objectChoices.filter((o) => typeof o === 'string' && o.trim()).map((o) => o.trim())
+      : []
     const perspective: HonorMissPerspective = body.perspective === 'third_person' ? 'third_person' : 'first_person'
     const subjectName = (body.subjectName || '').trim()
     const subjectMasterPhotoUrl = (body.subjectMasterPhotoUrl || '').trim()
@@ -146,6 +151,7 @@ export async function POST(request: NextRequest) {
       lovedOneDetails,
       perspective,
       subjectName: subjectName || null,
+      objectPool: objectChoices,
     })
 
     const llmResponse = await anthropic.messages.create({
@@ -333,6 +339,7 @@ export async function GET() {
       perspective: "'first_person' (default) | 'third_person'",
       subjectName: 'optional subject name for third-person tributes (e.g. "Dad")',
       subjectMasterPhotoUrl: 'required for third_person — S3 URL of the subject reference photo',
+      objectChoices: 'optional string[] — object pool for object_only slides; when set, object slides only use these',
     },
   })
 }
