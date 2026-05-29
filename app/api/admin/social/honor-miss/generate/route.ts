@@ -21,7 +21,7 @@ import {
 import { generateHonorMissSlideImage } from '@/lib/honorMissImagePipeline'
 
 export const runtime = 'nodejs'
-export const maxDuration = 300
+export const maxDuration = 600
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CLIENTS
@@ -223,15 +223,30 @@ export async function POST(request: NextRequest) {
     // Third-person tributes render the subject in framed/polaroid memory slides;
     // the intro anchor always uses the persona reference.
     const subjectReferenceUrl = perspective === 'third_person' ? subjectMasterPhotoUrl : null
-    for (const slide of slides) {
-      const result = await generateHonorMissSlideImage({ jobId, slide, referenceUrl, subjectReferenceUrl, blurLevel })
-      if (result.url) {
-        slide.s3_key = result.s3Key
-        slide.image_url = result.url
+
+    // Run all N+2 slide generations concurrently. S3 keys are deterministic per
+    // slide order, so execution order does not matter — only the awaited results.
+    // One failing slide must not fail the whole job; failures are surfaced so the
+    // user can regenerate those slides individually.
+    const failedSlides: number[] = []
+    const imageResults = await Promise.allSettled(
+      slides.map((slide) => generateHonorMissSlideImage({ jobId, slide, referenceUrl, subjectReferenceUrl, blurLevel }))
+    )
+    imageResults.forEach((settled, idx) => {
+      const slide = slides[idx]
+      if (settled.status === 'fulfilled' && settled.value.url) {
+        slide.s3_key = settled.value.s3Key
+        slide.image_url = settled.value.url
       } else {
-        console.error('[honor-miss/generate] Image failed for slide', slide.order)
+        failedSlides.push(slide.order)
+        if (settled.status === 'rejected') {
+          console.error('[honor-miss/generate] Image generation rejected for slide', slide.order, settled.reason)
+        } else {
+          console.error('[honor-miss/generate] Image failed for slide', slide.order)
+        }
       }
-    }
+    })
+    failedSlides.sort((a, b) => a - b)
 
     // ─── STEP 4: Persist job ────────────────────────────────────────────────
     const { data: savedJob, error: insertError } = await supabase
@@ -264,7 +279,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    return NextResponse.json({ success: true, job: savedJob })
+    return NextResponse.json({ success: true, job: savedJob, failedSlides })
   } catch (error) {
     console.error('[honor-miss/generate] Unexpected error:', error)
     return NextResponse.json(

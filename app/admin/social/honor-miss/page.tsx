@@ -73,6 +73,23 @@ function roleLabel(role: JobSlide['role']): string {
   return 'Memory'
 }
 
+// Defensive response parsing: long-running routes can hit a Vercel 504/timeout
+// that returns plain text (HTML), which makes res.json() throw a confusing
+// "Unexpected token" error. Fall back to a clean, status-aware message.
+async function parseJsonResponse(res: Response): Promise<{ ok: boolean; data: Record<string, unknown> | null; errorText: string | null }> {
+  const raw = await res.text()
+  try {
+    const data = raw ? JSON.parse(raw) : {}
+    return { ok: res.ok, data, errorText: null }
+  } catch {
+    const errorText =
+      res.status === 504 || res.status === 408
+        ? 'The request timed out. The slideshow may still be generating — check recent jobs in a moment, or try fewer slides.'
+        : `Server returned an unexpected response (HTTP ${res.status}). Please try again.`
+    return { ok: false, data: null, errorText }
+  }
+}
+
 export default function HonorMissPage() {
   const [mode, setMode] = useState<Mode>('honor')
   const [relation, setRelation] = useState<string>('dad')
@@ -212,12 +229,20 @@ export default function HonorMissPage() {
           subjectMasterPhotoUrl: perspective === 'third_person' ? subjectPhotoUrl : '',
         }),
       })
-      const data = await res.json()
-      if (!res.ok) {
-        throw new Error(data?.details || data?.error || 'Generation failed')
+      const { ok, data, errorText } = await parseJsonResponse(res)
+      if (errorText) {
+        throw new Error(errorText)
+      }
+      if (!ok || !data) {
+        throw new Error((data?.details as string) || (data?.error as string) || 'Generation failed')
       }
       setJob(data.job as HonorMissJob)
-      setSuccess('Slideshow generated.')
+      const failedSlides = Array.isArray(data.failedSlides) ? (data.failedSlides as number[]) : []
+      setSuccess(
+        failedSlides.length > 0
+          ? `Slideshow generated. ${failedSlides.length} slide(s) failed (${failedSlides.join(', ')}) — regenerate them individually below.`
+          : 'Slideshow generated.'
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed')
     } finally {
@@ -235,9 +260,12 @@ export default function HonorMissPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jobId: job.id, order }),
       })
-      const data = await res.json()
-      if (!res.ok) {
-        throw new Error(data?.details || data?.error || 'Regeneration failed')
+      const { ok, data, errorText } = await parseJsonResponse(res)
+      if (errorText) {
+        throw new Error(errorText)
+      }
+      if (!ok || !data) {
+        throw new Error((data?.details as string) || (data?.error as string) || 'Regeneration failed')
       }
       setJob(data.job as HonorMissJob)
     } catch (err) {
@@ -274,11 +302,14 @@ export default function HonorMissPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ albumName, slides: payloadSlides }),
       })
-      const data = await res.json()
-      if (!res.ok) {
+      const { ok, data, errorText } = await parseJsonResponse(res)
+      if (errorText) {
+        throw new Error(errorText)
+      }
+      if (!ok || !data) {
         const details = data?.details
         const text =
-          typeof details === 'string' ? details : details ? JSON.stringify(details) : data?.error
+          typeof details === 'string' ? details : details ? JSON.stringify(details) : (data?.error as string)
         throw new Error(text || 'Failed to send to phone')
       }
       setSuccess(`Sent ${payloadSlides.length} slide(s) to ${albumName}.`)
