@@ -24,6 +24,9 @@ export interface HonorMissSlide {
   uses_reference: boolean
   s3_key: string | null
   image_url: string | null
+  // Concrete visual description used by the two-step (Gemini → GPT-image-2) pipeline.
+  // Optional so existing/older job records without it still parse.
+  image_subject?: string
 }
 
 export const RELATION_OPTIONS = [
@@ -219,4 +222,67 @@ export function buildCloserImagePrompt(seed: number): string {
 
 export function s3KeyForSlide(jobId: string, order: number): string {
   return `social-generated/honor-miss/${jobId}/slide-${order}.png`
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TWO-MODEL PIPELINE (Gemini identity → GPT-image-2) — additive
+// framed_photo + polaroid use a two-step transform; object_only + symbol use a
+// single GPT-image-2 call; the persona anchor (intro) uses a single Gemini call.
+// All paths fall back to the original single Gemini call on failure.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Reuses the SAME 1–10 blurriness scale convention used elsewhere in the app
+// (see lib/socialPhotoStyle.ts: 1 = clear, 10 = very blurry, clamped + integer).
+// This default is tuned for the faded interior of framed/polaroid photos.
+export const DEFAULT_INTERIOR_BLUR_LEVEL = 6
+
+// Maps a 1–10 blurriness level to an explicit soft-focus instruction for the
+// GPT-image-2 framed/polaroid transform. The softness applies ONLY to the photo
+// of the person inside the frame, never the surrounding domestic scene.
+export function buildInteriorSoftFocusInstruction(level?: number): string {
+  const raw = typeof level === 'number' ? level : DEFAULT_INTERIOR_BLUR_LEVEL
+  const clamped = Number.isNaN(raw) ? DEFAULT_INTERIOR_BLUR_LEVEL : Math.min(10, Math.max(1, Math.floor(raw)))
+
+  let wording: string
+  if (clamped <= 1) {
+    wording = 'barely any softness, mostly clear print'
+  } else if (clamped <= 3) {
+    wording = 'lightly soft-focus and faintly faded, like a fairly recent print'
+  } else if (clamped <= 6) {
+    wording = 'noticeably soft-focus but the face still clearly readable, gently faded like an older printed photo'
+  } else if (clamped <= 8) {
+    wording = 'strongly soft-focus and faded, the face still recognizable but not crisp'
+  } else {
+    wording = 'heavily faded and blurry, only general features readable'
+  }
+
+  return `Interior blurriness level: ${clamped}/10 — ${wording}. Apply this faded soft-focus look ONLY to the photo of the person inside the frame/polaroid, not to the surrounding scene or objects.`
+}
+
+// Step A prompt: a clean photo of the person doing the memory action (Gemini identity).
+export function buildPersonActionPrompt(subject: string): string {
+  const s = (subject || '').trim()
+  return `A candid, natural photo of ${PERSON_REF}${s ? `, ${s}` : ''}. The person is clearly visible. Photorealistic, warm natural light, true to the reference identity. Vertical 9:16 aspect ratio.`
+}
+
+// Step B prompt (framed): GPT-image-2 transforms the Step A photo into a framed photo in a domestic scene.
+export function buildFramedTransformPrompt(seed: number, blurLevel?: number): string {
+  const surface = pickDeterministic(FRAMED_SURFACES, seed)
+  return `Transform this image into a framed photograph sitting on ${surface} in a warm domestic scene. The photo inside the frame should look slightly faded, soft-focus, slightly blurry — like an older printed photo. The frame itself is wooden or metal, sitting at a slight angle. Surrounding objects: a lamp, a small plant, a coffee mug, and similar cozy details. ${buildInteriorSoftFocusInstruction(blurLevel)} Preserve the identity of the person from the input image. Photorealistic, warm domestic tones. Vertical 9:16 aspect ratio.`
+}
+
+// Step B prompt (polaroid): GPT-image-2 transforms the Step A photo into a polaroid lying flat.
+export function buildPolaroidTransformPrompt(seed: number, blurLevel?: number): string {
+  const surface = pickDeterministic(POLAROID_SURFACES, seed)
+  return `Transform this image into a polaroid photo lying flat on ${surface}. The polaroid has a white border, slight wear at the corners, and the photo inside is slightly faded and soft-focus. ${buildInteriorSoftFocusInstruction(blurLevel)} Preserve the identity of the person from the input image. Photorealistic, warm light. Vertical 9:16 aspect ratio.`
+}
+
+// Persona/subject anchor (slide 1) — clean photorealistic photo, stored distinctly.
+export function s3KeyForAnchor(jobId: string): string {
+  return `social-generated/honor-miss/${jobId}/slide-0-anchor.png`
+}
+
+// Temporary Step A output for the two-step framed/polaroid transform.
+export function s3KeyForStepA(jobId: string, order: number): string {
+  return `social-generated/honor-miss/${jobId}/slide-${order}-stepA.png`
 }

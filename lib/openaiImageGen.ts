@@ -49,20 +49,25 @@ function inferImageMimeTypeFromUrl(rawUrl: string): string {
   }
 }
 
-function uploadBufferToGeneratedMedia(buffer: Buffer): Promise<string> {
-  const key = `social-generated/${uuidv4()}.png`
+function uploadBufferToGeneratedMedia(buffer: Buffer, key?: string): Promise<string> {
+  const objectKey = key && key.trim() ? key.trim() : `social-generated/${uuidv4()}.png`
   const bucketName = process.env.S3_BUCKET_NAME || 'heartbeat-photos-prod'
 
   return s3Client
     .send(
       new PutObjectCommand({
         Bucket: bucketName,
-        Key: key,
+        Key: objectKey,
         Body: buffer,
         ContentType: 'image/png',
       })
     )
-    .then(() => `https://${bucketName}.s3.us-east-2.amazonaws.com/${key}`)
+    .then(() => `https://${bucketName}.s3.us-east-2.amazonaws.com/${objectKey}`)
+}
+
+interface GptImageOptions {
+  // Optional explicit S3 key. When omitted, a random social-generated/{uuid}.png key is used (existing behavior).
+  key?: string
 }
 
 export async function generateAndUploadTextArtifact(
@@ -120,7 +125,10 @@ export async function generateAndUploadTextArtifact(
   }
 }
 
-export async function generateAndUploadGptImage(prompt: string): Promise<string | null> {
+export async function generateAndUploadGptImage(
+  prompt: string,
+  options: GptImageOptions = {}
+): Promise<string | null> {
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) {
     console.error('[openai-image] OPENAI_API_KEY not set')
@@ -155,7 +163,7 @@ export async function generateAndUploadGptImage(prompt: string): Promise<string 
     }
 
     const buffer = Buffer.from(base64, 'base64')
-    return await uploadBufferToGeneratedMedia(buffer)
+    return await uploadBufferToGeneratedMedia(buffer, options.key)
   } catch (error) {
     console.error('[openai-image] Unexpected GPT generation error:', error)
     return null
@@ -164,7 +172,8 @@ export async function generateAndUploadGptImage(prompt: string): Promise<string 
 
 export async function generateAndUploadGptImageEdit(
   prompt: string,
-  inputImageUrl: string
+  inputImageUrl: string,
+  options: GptImageOptions = {}
 ): Promise<string | null> {
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) {
@@ -211,7 +220,7 @@ export async function generateAndUploadGptImageEdit(
     }
 
     const buffer = Buffer.from(base64, 'base64')
-    return await uploadBufferToGeneratedMedia(buffer)
+    return await uploadBufferToGeneratedMedia(buffer, options.key)
   } catch (error) {
     console.error('[openai-image] Unexpected edits error:', error)
     return null

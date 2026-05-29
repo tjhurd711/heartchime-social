@@ -65,7 +65,7 @@ export default function HonorMissPage() {
   const [relation, setRelation] = useState<string>('dad')
   const [lovedOnes, setLovedOnes] = useState<LovedOne[]>([])
   const [lovedOneId, setLovedOneId] = useState<string>('')
-  const [slideCount, setSlideCount] = useState<number>(5)
+  const [slideCount, setSlideCount] = useState<number>(3)
   const [anchor1, setAnchor1] = useState('')
   const [anchor2, setAnchor2] = useState('')
 

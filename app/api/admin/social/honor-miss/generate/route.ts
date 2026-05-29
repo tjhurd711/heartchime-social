@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import Anthropic from '@anthropic-ai/sdk'
 import { v4 as uuidv4 } from 'uuid'
-import { generateAndUploadPhoto } from '@/lib/geminiImageGen'
 import {
   HonorMissMode,
   HonorMissSlide,
@@ -17,8 +16,8 @@ import {
   buildItemsPrompt,
   buildMemoryImagePrompt,
   pickCloserCaption,
-  s3KeyForSlide,
 } from '@/lib/honorMiss'
+import { generateHonorMissSlideImage } from '@/lib/honorMissImagePipeline'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -44,6 +43,8 @@ interface GenerateBody {
   lovedOneId?: string
   slideCount?: number
   anchors?: string[]
+  // Optional 1–10 blurriness level for the faded interior of framed/polaroid photos.
+  blurLevel?: number
 }
 
 function parseItems(raw: string): MemoryItem[] | null {
@@ -156,7 +157,7 @@ export async function POST(request: NextRequest) {
 
     const slides: HonorMissSlide[] = []
 
-    // Slide 1 — persona intro selfie
+    // Slide 1 — persona/subject anchor (clean Gemini identity photo)
     slides.push({
       order: 1,
       role: 'intro',
@@ -166,6 +167,7 @@ export async function POST(request: NextRequest) {
       uses_reference: true,
       s3_key: null,
       image_url: null,
+      image_subject: '',
     })
 
     // Memory slides
@@ -181,6 +183,7 @@ export async function POST(request: NextRequest) {
         uses_reference: usesReference,
         s3_key: null,
         image_url: null,
+        image_subject: item.image_subject || '',
       })
     })
 
@@ -194,19 +197,16 @@ export async function POST(request: NextRequest) {
       uses_reference: false,
       s3_key: null,
       image_url: null,
+      image_subject: '',
     })
 
-    // ─── STEP 3: Generate + upload each image ───────────────────────────────
+    // ─── STEP 3: Generate + upload each image (two-model pipeline) ───────────
+    const blurLevel = Number.isFinite(Number(body.blurLevel)) ? Number(body.blurLevel) : undefined
     for (const slide of slides) {
-      const key = s3KeyForSlide(jobId, slide.order)
-      const url = await generateAndUploadPhoto(slide.prompt, {
-        key,
-        referenceImageUrl: slide.uses_reference ? referenceUrl : null,
-        referenceMode: slide.uses_reference ? 'identity' : undefined,
-      })
-      if (url) {
-        slide.s3_key = key
-        slide.image_url = url
+      const result = await generateHonorMissSlideImage({ jobId, slide, referenceUrl, blurLevel })
+      if (result.url) {
+        slide.s3_key = result.s3Key
+        slide.image_url = result.url
       } else {
         console.error('[honor-miss/generate] Image failed for slide', slide.order)
       }
