@@ -44,10 +44,11 @@ const RELATIONS = [
 
 const SLIDE_COUNTS = [3, 4, 5, 6, 7]
 
-// Curated object pool for object_only slides. Keep in sync with OBJECT_OPTIONS in
-// lib/honorMiss.ts — selecting these (plus any "Other" entries) restricts the
-// objects the AI may use so the object slides stay differentiated.
-const OBJECT_CHOICES = [
+// Curated object pools for object_only slides — selecting these (plus any "Other"
+// entries) restricts the objects the AI may use so the object slides stay
+// differentiated. The pool swaps with the Honor/Miss frame: "honor" leans toward
+// kept/ritual objects, "miss" leans toward shared places and scenes of absence.
+const HONOR_OBJECT_CHOICES = [
   'a glass Coca-Cola bottle on a kitchen counter',
   'a cast-iron skillet on a stovetop',
   'a worn Stetson cowboy hat on a hook',
@@ -66,6 +67,30 @@ const OBJECT_CHOICES = [
   'a toolbox with a hammer on a garage shelf',
   'a knitting basket with yarn and needles',
   'a watering can in a garden',
+]
+
+// "Miss" frame: shared places, outings, and quiet scenes of their absence. These
+// render as object_only (no people in frame), so they read as "the thing we did"
+// or "the place we went" with them no longer there.
+const MISS_OBJECT_CHOICES = [
+  'a TV showing a Dallas Cowboys game in a quiet living room',
+  'two empty folding chairs on a Galveston beach at golden hour',
+  'an empty fishing chair at the end of a wooden pier',
+  'an empty rocking chair on the front porch',
+  'two coffee mugs on a kitchen table, one untouched',
+  'a worn recliner with the TV remote left on the armrest',
+  'a quiet workshop with tools left mid-project',
+  'a diner booth with two place settings, one empty',
+  'a truck parked in the driveway, keys on the seat',
+  'a porch swing swaying in the wind with no one on it',
+  'a campfire burning low beside two empty camp chairs',
+  'a stadium seat with a team cap resting on it',
+  'a record player mid-spin in an empty room',
+  'a garden bench under a tree with autumn leaves falling',
+  'a church pew with a folded program left behind',
+  'a lake dock at sunrise with a tackle box and two poles',
+  'a kitchen table set for Sunday dinner, one chair empty',
+  'a country road at dusk seen through a windshield',
 ]
 
 interface LovedOne {
@@ -359,6 +384,18 @@ function HonorMissPage() {
     }
   }
 
+  // Object pool swaps with the frame: kept/ritual objects for "honor", shared
+  // places and scenes of absence for "miss".
+  const activeObjectChoices = mode === 'honor' ? HONOR_OBJECT_CHOICES : MISS_OBJECT_CHOICES
+
+  // Switching frames clears any curated picks so stale selections from the other
+  // pool aren't carried over (custom "Other" text is left as-is).
+  const handleModeChange = (next: Mode) => {
+    if (next === mode) return
+    setMode(next)
+    setSelectedObjects([])
+  }
+
   const previewCaption =
     mode === 'honor'
       ? `${slideCount} ways I honor my ${relation}`
@@ -390,7 +427,7 @@ function HonorMissPage() {
                 <button
                   key={m}
                   type="button"
-                  onClick={() => setMode(m)}
+                  onClick={() => handleModeChange(m)}
                   className={`px-5 py-2 rounded-lg text-sm font-semibold transition-colors ${
                     mode === m ? 'bg-[#b58d45] text-[#111827]' : 'text-[#ceb995] hover:text-[#f3ead9]'
                   }`}
@@ -503,15 +540,20 @@ function HonorMissPage() {
           {/* Object pool for object-only slides */}
           <div className="rounded-xl border border-[#33456a] bg-[#0f1728] p-4 space-y-3">
             <div>
-              <p className="text-sm font-semibold text-[#f1d386]">Objects for object-only slides (optional)</p>
+              <p className="text-sm font-semibold text-[#f1d386]">
+                {mode === 'honor'
+                  ? 'Objects for object-only slides (optional)'
+                  : 'Places & things you miss — for object-only slides (optional)'}
+              </p>
               <p className="text-xs text-[#7f8db0] mt-1">
-                Pick which objects the AI is allowed to use for the object-only slides. Choose a variety to keep
-                results differentiated. Leave everything unchecked to let the AI decide freely.
+                {mode === 'honor'
+                  ? 'Pick which objects the AI is allowed to use for the object-only slides. Choose a variety to keep results differentiated. Leave everything unchecked to let the AI decide freely.'
+                  : 'Pick the shared places and scenes the AI is allowed to use for the object-only slides — rendered with no people, so they read as the things you miss. Choose a variety to keep results differentiated. Leave everything unchecked to let the AI decide freely.'}
               </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {OBJECT_CHOICES.map((obj) => {
+              {activeObjectChoices.map((obj) => {
                 const checked = selectedObjects.includes(obj)
                 return (
                   <label
