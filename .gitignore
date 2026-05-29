@@ -43,3 +43,11 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .env*.local
+
+# lambda build artifacts
+lambdas/poem-mix/poem-mix.zip
+lambdas/poem-mix/.build/
+
+# python
+__pycache__/
+*.pyc
