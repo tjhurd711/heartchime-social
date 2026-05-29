@@ -10,16 +10,13 @@ const dmSans = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700'] })
 type Mode = 'honor' | 'miss'
 type Perspective = 'first_person' | 'third_person'
 
-const SUBJECT_REF_PREFIXES: { value: string; label: string }[] = [
-  { value: 'social-generated/subject-refs/', label: 'Subject refs' },
-  { value: 'social-generated/', label: 'Generated' },
-  { value: 'social-bait/', label: 'Bait library' },
-]
+// S3 reference picker — same pattern/endpoint as the rest of the platform.
+const SUBJECT_REFERENCE_DEFAULT_PREFIX = 'uploads/'
+const REFERENCE_PAGE_SIZE = 24
 
-interface SubjectRefItem {
+interface S3ReferenceBrowseItem {
   key: string
-  url: string
-  thumbUrl: string
+  presignedUrl: string
 }
 
 const RELATIONS = [
@@ -102,13 +99,20 @@ export default function HonorMissPage() {
   // Subject (third-person tribute) state
   const [perspective, setPerspective] = useState<Perspective>('first_person')
   const [subjectName, setSubjectName] = useState('')
+
+  // S3 reference picker (mirrors the platform-wide /api/admin/social/reference-browse picker)
+  const [showReferencePicker, setShowReferencePicker] = useState(false)
+  const [referencePrefixInput, setReferencePrefixInput] = useState(SUBJECT_REFERENCE_DEFAULT_PREFIX)
+  const [referenceActivePrefix, setReferenceActivePrefix] = useState(SUBJECT_REFERENCE_DEFAULT_PREFIX)
+  const [referenceItems, setReferenceItems] = useState<S3ReferenceBrowseItem[]>([])
+  const [referenceLoading, setReferenceLoading] = useState(false)
+  const [referencePage, setReferencePage] = useState(1)
+  const [referencePageInput, setReferencePageInput] = useState('1')
+  const [referenceHasNextPage, setReferenceHasNextPage] = useState(false)
+  const [referencePickerError, setReferencePickerError] = useState<string | null>(null)
+  const [referencePickKey, setReferencePickKey] = useState('')
+  // Presigned preview URL for the chosen reference — also sent as subjectMasterPhotoUrl.
   const [subjectPhotoUrl, setSubjectPhotoUrl] = useState('')
-  const [pickerOpen, setPickerOpen] = useState(false)
-  const [pickerPrefix, setPickerPrefix] = useState<string>(SUBJECT_REF_PREFIXES[0].value)
-  const [refItems, setRefItems] = useState<SubjectRefItem[]>([])
-  const [refLoading, setRefLoading] = useState(false)
-  const [refNextToken, setRefNextToken] = useState<string | null>(null)
-  const [uploading, setUploading] = useState(false)
 
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -137,68 +141,42 @@ export default function HonorMissPage() {
     [job]
   )
 
-  const loadSubjectRefs = async (prefix: string, token?: string | null) => {
-    setRefLoading(true)
-    setError(null)
+  const browseReferencePrefix = async (prefix: string, page = 1) => {
+    setReferenceLoading(true)
+    setReferencePickerError(null)
     try {
       const params = new URLSearchParams({ prefix })
-      if (token) params.set('token', token)
-      const res = await fetch(`/api/admin/social/honor-miss/subject-refs?${params.toString()}`)
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.details || data?.error || 'Failed to load reference photos')
-      const items: SubjectRefItem[] = data.items || []
-      setRefItems((prev) => (token ? [...prev, ...items] : items))
-      setRefNextToken(data.nextToken || null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load reference photos')
-    } finally {
-      setRefLoading(false)
-    }
-  }
+      params.set('page', String(Math.max(1, page)))
+      params.set('pageSize', String(REFERENCE_PAGE_SIZE))
 
-  const openPicker = () => {
-    setPickerOpen(true)
-    void loadSubjectRefs(pickerPrefix)
-  }
-
-  const changePickerPrefix = (prefix: string) => {
-    setPickerPrefix(prefix)
-    setRefItems([])
-    setRefNextToken(null)
-    void loadSubjectRefs(prefix)
-  }
-
-  const handleUploadSubjectRef = async (file: File) => {
-    setError(null)
-    setUploading(true)
-    try {
-      const extension = (file.name.split('.').pop() || 'png').toLowerCase()
-      const presignRes = await fetch('/api/admin/social/honor-miss/subject-refs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ extension, contentType: file.type }),
-      })
-      const presign = await presignRes.json()
-      if (!presignRes.ok) throw new Error(presign?.details || presign?.error || 'Failed to get upload URL')
-
-      const putRes = await fetch(presign.putUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': file.type },
-        body: file,
-      })
-      if (!putRes.ok) throw new Error('Upload to S3 failed')
-
-      setSubjectPhotoUrl(presign.url)
-      setSuccess('Subject reference uploaded.')
-      // Refresh the subject-refs listing so the new upload appears.
-      if (pickerOpen && pickerPrefix === SUBJECT_REF_PREFIXES[0].value) {
-        void loadSubjectRefs(SUBJECT_REF_PREFIXES[0].value)
+      const response = await fetch(`/api/admin/social/reference-browse?${params.toString()}`)
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data?.error || data?.details || 'Failed to browse S3 reference photos')
       }
+
+      const nextItems: S3ReferenceBrowseItem[] = Array.isArray(data.items) ? data.items : []
+      const resolvedPage =
+        typeof data.page === 'number' && Number.isFinite(data.page) && data.page > 0
+          ? Math.floor(data.page)
+          : Math.max(1, page)
+      setReferenceActivePrefix(prefix)
+      setReferencePrefixInput(prefix)
+      setReferenceItems(nextItems)
+      setReferencePage(resolvedPage)
+      setReferencePageInput(String(resolvedPage))
+      setReferenceHasNextPage(Boolean(data.hasNextPage))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed')
+      setReferencePickerError(err instanceof Error ? err.message : 'Failed to browse S3 reference photos')
     } finally {
-      setUploading(false)
+      setReferenceLoading(false)
     }
+  }
+
+  const handleSelectReference = (item: S3ReferenceBrowseItem) => {
+    setReferencePickKey(item.key)
+    setSubjectPhotoUrl(item.presignedUrl)
+    setShowReferencePicker(false)
   }
 
   const handleGenerate = async () => {
@@ -482,45 +460,32 @@ export default function HonorMissPage() {
               />
             </label>
 
-            {/* Subject reference photo picker */}
+            {/* Subject reference photo picker (same S3 picker used across the platform) */}
             {perspective === 'third_person' && (
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center gap-3">
-                  <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-[#364767] bg-[#0b1322] flex items-center justify-center">
-                    {subjectPhotoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={subjectPhotoUrl} alt="Subject reference" className="h-full w-full object-cover" />
-                    ) : (
-                      <span className="text-[10px] text-[#7f8db0] text-center px-1">No photo</span>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <button
-                      type="button"
-                      onClick={() => (pickerOpen ? setPickerOpen(false) : openPicker())}
-                      className="rounded-lg border border-[#415477] px-3 py-1.5 text-xs text-[#d7c29b] hover:border-[#d8b372]"
-                    >
-                      {pickerOpen ? 'Hide browser' : 'Browse S3 references'}
-                    </button>
-                    <label className="rounded-lg border border-[#415477] px-3 py-1.5 text-xs text-[#d7c29b] hover:border-[#d8b372] cursor-pointer text-center">
-                      {uploading ? 'Uploading…' : 'Upload new photo'}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        disabled={uploading}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0]
-                          if (file) void handleUploadSubjectRef(file)
-                          e.target.value = ''
-                        }}
-                      />
-                    </label>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowReferencePicker(true)
+                      void browseReferencePrefix(referenceActivePrefix || SUBJECT_REFERENCE_DEFAULT_PREFIX, 1)
+                    }}
+                    className="rounded-lg border border-[#b58d45]/70 bg-[#1c2740] px-4 py-2 text-sm text-[#f1d386] hover:bg-[#243150]"
+                  >
+                    Pick reference photo from S3
+                  </button>
+                  {referencePickKey ? (
+                    <span className="text-xs text-[#f3ead9] break-all">Selected key: {referencePickKey}</span>
+                  ) : (
+                    <span className="text-xs text-[#7f8db0]">No S3 reference selected yet.</span>
+                  )}
                   {subjectPhotoUrl && (
                     <button
                       type="button"
-                      onClick={() => setSubjectPhotoUrl('')}
+                      onClick={() => {
+                        setSubjectPhotoUrl('')
+                        setReferencePickKey('')
+                      }}
                       className="text-xs text-[#7f8db0] hover:text-red-300"
                     >
                       Clear
@@ -528,56 +493,13 @@ export default function HonorMissPage() {
                   )}
                 </div>
 
-                {pickerOpen && (
-                  <div className="rounded-lg border border-[#364767] bg-[#0b1322] p-3 space-y-3">
-                    <div className="inline-flex rounded-lg border border-[#364767] bg-[#0f1728] p-1">
-                      {SUBJECT_REF_PREFIXES.map((p) => (
-                        <button
-                          key={p.value}
-                          type="button"
-                          onClick={() => changePickerPrefix(p.value)}
-                          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                            pickerPrefix === p.value ? 'bg-[#b58d45] text-[#111827]' : 'text-[#ceb995] hover:text-[#f3ead9]'
-                          }`}
-                        >
-                          {p.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2 max-h-72 overflow-y-auto">
-                      {refItems.map((item) => (
-                        <button
-                          key={item.key}
-                          type="button"
-                          onClick={() => setSubjectPhotoUrl(item.url)}
-                          title={item.key}
-                          className={`relative aspect-square overflow-hidden rounded-md border ${
-                            subjectPhotoUrl === item.url ? 'border-[#f1d386] ring-2 ring-[#b58d45]' : 'border-[#364767] hover:border-[#d8b372]'
-                          }`}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={item.thumbUrl} alt={item.key} className="h-full w-full object-cover" />
-                        </button>
-                      ))}
-                    </div>
-
-                    {refItems.length === 0 && !refLoading && (
-                      <p className="text-xs text-[#7f8db0]">No images found in this prefix.</p>
-                    )}
-                    <div className="flex items-center gap-3">
-                      {refLoading && <span className="text-xs text-[#7f8db0]">Loading…</span>}
-                      {refNextToken && !refLoading && (
-                        <button
-                          type="button"
-                          onClick={() => void loadSubjectRefs(pickerPrefix, refNextToken)}
-                          className="rounded-md border border-[#415477] px-3 py-1.5 text-xs text-[#d7c29b] hover:border-[#d8b372]"
-                        >
-                          Load more
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                {subjectPhotoUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={subjectPhotoUrl}
+                    alt="Selected subject reference"
+                    className="w-32 h-32 object-cover rounded-lg border border-[#364767]"
+                  />
                 )}
               </div>
             )}
@@ -668,6 +590,125 @@ export default function HonorMissPage() {
           </section>
         )}
       </div>
+
+      {/* ─── S3 reference picker modal (shared platform pattern) ─────────── */}
+      {showReferencePicker && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm p-4 md:p-6 overflow-y-auto">
+          <div className="max-w-6xl mx-auto bg-[#111a2f] border border-[#3d4a68] rounded-2xl p-4 md:p-6 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className={`${cormorant.className} text-2xl text-[#f1d386]`}>Pick S3 Reference</h3>
+                <p className="text-xs text-[#b9aa87] mt-1">
+                  Source bucket: order-by-age-uploads. Selected photo is used as the subject identity reference.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowReferencePicker(false)}
+                className="px-3 py-1.5 rounded-lg bg-[#2e3b5e] text-[#f7f1df] hover:bg-[#364974]"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="flex flex-col md:flex-row gap-3">
+              <input
+                value={referencePrefixInput}
+                onChange={(e) => setReferencePrefixInput(e.target.value)}
+                placeholder="uploads/"
+                className="flex-1 px-3 py-2 bg-[#0f1729] border border-[#3d4a68] rounded-lg text-[#f7f1df]"
+              />
+              <button
+                type="button"
+                onClick={() => void browseReferencePrefix(referencePrefixInput.trim() || SUBJECT_REFERENCE_DEFAULT_PREFIX, 1)}
+                disabled={referenceLoading}
+                className="px-4 py-2 rounded-lg border border-[#f1d386]/70 text-[#f1d386] hover:bg-[#f1d386]/10 disabled:opacity-60"
+              >
+                {referenceLoading ? 'Loading...' : 'Browse'}
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 text-xs text-[#b9aa87]">
+              <span>Current prefix: {referenceActivePrefix}</span>
+              <span>Page {referencePage}</span>
+              <span>{REFERENCE_PAGE_SIZE} per page</span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void browseReferencePrefix(referenceActivePrefix, referencePage - 1)}
+                disabled={referenceLoading || referencePage <= 1}
+                className="px-3 py-1.5 rounded-lg border border-[#3d4a68] text-[#f7f1df] hover:bg-[#2e3b5e] disabled:opacity-60"
+              >
+                Prev
+              </button>
+              <button
+                type="button"
+                onClick={() => void browseReferencePrefix(referenceActivePrefix, referencePage + 1)}
+                disabled={referenceLoading || !referenceHasNextPage}
+                className="px-3 py-1.5 rounded-lg border border-[#3d4a68] text-[#f7f1df] hover:bg-[#2e3b5e] disabled:opacity-60"
+              >
+                Next
+              </button>
+              <input
+                value={referencePageInput}
+                onChange={(e) => setReferencePageInput(e.target.value.replace(/[^\d]/g, ''))}
+                placeholder="Page #"
+                className="w-24 px-2 py-1.5 bg-[#0f1729] border border-[#3d4a68] rounded-lg text-[#f7f1df]"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const parsedPage = Number.parseInt(referencePageInput || '1', 10)
+                  const safePage = Number.isNaN(parsedPage) ? 1 : Math.max(1, parsedPage)
+                  void browseReferencePrefix(referenceActivePrefix, safePage)
+                }}
+                disabled={referenceLoading}
+                className="px-3 py-1.5 rounded-lg border border-[#f1d386]/70 text-[#f1d386] hover:bg-[#f1d386]/10 disabled:opacity-60"
+              >
+                Go
+              </button>
+            </div>
+
+            {referencePickerError && <p className="text-sm text-red-300">{referencePickerError}</p>}
+
+            {referenceLoading ? (
+              <div className="text-sm text-[#d7c9a6] py-8 text-center">Loading S3 images...</div>
+            ) : referenceItems.length === 0 ? (
+              <div className="text-sm text-[#d7c9a6] py-8 text-center">No images found at this prefix.</div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                {referenceItems.map((item) => {
+                  const isSelected = item.key === referencePickKey
+                  return (
+                    <button
+                      type="button"
+                      key={item.key}
+                      onClick={() => handleSelectReference(item)}
+                      className={`relative rounded-lg overflow-hidden border text-left transition-all ${
+                        isSelected ? 'border-[#f1d386] ring-1 ring-[#f1d386]' : 'border-[#3d4a68] hover:border-[#f1d386]/60'
+                      }`}
+                      title={item.key}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={item.presignedUrl}
+                        alt={item.key}
+                        loading="lazy"
+                        className="w-full aspect-square object-cover bg-[#0f1729]"
+                      />
+                      <div className="absolute inset-x-0 bottom-0 bg-black/70 px-2 py-1">
+                        <p className="text-[11px] text-[#f7f1df] truncate">{item.key.split('/').pop()}</p>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
