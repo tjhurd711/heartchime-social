@@ -39,7 +39,12 @@ export interface SlideImageResult {
 interface GenerateArgs {
   jobId: string
   slide: HonorMissSlide
+  // Narrating persona reference — used for the intro anchor and for first-person memory slides.
   referenceUrl: string | null
+  // Optional tribute-subject reference (third-person mode). When set, framed_photo
+  // and polaroid memory slides render this subject instead of the persona. The
+  // intro anchor always uses the persona referenceUrl.
+  subjectReferenceUrl?: string | null
   // 1–10 blurriness level applied to the faded interior of framed/polaroid photos.
   blurLevel?: number
   // Optional key suffix (inserted before ".png") used for cache-busting on regenerate.
@@ -66,7 +71,7 @@ async function geminiSingleCall(
 }
 
 export async function generateHonorMissSlideImage(args: GenerateArgs): Promise<SlideImageResult> {
-  const { jobId, slide, referenceUrl, blurLevel, keySuffix } = args
+  const { jobId, slide, referenceUrl, subjectReferenceUrl, blurLevel, keySuffix } = args
 
   try {
     // ── Persona/subject anchor (intro) ──────────────────────────────────────
@@ -86,13 +91,16 @@ export async function generateHonorMissSlideImage(args: GenerateArgs): Promise<S
 
     // ── Two-step: framed_photo / polaroid ───────────────────────────────────
     if (slide.visual_type === 'framed_photo' || slide.visual_type === 'polaroid') {
+      // Third-person tributes render the subject in memory slides; first-person
+      // uses the persona reference (unchanged behavior).
+      const memoryReference = subjectReferenceUrl || referenceUrl
       const subject = (slide.image_subject || '').trim() || slide.caption
       const stepAPrompt = buildPersonActionPrompt(subject)
       const stepAKey = withSuffix(s3KeyForStepA(jobId, slide.order), keySuffix)
 
       const stepAUrl = await generateAndUploadPhoto(stepAPrompt, {
         key: stepAKey,
-        referenceImageUrl: referenceUrl,
+        referenceImageUrl: memoryReference,
         referenceMode: 'identity',
       })
 
@@ -106,9 +114,10 @@ export async function generateHonorMissSlideImage(args: GenerateArgs): Promise<S
         if (finalUrl) return { url: finalUrl, s3Key: finalKey, pipeline: 'two-step' }
       }
 
-      // Either step failed — fall back to the original single Gemini call.
+      // Either step failed — fall back to the original single Gemini call,
+      // using the same (subject or persona) reference as the two-step path.
       console.warn('[honor-miss/pipeline] two-step failed, falling back for slide', slide.order)
-      return geminiSingleCall(slide, referenceUrl, finalKey)
+      return geminiSingleCall(slide, memoryReference, finalKey)
     }
 
     // ── Single GPT-image-2 call: object_only / symbol ───────────────────────

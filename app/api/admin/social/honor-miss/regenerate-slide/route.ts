@@ -51,6 +51,8 @@ export async function POST(request: NextRequest) {
       jobId,
       slide,
       referenceUrl: job.master_photo_url || null,
+      // Present only for third-person tributes; reuses the subject for framed/polaroid slides.
+      subjectReferenceUrl: job.subject_master_photo_url || null,
       keySuffix: `-r${Date.now()}`,
     })
 

@@ -8,6 +8,19 @@ const cormorant = Cormorant_Garamond({ subsets: ['latin'], weight: ['500', '600'
 const dmSans = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700'] })
 
 type Mode = 'honor' | 'miss'
+type Perspective = 'first_person' | 'third_person'
+
+const SUBJECT_REF_PREFIXES: { value: string; label: string }[] = [
+  { value: 'social-generated/subject-refs/', label: 'Subject refs' },
+  { value: 'social-generated/', label: 'Generated' },
+  { value: 'social-bait/', label: 'Bait library' },
+]
+
+interface SubjectRefItem {
+  key: string
+  url: string
+  thumbUrl: string
+}
 
 const RELATIONS = [
   'dad',
@@ -69,6 +82,17 @@ export default function HonorMissPage() {
   const [anchor1, setAnchor1] = useState('')
   const [anchor2, setAnchor2] = useState('')
 
+  // Subject (third-person tribute) state
+  const [perspective, setPerspective] = useState<Perspective>('first_person')
+  const [subjectName, setSubjectName] = useState('')
+  const [subjectPhotoUrl, setSubjectPhotoUrl] = useState('')
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerPrefix, setPickerPrefix] = useState<string>(SUBJECT_REF_PREFIXES[0].value)
+  const [refItems, setRefItems] = useState<SubjectRefItem[]>([])
+  const [refLoading, setRefLoading] = useState(false)
+  const [refNextToken, setRefNextToken] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -96,11 +120,79 @@ export default function HonorMissPage() {
     [job]
   )
 
+  const loadSubjectRefs = async (prefix: string, token?: string | null) => {
+    setRefLoading(true)
+    setError(null)
+    try {
+      const params = new URLSearchParams({ prefix })
+      if (token) params.set('token', token)
+      const res = await fetch(`/api/admin/social/honor-miss/subject-refs?${params.toString()}`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.details || data?.error || 'Failed to load reference photos')
+      const items: SubjectRefItem[] = data.items || []
+      setRefItems((prev) => (token ? [...prev, ...items] : items))
+      setRefNextToken(data.nextToken || null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load reference photos')
+    } finally {
+      setRefLoading(false)
+    }
+  }
+
+  const openPicker = () => {
+    setPickerOpen(true)
+    void loadSubjectRefs(pickerPrefix)
+  }
+
+  const changePickerPrefix = (prefix: string) => {
+    setPickerPrefix(prefix)
+    setRefItems([])
+    setRefNextToken(null)
+    void loadSubjectRefs(prefix)
+  }
+
+  const handleUploadSubjectRef = async (file: File) => {
+    setError(null)
+    setUploading(true)
+    try {
+      const extension = (file.name.split('.').pop() || 'png').toLowerCase()
+      const presignRes = await fetch('/api/admin/social/honor-miss/subject-refs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ extension, contentType: file.type }),
+      })
+      const presign = await presignRes.json()
+      if (!presignRes.ok) throw new Error(presign?.details || presign?.error || 'Failed to get upload URL')
+
+      const putRes = await fetch(presign.putUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      })
+      if (!putRes.ok) throw new Error('Upload to S3 failed')
+
+      setSubjectPhotoUrl(presign.url)
+      setSuccess('Subject reference uploaded.')
+      // Refresh the subject-refs listing so the new upload appears.
+      if (pickerOpen && pickerPrefix === SUBJECT_REF_PREFIXES[0].value) {
+        void loadSubjectRefs(SUBJECT_REF_PREFIXES[0].value)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
   const handleGenerate = async () => {
     setError(null)
     setSuccess(null)
     if (!lovedOneId) {
       setError('Pick a persona first.')
+      return
+    }
+    if (perspective === 'third_person' && !subjectPhotoUrl) {
+      setError('Pick or upload a subject reference photo for third-person tribute mode.')
       return
     }
     setGenerating(true)
@@ -115,6 +207,9 @@ export default function HonorMissPage() {
           lovedOneId,
           slideCount,
           anchors: [anchor1, anchor2].filter((a) => a.trim()),
+          perspective,
+          subjectName: subjectName.trim(),
+          subjectMasterPhotoUrl: perspective === 'third_person' ? subjectPhotoUrl : '',
         }),
       })
       const data = await res.json()
@@ -311,6 +406,150 @@ export default function HonorMissPage() {
                 className="mt-1 w-full rounded-lg border border-[#364767] bg-[#0f1728] px-3 py-2 text-sm text-[#f3ead9] focus:outline-none focus:ring-2 focus:ring-[#b58d45]"
               />
             </label>
+          </div>
+
+          {/* Subject (who the post is about) */}
+          <div className="rounded-xl border border-[#33456a] bg-[#0f1728] p-4 space-y-4">
+            <div>
+              <p className="text-sm font-semibold text-[#f1d386]">Subject (who the post is about)</p>
+              <p className="text-xs text-[#7f8db0] mt-1">
+                Choose whose face appears in the memory slides. First-person uses the persona everywhere.
+                Third-person uses a separate reference photo of the person being honored/missed.
+              </p>
+            </div>
+
+            {/* Perspective toggle */}
+            <div>
+              <p className="text-xs text-[#ceb995] mb-2">Perspective</p>
+              <div className="inline-flex rounded-xl border border-[#364767] bg-[#0b1322] p-1">
+                {([
+                  { value: 'first_person', label: 'First-person (persona)' },
+                  { value: 'third_person', label: 'Third-person tribute' },
+                ] as { value: Perspective; label: string }[]).map((p) => (
+                  <button
+                    key={p.value}
+                    type="button"
+                    onClick={() => setPerspective(p.value)}
+                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                      perspective === p.value ? 'bg-[#b58d45] text-[#111827]' : 'text-[#ceb995] hover:text-[#f3ead9]'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Subject name */}
+            <label className="block text-sm text-[#ceb995]">
+              Subject name (optional)
+              <input
+                value={subjectName}
+                onChange={(e) => setSubjectName(e.target.value)}
+                placeholder={'e.g. "Dad" or "Sarah\'s dad"'}
+                className="mt-1 w-full rounded-lg border border-[#364767] bg-[#0b1322] px-3 py-2 text-sm text-[#f3ead9] focus:outline-none focus:ring-2 focus:ring-[#b58d45]"
+              />
+            </label>
+
+            {/* Subject reference photo picker */}
+            {perspective === 'third_person' && (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-[#364767] bg-[#0b1322] flex items-center justify-center">
+                    {subjectPhotoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={subjectPhotoUrl} alt="Subject reference" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="text-[10px] text-[#7f8db0] text-center px-1">No photo</span>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => (pickerOpen ? setPickerOpen(false) : openPicker())}
+                      className="rounded-lg border border-[#415477] px-3 py-1.5 text-xs text-[#d7c29b] hover:border-[#d8b372]"
+                    >
+                      {pickerOpen ? 'Hide browser' : 'Browse S3 references'}
+                    </button>
+                    <label className="rounded-lg border border-[#415477] px-3 py-1.5 text-xs text-[#d7c29b] hover:border-[#d8b372] cursor-pointer text-center">
+                      {uploading ? 'Uploading…' : 'Upload new photo'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={uploading}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (file) void handleUploadSubjectRef(file)
+                          e.target.value = ''
+                        }}
+                      />
+                    </label>
+                  </div>
+                  {subjectPhotoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setSubjectPhotoUrl('')}
+                      className="text-xs text-[#7f8db0] hover:text-red-300"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {pickerOpen && (
+                  <div className="rounded-lg border border-[#364767] bg-[#0b1322] p-3 space-y-3">
+                    <div className="inline-flex rounded-lg border border-[#364767] bg-[#0f1728] p-1">
+                      {SUBJECT_REF_PREFIXES.map((p) => (
+                        <button
+                          key={p.value}
+                          type="button"
+                          onClick={() => changePickerPrefix(p.value)}
+                          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                            pickerPrefix === p.value ? 'bg-[#b58d45] text-[#111827]' : 'text-[#ceb995] hover:text-[#f3ead9]'
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2 max-h-72 overflow-y-auto">
+                      {refItems.map((item) => (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => setSubjectPhotoUrl(item.url)}
+                          title={item.key}
+                          className={`relative aspect-square overflow-hidden rounded-md border ${
+                            subjectPhotoUrl === item.url ? 'border-[#f1d386] ring-2 ring-[#b58d45]' : 'border-[#364767] hover:border-[#d8b372]'
+                          }`}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={item.thumbUrl} alt={item.key} className="h-full w-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+
+                    {refItems.length === 0 && !refLoading && (
+                      <p className="text-xs text-[#7f8db0]">No images found in this prefix.</p>
+                    )}
+                    <div className="flex items-center gap-3">
+                      {refLoading && <span className="text-xs text-[#7f8db0]">Loading…</span>}
+                      {refNextToken && !refLoading && (
+                        <button
+                          type="button"
+                          onClick={() => void loadSubjectRefs(pickerPrefix, refNextToken)}
+                          className="rounded-md border border-[#415477] px-3 py-1.5 text-xs text-[#d7c29b] hover:border-[#d8b372]"
+                        >
+                          Load more
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-3 pt-1">

@@ -108,6 +108,8 @@ export function pickCloserSymbol(seed: number): string {
 // LLM PROMPT — asks Claude for N concrete, sensory memory items
 // ─────────────────────────────────────────────────────────────────────────
 
+export type HonorMissPerspective = 'first_person' | 'third_person'
+
 export function buildItemsPrompt(params: {
   mode: HonorMissMode
   relation: string
@@ -115,12 +117,26 @@ export function buildItemsPrompt(params: {
   anchors: string[]
   lovedOneName?: string | null
   lovedOneDetails?: string | null
+  // Optional third-person tribute framing. When omitted/first_person, output is
+  // byte-for-byte identical to the original first-person prompt.
+  perspective?: HonorMissPerspective
+  subjectName?: string | null
 }): string {
-  const { mode, relation, count, anchors, lovedOneName, lovedOneDetails } = params
-  const frame =
-    mode === 'honor'
+  const { mode, relation, count, anchors, lovedOneName, lovedOneDetails, perspective, subjectName } = params
+  const subject = (subjectName || '').trim()
+  const isThirdPerson = perspective === 'third_person' && subject.length > 0
+
+  const frame = isThirdPerson
+    ? mode === 'honor'
+      ? `ways the narrator honors ${subject} (their late ${relationPhrase(relation)})`
+      : `things the narrator misses about ${subject} (their late ${relationPhrase(relation)})`
+    : mode === 'honor'
       ? `ways the narrator honors their late ${relationPhrase(relation)}`
       : `things the narrator misses about their late ${relationPhrase(relation)}`
+
+  const subjectBlock = isThirdPerson
+    ? `\nThe subject of this tribute is ${subject}. Write every memory item about ${subject}.`
+    : ''
 
   const anchorBlock =
     anchors.filter((a) => a.trim()).length > 0
@@ -133,7 +149,7 @@ export function buildItemsPrompt(params: {
   const nameBlock = lovedOneName ? `\nThe loved one's name is ${lovedOneName}.` : ''
   const detailBlock = lovedOneDetails ? `\nBackground on them: ${lovedOneDetails}` : ''
 
-  return `You are writing the content for a heartfelt social media slideshow about ${frame}.${nameBlock}${detailBlock}
+  return `You are writing the content for a heartfelt social media slideshow about ${frame}.${nameBlock}${detailBlock}${subjectBlock}
 ${anchorBlock}
 Write exactly ${count} memory items.
 

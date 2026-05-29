@@ -4,6 +4,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { v4 as uuidv4 } from 'uuid'
 import {
   HonorMissMode,
+  HonorMissPerspective,
   HonorMissSlide,
   MemoryItem,
   RELATION_OPTIONS,
@@ -45,6 +46,12 @@ interface GenerateBody {
   anchors?: string[]
   // Optional 1–10 blurriness level for the faded interior of framed/polaroid photos.
   blurLevel?: number
+  // Tribute perspective. 'first_person' (default) = persona is the griever, persona
+  // face everywhere. 'third_person' = persona narrates, subject reference used for
+  // framed/polaroid memory slides.
+  perspective?: HonorMissPerspective
+  subjectName?: string
+  subjectMasterPhotoUrl?: string
 }
 
 function parseItems(raw: string): MemoryItem[] | null {
@@ -74,6 +81,9 @@ export async function POST(request: NextRequest) {
     const relation = (body.relation || '').trim()
     const slideCount = Number(body.slideCount)
     const anchors = Array.isArray(body.anchors) ? body.anchors.filter((a) => typeof a === 'string') : []
+    const perspective: HonorMissPerspective = body.perspective === 'third_person' ? 'third_person' : 'first_person'
+    const subjectName = (body.subjectName || '').trim()
+    const subjectMasterPhotoUrl = (body.subjectMasterPhotoUrl || '').trim()
 
     // ─── Validation ───────────────────────────────────────────────────────
     if (mode !== 'honor' && mode !== 'miss') {
@@ -90,6 +100,12 @@ export async function POST(request: NextRequest) {
     }
     if (!body.lovedOneId) {
       return NextResponse.json({ error: 'lovedOneId is required' }, { status: 400 })
+    }
+    if (perspective === 'third_person' && !subjectMasterPhotoUrl) {
+      return NextResponse.json(
+        { error: 'subjectMasterPhotoUrl is required for third-person tribute mode' },
+        { status: 400 }
+      )
     }
 
     // ─── Persona / loved one reference ──────────────────────────────────────
@@ -127,6 +143,8 @@ export async function POST(request: NextRequest) {
       anchors,
       lovedOneName: lovedOne.name,
       lovedOneDetails,
+      perspective,
+      subjectName: subjectName || null,
     })
 
     const llmResponse = await anthropic.messages.create({
@@ -202,8 +220,11 @@ export async function POST(request: NextRequest) {
 
     // ─── STEP 3: Generate + upload each image (two-model pipeline) ───────────
     const blurLevel = Number.isFinite(Number(body.blurLevel)) ? Number(body.blurLevel) : undefined
+    // Third-person tributes render the subject in framed/polaroid memory slides;
+    // the intro anchor always uses the persona reference.
+    const subjectReferenceUrl = perspective === 'third_person' ? subjectMasterPhotoUrl : null
     for (const slide of slides) {
-      const result = await generateHonorMissSlideImage({ jobId, slide, referenceUrl, blurLevel })
+      const result = await generateHonorMissSlideImage({ jobId, slide, referenceUrl, subjectReferenceUrl, blurLevel })
       if (result.url) {
         slide.s3_key = result.s3Key
         slide.image_url = result.url
@@ -223,6 +244,8 @@ export async function POST(request: NextRequest) {
         loved_one_id: lovedOne.id,
         persona_name: lovedOne.name,
         master_photo_url: referenceUrl,
+        subject_name: subjectName || null,
+        subject_master_photo_url: subjectMasterPhotoUrl || null,
         anchors: anchors.filter((a) => a.trim()),
         items: memoryItems,
         slides,
@@ -260,6 +283,9 @@ export async function GET() {
       lovedOneId: 'uuid of an ai_ugc_loved_ones record (provides master_photo_url)',
       slideCount: `${SLIDE_COUNT_MIN}-${SLIDE_COUNT_MAX} memory items (total images = slideCount + 2)`,
       anchors: 'optional string[] of grounding details',
+      perspective: "'first_person' (default) | 'third_person'",
+      subjectName: 'optional subject name for third-person tributes (e.g. "Dad")',
+      subjectMasterPhotoUrl: 'required for third_person — S3 URL of the subject reference photo',
     },
   })
 }
