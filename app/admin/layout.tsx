@@ -64,6 +64,10 @@ const socialNavigation: NavItem[] = [
     href: '/admin/social/bait',
   },
   {
+    name: '🕊️ Honor & Miss',
+    href: '/admin/social/honor-miss',
+  },
+  {
     name: '📲 Send To Phone',
     href: '/admin/social/send-to-phone',
   },
