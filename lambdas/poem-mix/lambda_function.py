@@ -18,6 +18,10 @@ FONTS_DIR = '/var/task/fonts'
 PRIMARY_FONT_PATH = os.path.join(FONTS_DIR, 'CormorantGaramond-Regular.ttf')
 FALLBACK_FONT_PATH = os.path.join(FONTS_DIR, 'EBGaramond-Regular.ttf')
 
+# Caption alpha fade (milliseconds) applied per line via the ASS \fad tag.
+CAPTION_FADE_IN_MS = 300
+CAPTION_FADE_OUT_MS = 300
+
 # sfnt magic numbers identifying a valid TrueType/OpenType font.
 _SFNT_MAGIC = (b'\x00\x01\x00\x00', b'true', b'ttcf', b'OTTO')
 
@@ -141,7 +145,7 @@ def _fallback_line_timings(poem_text, voice_dur):
     return out
 
 
-def _wrap_text(text, max_chars=38):
+def _wrap_text(text, max_chars=26):
     words = str(text or '').split()
     if not words:
         return ''
@@ -178,8 +182,8 @@ def _write_ass_captions(path, line_timings):
         return False
 
     # Fontname is the family embedded in the bundled TTF (resolved at cold
-    # start) so libass matches it; size/colours/outline/alignment/margins are
-    # unchanged.
+    # start) so libass matches it; colours/outline/alignment/margins are
+    # unchanged. Font size is 88 for legibility on a 720x1280 phone frame.
     header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: 720
@@ -188,7 +192,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Caption,{CAPTION_FONT_NAME},54,&H00FFFFFF,&H000000FF,&H80000000,&H64000000,0,0,0,0,100,100,0,0,1,2,1,5,30,30,45,1
+Style: Caption,{CAPTION_FONT_NAME},88,&H00FFFFFF,&H000000FF,&H80000000,&H64000000,0,0,0,0,100,100,0,0,1,2,1,5,30,30,45,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -203,8 +207,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if not wrapped:
             continue
         text = _escape_ass_text(wrapped).replace('\n', r'\N')
+        # libass-native alpha fade (in/out ms) within the line's own window, so
+        # captions ease in/out instead of popping. Tag must precede the escaped
+        # text and keep its literal braces.
+        fade = f"{{\\fad({CAPTION_FADE_IN_MS},{CAPTION_FADE_OUT_MS})}}"
         lines.append(
-            f"Dialogue: 0,{_seconds_to_ass(start)},{_seconds_to_ass(end)},Caption,,0,0,0,,{text}\n"
+            f"Dialogue: 0,{_seconds_to_ass(start)},{_seconds_to_ass(end)},Caption,,0,0,0,,{fade}{text}\n"
         )
     with open(path, 'w', encoding='utf-8') as handle:
         handle.writelines(lines)
