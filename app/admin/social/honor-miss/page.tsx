@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Cormorant_Garamond, DM_Sans } from 'next/font/google'
 
 const cormorant = Cormorant_Garamond({ subsets: ['latin'], weight: ['500', '600', '700'] })
@@ -9,6 +10,14 @@ const dmSans = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700'] })
 
 type Mode = 'honor' | 'miss'
 type Perspective = 'first_person' | 'third_person'
+type PhotoStyle = 'both_framed_first' | 'both_polaroid_first' | 'framed_only' | 'polaroid_only'
+
+const PHOTO_STYLE_OPTIONS: { value: PhotoStyle; label: string }[] = [
+  { value: 'both_framed_first', label: 'Both — framed first' },
+  { value: 'both_polaroid_first', label: 'Both — polaroid first' },
+  { value: 'framed_only', label: 'Framed only' },
+  { value: 'polaroid_only', label: 'Polaroid only' },
+]
 
 // S3 reference picker — same pattern/endpoint as the rest of the platform.
 const SUBJECT_REFERENCE_DEFAULT_PREFIX = 'uploads/'
@@ -111,7 +120,8 @@ async function parseJsonResponse(res: Response): Promise<{ ok: boolean; data: Re
   }
 }
 
-export default function HonorMissPage() {
+function HonorMissPage() {
+  const searchParams = useSearchParams()
   const [mode, setMode] = useState<Mode>('honor')
   const [relation, setRelation] = useState<string>('dad')
   const [lovedOnes, setLovedOnes] = useState<LovedOne[]>([])
@@ -123,6 +133,9 @@ export default function HonorMissPage() {
   // Object pool for object_only slides (curated selections + custom "Other" text).
   const [selectedObjects, setSelectedObjects] = useState<string[]>([])
   const [objectOther, setObjectOther] = useState('')
+
+  // Framed vs polaroid composition for the person photos.
+  const [photoStyle, setPhotoStyle] = useState<PhotoStyle>('both_framed_first')
 
   // Subject (third-person tribute) state
   const [perspective, setPerspective] = useState<Perspective>('first_person')
@@ -163,6 +176,19 @@ export default function HonorMissPage() {
     }
     void loadLovedOnes()
   }, [])
+
+  // Prefill from the Tributes admin page ("Generate Honor/Miss from this"):
+  // ?subject=&referenceUrl=&referenceKey= wires up third-person tribute mode.
+  useEffect(() => {
+    const subject = searchParams.get('subject')
+    const referenceUrl = searchParams.get('referenceUrl')
+    const referenceKey = searchParams.get('referenceKey')
+    if (!subject && !referenceUrl && !referenceKey) return
+    setPerspective('third_person')
+    if (subject) setSubjectName(subject)
+    if (referenceUrl) setSubjectPhotoUrl(referenceUrl)
+    if (referenceKey) setReferencePickKey(referenceKey)
+  }, [searchParams])
 
   const sortedSlides = useMemo(
     () => (job?.slides ? [...job.slides].sort((a, b) => a.order - b.order) : []),
@@ -239,6 +265,7 @@ export default function HonorMissPage() {
           subjectName: subjectName.trim(),
           subjectMasterPhotoUrl: perspective === 'third_person' ? subjectPhotoUrl : '',
           objectChoices,
+          photoStyle,
         }),
       })
       const { ok, data, errorText } = await parseJsonResponse(res)
@@ -427,6 +454,28 @@ export default function HonorMissPage() {
                 ))}
               </select>
             </label>
+          </div>
+
+          {/* Photo memory style */}
+          <div>
+            <label className="block text-sm text-[#ceb995] md:max-w-xs">
+              Photo memory style
+              <select
+                value={photoStyle}
+                onChange={(e) => setPhotoStyle(e.target.value as PhotoStyle)}
+                className="mt-1 w-full rounded-lg border border-[#364767] bg-[#0f1728] px-3 py-2 text-sm text-[#f3ead9] focus:outline-none focus:ring-2 focus:ring-[#b58d45]"
+              >
+                {PHOTO_STYLE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="text-xs text-[#7f8db0] mt-1">
+              Controls the person photos. &ldquo;Both&rdquo; guarantees at least one framed photo and one polaroid; the
+              chosen type takes the first guaranteed slot. This never affects Slide 1 (always the S3 reference).
+            </p>
           </div>
 
           {/* Anchors */}
@@ -807,5 +856,13 @@ export default function HonorMissPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function HonorMissPageWrapper() {
+  return (
+    <Suspense fallback={null}>
+      <HonorMissPage />
+    </Suspense>
   )
 }

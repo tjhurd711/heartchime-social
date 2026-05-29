@@ -68,6 +68,10 @@ const socialNavigation: NavItem[] = [
     href: '/admin/social/honor-miss',
   },
   {
+    name: '💌 Tributes',
+    href: '/admin/social/tributes',
+  },
+  {
     name: '📲 Send To Phone',
     href: '/admin/social/send-to-phone',
   },

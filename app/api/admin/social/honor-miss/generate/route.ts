@@ -3,8 +3,10 @@ import { createClient } from '@supabase/supabase-js'
 import Anthropic from '@anthropic-ai/sdk'
 import { v4 as uuidv4 } from 'uuid'
 import {
+  DEFAULT_PHOTO_STYLE,
   HonorMissMode,
   HonorMissPerspective,
+  HonorMissPhotoStyle,
   HonorMissSlide,
   MemoryItem,
   RELATION_OPTIONS,
@@ -17,6 +19,7 @@ import {
   buildIntroImagePrompt,
   buildItemsPrompt,
   buildMemoryImagePrompt,
+  enforcePhotoStyle,
   pickCloserCaption,
 } from '@/lib/honorMiss'
 import { generateHonorMissSlideImage } from '@/lib/honorMissImagePipeline'
@@ -55,7 +58,16 @@ interface GenerateBody {
   subjectMasterPhotoUrl?: string
   // Admin-approved pool of objects for object_only slides (curated + custom).
   objectChoices?: string[]
+  // Framed vs polaroid composition for the person photos.
+  photoStyle?: HonorMissPhotoStyle
 }
+
+const VALID_PHOTO_STYLES: HonorMissPhotoStyle[] = [
+  'both_framed_first',
+  'both_polaroid_first',
+  'framed_only',
+  'polaroid_only',
+]
 
 function parseItems(raw: string): MemoryItem[] | null {
   let jsonStr = raw.trim()
@@ -87,6 +99,8 @@ export async function POST(request: NextRequest) {
     const objectChoices = Array.isArray(body.objectChoices)
       ? body.objectChoices.filter((o) => typeof o === 'string' && o.trim()).map((o) => o.trim())
       : []
+    const photoStyle: HonorMissPhotoStyle =
+      body.photoStyle && VALID_PHOTO_STYLES.includes(body.photoStyle) ? body.photoStyle : DEFAULT_PHOTO_STYLE
     const perspective: HonorMissPerspective = body.perspective === 'third_person' ? 'third_person' : 'first_person'
     const subjectName = (body.subjectName || '').trim()
     const subjectMasterPhotoUrl = (body.subjectMasterPhotoUrl || '').trim()
@@ -152,6 +166,7 @@ export async function POST(request: NextRequest) {
       perspective,
       subjectName: subjectName || null,
       objectPool: objectChoices,
+      photoStyle,
     })
 
     const llmResponse = await anthropic.messages.create({
@@ -173,16 +188,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const memoryItems = items.slice(0, slideCount)
-
     // The intro anchor is a style replica (not a real framed photo), so guarantee
-    // at least one genuine framed_photo among the memory slides. Prefer promoting a
-    // polaroid (also a person-centered shot); otherwise promote the first item.
-    if (memoryItems.length > 0 && !memoryItems.some((it) => it.visual_type === 'framed_photo')) {
-      const polaroidIdx = memoryItems.findIndex((it) => it.visual_type === 'polaroid')
-      const promoteIdx = polaroidIdx >= 0 ? polaroidIdx : 0
-      memoryItems[promoteIdx] = { ...memoryItems[promoteIdx], visual_type: 'framed_photo' }
-    }
+    // the requested person-photo composition among the MEMORY slides only. This
+    // does not touch slide 1 (the intro/anchor), which always uses the S3 reference.
+    const memoryItems = enforcePhotoStyle(items.slice(0, slideCount), photoStyle)
 
     // ─── STEP 2: Build slide plan (intro + memories + closer) ───────────────
     const introCaption = buildIntroCaption(mode, slideCount, relation)
@@ -340,6 +349,7 @@ export async function GET() {
       subjectName: 'optional subject name for third-person tributes (e.g. "Dad")',
       subjectMasterPhotoUrl: 'required for third_person — S3 URL of the subject reference photo',
       objectChoices: 'optional string[] — object pool for object_only slides; when set, object slides only use these',
+      photoStyle: `optional — one of: ${VALID_PHOTO_STYLES.join(', ')} (default ${DEFAULT_PHOTO_STYLE})`,
     },
   })
 }

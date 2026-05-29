@@ -160,6 +160,70 @@ export function buildFramedPhotoCaption(relation: string, seed: number): string 
 
 export type HonorMissPerspective = 'first_person' | 'third_person'
 
+// Controls the person-photo composition of the memory slides:
+//   both_framed_first   — guarantee ≥1 framed AND ≥1 polaroid; guaranteed slot is framed
+//   both_polaroid_first — guarantee ≥1 framed AND ≥1 polaroid; guaranteed slot is polaroid
+//   framed_only         — all person photos are framed (never polaroid)
+//   polaroid_only       — all person photos are polaroid (never framed)
+export type HonorMissPhotoStyle =
+  | 'both_framed_first'
+  | 'both_polaroid_first'
+  | 'framed_only'
+  | 'polaroid_only'
+
+export const DEFAULT_PHOTO_STYLE: HonorMissPhotoStyle = 'both_framed_first'
+
+// Deterministically rewrites the memory items' visual_type so the requested
+// person-photo composition is guaranteed. NEVER touches the intro/anchor slide
+// (slide 1) — this only operates on the LLM memory items.
+//
+// "Person photos" are framed_photo + polaroid. object_only / symbol items are left
+// alone unless a conversion is needed to satisfy the guarantee (rare fallback).
+export function enforcePhotoStyle(items: MemoryItem[], style: HonorMissPhotoStyle): MemoryItem[] {
+  if (items.length === 0) return items
+  const out = items.map((it) => ({ ...it }))
+  const isPerson = (t: VisualType) => t === 'framed_photo' || t === 'polaroid'
+
+  // Ensures at least one item has the target type; prefers converting an existing
+  // person slide (not at `avoidIdx`), otherwise promotes the first eligible item.
+  // Returns the index that now holds the target type.
+  const ensureAtLeastOne = (target: VisualType, avoidIdx = -1): number => {
+    const existing = out.findIndex((it, i) => i !== avoidIdx && it.visual_type === target)
+    if (existing >= 0) return existing
+    const personIdx = out.findIndex((it, i) => i !== avoidIdx && isPerson(it.visual_type) && it.visual_type !== target)
+    const fallbackIdx = out.findIndex((_, i) => i !== avoidIdx)
+    const idx = personIdx >= 0 ? personIdx : fallbackIdx
+    if (idx >= 0) out[idx] = { ...out[idx], visual_type: target }
+    return idx
+  }
+
+  switch (style) {
+    case 'framed_only':
+      out.forEach((it, i) => {
+        if (isPerson(it.visual_type)) out[i] = { ...it, visual_type: 'framed_photo' }
+      })
+      ensureAtLeastOne('framed_photo')
+      break
+    case 'polaroid_only':
+      out.forEach((it, i) => {
+        if (isPerson(it.visual_type)) out[i] = { ...it, visual_type: 'polaroid' }
+      })
+      ensureAtLeastOne('polaroid')
+      break
+    case 'both_polaroid_first':
+    case 'both_framed_first':
+    default: {
+      const first: VisualType = style === 'both_polaroid_first' ? 'polaroid' : 'framed_photo'
+      const second: VisualType = first === 'framed_photo' ? 'polaroid' : 'framed_photo'
+      const firstIdx = ensureAtLeastOne(first)
+      ensureAtLeastOne(second, firstIdx)
+      break
+    }
+  }
+
+  return out
+}
+
 export function buildItemsPrompt(params: {
   mode: HonorMissMode
   relation: string
@@ -174,8 +238,11 @@ export function buildItemsPrompt(params: {
   // Optional admin-approved pool of objects for object_only slides. When provided,
   // every object_only subject must be drawn from this list (kept differentiated).
   objectPool?: string[]
+  // Controls the framed vs polaroid composition of the person photos.
+  photoStyle?: HonorMissPhotoStyle
 }): string {
-  const { mode, relation, count, anchors, lovedOneName, lovedOneDetails, perspective, subjectName, objectPool } = params
+  const { mode, relation, count, anchors, lovedOneName, lovedOneDetails, perspective, subjectName, objectPool, photoStyle } =
+    params
   const subject = (subjectName || '').trim()
   const isThirdPerson = perspective === 'third_person' && subject.length > 0
 
@@ -201,6 +268,20 @@ export function buildItemsPrompt(params: {
 
   const nameBlock = lovedOneName ? `\nThe loved one's name is ${lovedOneName}.` : ''
   const detailBlock = lovedOneDetails ? `\nBackground on them: ${lovedOneDetails}` : ''
+
+  const photoStyleInstruction = (() => {
+    switch (photoStyle) {
+      case 'framed_only':
+        return 'For every person photo use ONLY "framed_photo" (never "polaroid"). At least ONE item MUST be "framed_photo".'
+      case 'polaroid_only':
+        return 'For every person photo use ONLY "polaroid" (never "framed_photo"). At least ONE item MUST be "polaroid".'
+      case 'both_polaroid_first':
+        return 'You MUST include at least ONE "polaroid" AND at least ONE "framed_photo" — both types must appear among the items. Mix them.'
+      case 'both_framed_first':
+      default:
+        return 'You MUST include at least ONE "framed_photo" AND at least ONE "polaroid" — both types must appear among the items. Mix them.'
+    }
+  })()
 
   const objects = (objectPool || []).map((o) => o.trim()).filter(Boolean)
   const objectPoolBlock =
@@ -242,7 +323,7 @@ For EACH item also classify the best visual:
 - "object_only": a specific physical object/scene with no person — either an object of theirs the narrator KEPT, or an object tied to a RITUAL the narrator still does in their honor (mix both flavors across the slideshow)
 - "symbol": ONLY if the item truly cannot be anchored to a person or object visually
 
-IMPORTANT: Across the ${count} items, include a MIX of visual types, and at least ONE item MUST be "framed_photo" (a framed photo of the person doing something).
+IMPORTANT: Across the ${count} items, include a MIX of visual types. ${photoStyleInstruction}
 ${objectPoolBlock}
 Also provide "image_subject": a short, concrete visual description for an image generator.
 - For framed_photo / polaroid: describe what the person is doing (e.g. "reading a newspaper at a kitchen table, morning light").
