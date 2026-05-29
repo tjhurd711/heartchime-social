@@ -204,6 +204,8 @@ For EACH item also classify the best visual:
 - "object_only": a specific physical object/scene with no person — either an object of theirs the narrator KEPT, or an object tied to a RITUAL the narrator still does in their honor (mix both flavors across the slideshow)
 - "symbol": ONLY if the item truly cannot be anchored to a person or object visually
 
+IMPORTANT: Across the ${count} items, include a MIX of visual types, and at least ONE item MUST be "framed_photo" (a framed photo of the person doing something).
+
 Also provide "image_subject": a short, concrete visual description for an image generator.
 - For framed_photo / polaroid: describe what the person is doing (e.g. "reading a newspaper at a kitchen table, morning light").
 - For object_only: describe ONLY the object/scene concretely with no person in frame — even for RITUAL items (e.g. for "I still grab a Coca-Cola in his honor" the image_subject is just "a cold glass Coca-Cola bottle on a kitchen counter, condensation on the glass").

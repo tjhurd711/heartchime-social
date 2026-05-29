@@ -169,6 +169,15 @@ export async function POST(request: NextRequest) {
 
     const memoryItems = items.slice(0, slideCount)
 
+    // The intro anchor is a style replica (not a real framed photo), so guarantee
+    // at least one genuine framed_photo among the memory slides. Prefer promoting a
+    // polaroid (also a person-centered shot); otherwise promote the first item.
+    if (memoryItems.length > 0 && !memoryItems.some((it) => it.visual_type === 'framed_photo')) {
+      const polaroidIdx = memoryItems.findIndex((it) => it.visual_type === 'polaroid')
+      const promoteIdx = polaroidIdx >= 0 ? polaroidIdx : 0
+      memoryItems[promoteIdx] = { ...memoryItems[promoteIdx], visual_type: 'framed_photo' }
+    }
+
     // ─── STEP 2: Build slide plan (intro + memories + closer) ───────────────
     const introCaption = buildIntroCaption(mode, slideCount, relation)
     const closerCaption = pickCloserCaption(jobId.charCodeAt(0) + slideCount)
