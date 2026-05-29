@@ -1,6 +1,6 @@
 # Deploy with ./deploy.sh (zips this dir + shared module + bundled fonts and
 # runs `aws lambda update-function-code` against the poem-mix function).
-import json, os, subprocess, boto3
+import json, os, struct, subprocess, boto3
 from social_video_library import insert_social_video_library_row
 
 s3 = boto3.client('s3')
@@ -8,41 +8,83 @@ FFMPEG = '/opt/bin/ffmpeg'
 DEFAULT_BUCKET = 'heartbeat-photos-prod'
 XFADE = 0.7  # seconds of crossfade overlap
 
-# Caption fonts are bundled into the deploy package (see deploy.sh) so they land
-# at /var/task. The Lambda runtime has no system fonts/fontconfig, so libass
-# silently renders captionless video when the font is missing -- hence the
-# hard validation at cold start below.
-FONTS_DIR = '/var/task'
+# Caption fonts are bundled under a dedicated fonts/ dir (see deploy.sh) so they
+# land at /var/task/fonts. Keeping them in their own directory stops libass from
+# trying to parse the package's .py files as fonts. The Lambda runtime has no
+# system fonts/fontconfig, so libass silently renders captionless video when the
+# font is missing or its family name doesn't match -- hence the hard validation
+# and the runtime family-name lookup below.
+FONTS_DIR = '/var/task/fonts'
 PRIMARY_FONT_PATH = os.path.join(FONTS_DIR, 'CormorantGaramond-Regular.ttf')
-PRIMARY_FONT_NAME = 'Cormorant Garamond'
 FALLBACK_FONT_PATH = os.path.join(FONTS_DIR, 'EBGaramond-Regular.ttf')
-FALLBACK_FONT_NAME = 'EB Garamond'
 
 # sfnt magic numbers identifying a valid TrueType/OpenType font.
 _SFNT_MAGIC = (b'\x00\x01\x00\x00', b'true', b'ttcf', b'OTTO')
 
 
-def _is_valid_ttf(path):
+def _ttf_family_name(path):
+    """Return the font's family name (sfnt 'name' record id 1, preferring the
+    Windows platform), which is exactly what libass indexes from fontsdir. The
+    bundled Cormorant face reports 'Cormorant Garamond Light' here, not the
+    typographic family 'Cormorant Garamond', and the layer's libass only matches
+    id 1 -- so using this value is what makes captions actually render. Returns
+    '' when the file is missing or not a valid sfnt font."""
     try:
         with open(path, 'rb') as handle:
-            return handle.read(4) in _SFNT_MAGIC
+            data = handle.read()
     except OSError:
-        return False
+        return ''
+    if data[:4] not in _SFNT_MAGIC:
+        return ''
+    try:
+        num_tables = struct.unpack('>H', data[4:6])[0]
+        name_off = None
+        off = 12
+        for _ in range(num_tables):
+            if data[off:off + 4] == b'name':
+                name_off = struct.unpack('>I', data[off + 8:off + 12])[0]
+                break
+            off += 16
+        if name_off is None:
+            return ''
+        count, str_off = struct.unpack('>HH', data[name_off + 2:name_off + 6])
+        base = name_off + str_off
+        by_platform = {}
+        for i in range(count):
+            rec = data[name_off + 6 + i * 12:name_off + 6 + i * 12 + 12]
+            pid, _eid, _lid, nid, ln, o = struct.unpack('>HHHHHH', rec)
+            if nid != 1:
+                continue
+            raw = data[base + o:base + o + ln]
+            try:
+                text = raw.decode('utf-16-be') if pid in (0, 3) else raw.decode('latin-1')
+            except Exception:
+                continue
+            by_platform.setdefault(pid, text.strip())
+        for pid in (3, 0, 1):  # prefer Windows, then Unicode, then Mac
+            if by_platform.get(pid):
+                return by_platform[pid]
+        return next(iter(by_platform.values()), '')
+    except Exception:
+        return ''
 
 
 def _resolve_caption_font():
     """Resolve the caption font at cold start. Prefer Cormorant Garamond; fall
-    back to the bundled serif; hard-fail if neither is a valid TTF so the Lambda
-    errors loudly on first invocation instead of silently producing captionless
-    video."""
-    if _is_valid_ttf(PRIMARY_FONT_PATH):
-        return PRIMARY_FONT_NAME, False
-    if _is_valid_ttf(FALLBACK_FONT_PATH):
+    back to the bundled serif; hard-fail if neither is a usable font so the
+    Lambda errors loudly on first invocation instead of silently producing
+    captionless video. The returned name is the family embedded in the chosen
+    TTF so the ASS FontName matches what libass indexes."""
+    primary = _ttf_family_name(PRIMARY_FONT_PATH)
+    if primary:
+        return primary, False
+    fallback = _ttf_family_name(FALLBACK_FONT_PATH)
+    if fallback:
         print(
-            f'CAPTION_FONT_FALLBACK rendering with {FALLBACK_FONT_NAME} '
+            f'CAPTION_FONT_FALLBACK rendering with {fallback} '
             f'({PRIMARY_FONT_PATH} missing or invalid)'
         )
-        return FALLBACK_FONT_NAME, True
+        return fallback, True
     raise RuntimeError(
         'CAPTION_FONT_MISSING no usable caption font in package: neither '
         f'{PRIMARY_FONT_PATH} nor {FALLBACK_FONT_PATH} is a valid TTF'
@@ -135,7 +177,10 @@ def _write_ass_captions(path, line_timings):
     if not line_timings:
         return False
 
-    header = """[Script Info]
+    # Fontname is the family embedded in the bundled TTF (resolved at cold
+    # start) so libass matches it; size/colours/outline/alignment/margins are
+    # unchanged.
+    header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: 720
 PlayResY: 1280
@@ -143,7 +188,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Caption,Cormorant Garamond,54,&H00FFFFFF,&H000000FF,&H80000000,&H64000000,0,0,0,0,100,100,0,0,1,2,1,5,30,30,45,1
+Style: Caption,{CAPTION_FONT_NAME},54,&H00FFFFFF,&H000000FF,&H80000000,&H64000000,0,0,0,0,100,100,0,0,1,2,1,5,30,30,45,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -170,12 +215,14 @@ def _build_caption_filter(captions_path, line_timings):
     if not line_timings:
         return '[v]null[vout]'
     escaped_path = captions_path.replace('\\', '\\\\').replace(':', '\\:')
-    subtitles = f"subtitles={escaped_path}:fontsdir={FONTS_DIR}"
-    # When the primary font is unavailable, force libass onto the bundled serif
-    # without touching the ASS style (styling/position/fade stay identical).
-    if CAPTION_FONT_IS_FALLBACK:
-        subtitles += f":force_style='FontName={FALLBACK_FONT_NAME}'"
-    return f"[v]{subtitles}[vout]"
+    # fontsdir points at the dedicated fonts/ dir (no .py files to misparse), and
+    # force_style pins the family to the exact name embedded in the chosen TTF so
+    # libass can always match it. This only sets FontName -- styling/position/
+    # fade are untouched.
+    return (
+        f"[v]subtitles={escaped_path}:fontsdir={FONTS_DIR}"
+        f":force_style='FontName={CAPTION_FONT_NAME}'[vout]"
+    )
 
 def _normalize_clip_durations(raw, count):
     """Per-clip durations parallel to clipKeys. Falls back to 8s when the
