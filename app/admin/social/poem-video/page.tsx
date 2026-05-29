@@ -31,6 +31,7 @@ interface GeneratePoemResponse {
 
 interface GenerateVoiceResponse {
   voiceKey?: string
+  voiceTimingsKey?: string
   voiceDuration?: number
   voiceUrl?: string
   error?: string
@@ -111,6 +112,7 @@ export default function PoemVideoPage() {
 
   const [parentJobId, setParentJobId] = useState<string | null>(null)
   const [voiceKey, setVoiceKey] = useState<string | null>(null)
+  const [voiceTimingsKey, setVoiceTimingsKey] = useState<string | null>(null)
   const [voiceDuration, setVoiceDuration] = useState<number | null>(null)
   const [voiceUrl, setVoiceUrl] = useState<string | null>(null)
   const [isGeneratingVoice, setIsGeneratingVoice] = useState(false)
@@ -393,6 +395,7 @@ export default function PoemVideoPage() {
       }
       setPoem(poemText)
       setVoiceKey(null)
+      setVoiceTimingsKey(null)
       setVoiceDuration(null)
       setVoiceUrl(null)
       setStatus('idle')
@@ -416,8 +419,10 @@ export default function PoemVideoPage() {
       return
     }
 
-    const resolvedParentJobId = parentJobId || crypto.randomUUID()
-    if (!parentJobId) setParentJobId(resolvedParentJobId)
+    // Always store this voiceover under a fresh prefix so regenerating voice
+    // never overwrites a previous render's assets.
+    const voiceJobId = crypto.randomUUID()
+    setParentJobId(voiceJobId)
 
     setIsGeneratingVoice(true)
     setErrorMessage(null)
@@ -428,7 +433,7 @@ export default function PoemVideoPage() {
         body: JSON.stringify({
           poem: poemText,
           voiceId: selectedVoiceId,
-          jobId: resolvedParentJobId,
+          jobId: voiceJobId,
         }),
       })
       const data = (await response.json()) as GenerateVoiceResponse
@@ -439,6 +444,7 @@ export default function PoemVideoPage() {
         throw new Error('Voice route did not return the expected payload.')
       }
       setVoiceKey(data.voiceKey)
+      setVoiceTimingsKey(data.voiceTimingsKey || null)
       setVoiceDuration(Number(data.voiceDuration))
       setVoiceUrl(data.voiceUrl)
       setStatus('idle')
@@ -452,7 +458,7 @@ export default function PoemVideoPage() {
   }
 
   const handleGenerateVideo = async () => {
-    if (!voiceKey || !voiceDuration || !parentJobId) {
+    if (!voiceKey || !voiceDuration) {
       setErrorMessage('Generate the voiceover first.')
       return
     }
@@ -480,6 +486,10 @@ export default function PoemVideoPage() {
           ? clipPrompts.slice(0, generatedClipCount).map((item) => item.trim())
           : single
 
+    // Mint a brand-new parentJobId for every render so a new render never
+    // short-circuits on a prior render's final.mp4 / mix-fired.json sentinel.
+    const renderJobId = crypto.randomUUID()
+
     setErrorMessage(null)
     setIsGeneratingVideo(true)
     setStatus('generating')
@@ -488,17 +498,20 @@ export default function PoemVideoPage() {
     setVideoUrl(null)
     setVideoKey(null)
     setFailedChildren([])
+    setParentJobId(renderJobId)
 
     try {
       const response = await fetch('/api/poem-video/generate-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          parentJobId,
+          parentJobId: renderJobId,
           voiceKey,
+          voiceTimingsKey,
           voiceDuration,
           keepAmbient,
           prompts: resolvedPrompts,
+          poemText: poem.trim(),
           reusedClips: reusedClipsPayload,
         }),
       })

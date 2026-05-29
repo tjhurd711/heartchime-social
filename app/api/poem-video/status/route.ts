@@ -22,11 +22,13 @@ export const maxDuration = 60
 interface PoemManifest {
   parentJobId: string
   voiceKey: string
+  voiceTimingsKey?: string
   voiceDuration: number
   keepAmbient: boolean
   clipCount: number
   childJobIds: string[]
   prompts: string[]
+  poemText?: string
   clips?: ClipPlanEntry[]
   startedAt: string
 }
@@ -172,6 +174,12 @@ export async function GET(request: NextRequest) {
                 clipKeys: orderedClipKeys,
                 ...(orderedClipDurations ? { clipDurations: orderedClipDurations } : {}),
                 voiceKey: manifest.voiceKey,
+                // Pass timings + poem text explicitly so baked-in captions never
+                // depend on whether clips were freshly generated or reused. The
+                // lambda still derives the timings key from the voice key when
+                // these are absent (legacy manifests).
+                ...(manifest.voiceTimingsKey ? { voiceTimingsKey: manifest.voiceTimingsKey } : {}),
+                ...(manifest.poemText ? { poemText: manifest.poemText } : {}),
                 voiceDuration: manifest.voiceDuration,
                 keepAmbient: manifest.keepAmbient,
                 bucket: POEM_BUCKET,

@@ -1,4 +1,4 @@
-import { GetObjectCommand } from '@aws-sdk/client-s3'
+import { CopyObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 import { LambdaClient } from '@aws-sdk/client-lambda'
 import { createClient } from '@supabase/supabase-js'
 import { parseBuffer } from 'music-metadata'
@@ -28,22 +28,41 @@ interface ReusedClipRequest {
 interface GeneratePoemVideoRequest {
   parentJobId?: string
   voiceKey?: string
+  voiceTimingsKey?: string
   voiceDuration?: number
   keepAmbient?: boolean
   prompts?: string[] | string
+  poemText?: string
   reusedClips?: ReusedClipRequest[]
 }
 
 interface PoemManifest {
   parentJobId: string
   voiceKey: string
+  voiceTimingsKey: string
   voiceDuration: number
   keepAmbient: boolean
   clipCount: number
   childJobIds: string[]
   prompts: string[]
+  poemText: string
   clips: ClipPlanEntry[]
   startedAt: string
+}
+
+const VOICE_SUFFIX = '/voice.mp3'
+const TIMINGS_SUFFIX = '/timings.json'
+
+// Captions need the per-line timings produced alongside the voiceover. Prefer
+// the key the caller hands us, otherwise derive it from the voice key so the
+// captions never silently depend on the implicit lambda-side fallback.
+function resolveVoiceTimingsKey(voiceKey: string, provided?: string): string {
+  const trimmed = provided?.trim()
+  if (trimmed) return trimmed
+  if (voiceKey.endsWith(VOICE_SUFFIX)) {
+    return `${voiceKey.slice(0, -VOICE_SUFFIX.length)}${TIMINGS_SUFFIX}`
+  }
+  return ''
 }
 
 const POEM_BUCKET = 'heartbeat-photos-prod'
@@ -147,18 +166,64 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => ({}))) as GeneratePoemVideoRequest
     const parentJobId = body.parentJobId?.trim() || ''
-    const voiceKey = body.voiceKey?.trim() || ''
+    const sourceVoiceKey = body.voiceKey?.trim() || ''
+    const sourceVoiceTimingsKey = resolveVoiceTimingsKey(sourceVoiceKey, body.voiceTimingsKey)
+    const poemText = body.poemText?.trim() || ''
     const voiceDuration = Number(body.voiceDuration)
     const keepAmbient = Boolean(body.keepAmbient)
 
     if (!parentJobId) {
       return NextResponse.json({ error: 'parentJobId is required' }, { status: 400 })
     }
-    if (!voiceKey) {
+    if (!sourceVoiceKey) {
       return NextResponse.json({ error: 'voiceKey is required' }, { status: 400 })
     }
     if (!Number.isFinite(voiceDuration) || voiceDuration <= 0) {
       return NextResponse.json({ error: 'voiceDuration must be a positive number' }, { status: 400 })
+    }
+
+    // Every render gets a fresh parentJobId, so stage the voiceover (and its
+    // caption timings) under this render's prefix. That keeps manifest, voice,
+    // timings, and final.mp4 all under poem-video/{parentJobId}/ and prevents a
+    // new render from reusing a prior render's final.mp4 / sentinel.
+    const voiceKey = `poem-video/${parentJobId}/voice.mp3`
+    let voiceTimingsKey = sourceVoiceTimingsKey
+      ? `poem-video/${parentJobId}/timings.json`
+      : ''
+
+    if (sourceVoiceKey !== voiceKey) {
+      try {
+        await s3Client.send(
+          new CopyObjectCommand({
+            Bucket: POEM_BUCKET,
+            CopySource: `${POEM_BUCKET}/${sourceVoiceKey}`,
+            Key: voiceKey,
+          })
+        )
+      } catch (error) {
+        return NextResponse.json(
+          {
+            error: 'Failed to stage the voiceover for this render.',
+            details: error instanceof Error ? error.message : 'Unknown error',
+          },
+          { status: 400 }
+        )
+      }
+    }
+
+    if (sourceVoiceTimingsKey && sourceVoiceTimingsKey !== voiceTimingsKey) {
+      try {
+        await s3Client.send(
+          new CopyObjectCommand({
+            Bucket: POEM_BUCKET,
+            CopySource: `${POEM_BUCKET}/${sourceVoiceTimingsKey}`,
+            Key: voiceTimingsKey,
+          })
+        )
+      } catch {
+        // Timings are best-effort; the poemText fallback still produces captions.
+        voiceTimingsKey = ''
+      }
     }
 
     const clipCount = Math.max(1, Math.min(MAX_CLIP_COUNT, Math.ceil(voiceDuration / 8)))
@@ -248,11 +313,13 @@ export async function POST(request: NextRequest) {
     const manifest: PoemManifest = {
       parentJobId,
       voiceKey,
+      voiceTimingsKey,
       voiceDuration,
       keepAmbient,
       clipCount: clipPlanToOrderedKeys(clips).length,
       childJobIds,
       prompts: promptsForClips,
+      poemText,
       clips,
       startedAt: new Date().toISOString(),
     }

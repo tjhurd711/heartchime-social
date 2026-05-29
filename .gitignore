@@ -24,6 +24,9 @@
 .DS_Store
 *.pem
 
+# scratch / temporary test artifacts
+.tmp_*
+
 # debug
 npm-debug.log*
 yarn-debug.log*

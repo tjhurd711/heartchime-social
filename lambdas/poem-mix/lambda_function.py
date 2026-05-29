@@ -218,9 +218,14 @@ def handler(event, context):
         a_filter = f"[{n}:a]anull[a]"
 
     line_timings = _read_line_timings(in_bucket, timings_key)
+    timings_source = 'timings-file'
     if not line_timings:
         line_timings = _fallback_line_timings(poem_text, voice_dur)
-    print(f'CAPTION_LINES jobId={job_id} count={len(line_timings)} timingsKey={timings_key}')
+        timings_source = 'poem-fallback' if line_timings else 'none'
+    print(
+        f'CAPTION_LINES jobId={job_id} count={len(line_timings)} '
+        f'timingsKey={timings_key} bucket={in_bucket} source={timings_source}'
+    )
     captions_path = f"{work}/captions.ass"
     captions_ready = _write_ass_captions(captions_path, line_timings)
     captions_filter = _build_caption_filter(captions_path, line_timings if captions_ready else [])
