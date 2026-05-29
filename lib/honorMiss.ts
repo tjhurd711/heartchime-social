@@ -158,10 +158,14 @@ HARD RULE: Each item MUST contain at least one concrete noun — a physical obje
 TONE: Warm, specific, and grounded — the way a real person describes a real loss. Small, ordinary, sensory details that feel true.
 
 EXAMPLES OF GOOD ITEMS:
-- "Glass Coca-Cola bottles — the old ones he kept in the garage fridge"
 - "His Stetson hat resting on the truck dashboard"
 - "Reading the sports page out loud at the breakfast table"
 - "The smell of Old Spice and sawdust in the workshop"
+
+OBJECT ITEMS come in TWO flavors — use a MIX of both across the slideshow:
+- KEPT (something of theirs the narrator still has / holds onto): "His red Folgers coffee can full of loose change, still on the kitchen counter" / "Glass Coca-Cola bottles — the old ones he kept in the garage fridge"
+- RITUAL (an object tied to something the narrator still DOES in their honor): "I still grab a glass-bottle Coca-Cola now and then — those were his favorite" / "Every Sunday I make his pancakes on the old cast-iron griddle"
+Lean toward RITUAL for "honor" framing and KEPT for "miss" framing, but either works for either.
 
 EXAMPLES OF BAD ITEMS (never do this):
 - "His warm hugs"
@@ -172,12 +176,12 @@ EXAMPLES OF BAD ITEMS (never do this):
 For EACH item also classify the best visual:
 - "framed_photo": a framed photo of the person doing the memory (use when the memory centers on the person doing something)
 - "polaroid": a polaroid snapshot of the person (casual candid memories)
-- "object_only": a specific physical object/scene with no person (use when the memory is anchored to a clear object, food, or place)
+- "object_only": a specific physical object/scene with no person — either an object of theirs the narrator KEPT, or an object tied to a RITUAL the narrator still does in their honor (mix both flavors across the slideshow)
 - "symbol": ONLY if the item truly cannot be anchored to a person or object visually
 
 Also provide "image_subject": a short, concrete visual description for an image generator.
 - For framed_photo / polaroid: describe what the person is doing (e.g. "reading a newspaper at a kitchen table, morning light").
-- For object_only: describe the object/scene concretely (e.g. "a cold glass Coca-Cola bottle on a kitchen counter, condensation on the glass").
+- For object_only: describe ONLY the object/scene concretely with no person in frame — even for RITUAL items (e.g. for "I still grab a Coca-Cola in his honor" the image_subject is just "a cold glass Coca-Cola bottle on a kitchen counter, condensation on the glass").
 - For symbol: leave as an empty string.
 
 RESPOND WITH ONLY VALID JSON — an array, no markdown, no commentary:
@@ -216,7 +220,7 @@ export function buildMemoryImagePrompt(item: MemoryItem, seed: number): { prompt
     }
     case 'object_only': {
       return {
-        prompt: `${subject}. Photorealistic, warm domestic lighting, shallow depth of field, no people in frame. Vertical 9:16 aspect ratio.`,
+        prompt: `${subject}. Shot like a casual photo someone snapped on their phone — natural, slightly imperfect framing with the object seen at a normal distance within its everyday surroundings, NOT a tight studio product close-up. Photorealistic, warm domestic lighting, no people in frame. Vertical 9:16 aspect ratio.`,
         usesReference: false,
       }
     }

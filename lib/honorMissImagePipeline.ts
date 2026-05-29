@@ -74,17 +74,20 @@ export async function generateHonorMissSlideImage(args: GenerateArgs): Promise<S
   const { jobId, slide, referenceUrl, subjectReferenceUrl, blurLevel, keySuffix } = args
 
   try {
-    // ── Persona/subject anchor (intro) ──────────────────────────────────────
+    // ── Subject anchor (intro) ──────────────────────────────────────────────
+    // Third-person tributes anchor on the chosen subject reference; first-person
+    // anchors on the persona (which is the subject in that mode).
+    const anchorReference = subjectReferenceUrl || referenceUrl
     if (slide.role === 'intro') {
       const finalKey = withSuffix(s3KeyForAnchor(jobId), keySuffix)
       const url = await generateAndUploadPhoto(slide.prompt, {
         key: finalKey,
-        referenceImageUrl: referenceUrl,
+        referenceImageUrl: anchorReference,
         referenceMode: 'identity',
       })
       if (url) return { url, s3Key: finalKey, pipeline: 'gemini-anchor' }
       // Fallback uses the standard slide key so it still renders if the anchor key fails.
-      return geminiSingleCall(slide, referenceUrl, withSuffix(s3KeyForSlide(jobId, slide.order), keySuffix))
+      return geminiSingleCall(slide, anchorReference, withSuffix(s3KeyForSlide(jobId, slide.order), keySuffix))
     }
 
     const finalKey = withSuffix(s3KeyForSlide(jobId, slide.order), keySuffix)
