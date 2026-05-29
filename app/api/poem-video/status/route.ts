@@ -5,6 +5,8 @@ import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { NextRequest, NextResponse } from 'next/server'
 import {
+  ClipPlanEntry,
+  clipPlanToOrderedKeys,
   hasTimedOut,
   invokeWithSentinel,
   objectExists,
@@ -25,6 +27,7 @@ interface PoemManifest {
   clipCount: number
   childJobIds: string[]
   prompts: string[]
+  clips?: ClipPlanEntry[]
   startedAt: string
 }
 
@@ -70,10 +73,35 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ status: 'pending' })
     }
 
-    const childClipKeys = manifest.childJobIds.map(
-      (childJobId) => `scenic-video/${childJobId}/clip-0.mp4`
-    )
-    const childMetadataKeys = manifest.childJobIds.map(
+    // Ordered keys for the final mix come from the clip plan when present
+    // (so reused library clips are included), otherwise fall back to the
+    // legacy all-generated layout.
+    const orderedClipKeys =
+      manifest.clips && manifest.clips.length > 0
+        ? clipPlanToOrderedKeys(manifest.clips)
+        : manifest.childJobIds.map((childJobId) => `scenic-video/${childJobId}/clip-0.mp4`)
+
+    // Per-clip durations aligned with orderedClipKeys so the mixer's crossfade
+    // offsets account for reused clips that may be shorter than 8s. Omitted for
+    // legacy manifests (no clip plan), letting the lambda fall back to 8s.
+    const orderedClipDurations =
+      manifest.clips && manifest.clips.length > 0
+        ? manifest.clips.map((clip) =>
+            typeof clip.durationSeconds === 'number' && clip.durationSeconds > 0
+              ? clip.durationSeconds
+              : 8
+          )
+        : undefined
+
+    // Only freshly generated children need to be polled for completion.
+    const generatedChildJobIds =
+      manifest.clips && manifest.clips.length > 0
+        ? manifest.clips
+            .filter((clip) => clip.type === 'generate' && clip.childJobId)
+            .map((clip) => clip.childJobId as string)
+        : manifest.childJobIds
+
+    const childMetadataKeys = generatedChildJobIds.map(
       (childJobId) => `scenic-video/${childJobId}/metadata.json`
     )
 
@@ -83,7 +111,7 @@ export async function GET(request: NextRequest) {
     const childErrors = await readChildErrorMarkers({
       s3Client,
       bucket: POEM_BUCKET,
-      childJobIds: manifest.childJobIds,
+      childJobIds: generatedChildJobIds,
     })
     if (childErrors.length > 0) {
       return NextResponse.json({
@@ -93,11 +121,11 @@ export async function GET(request: NextRequest) {
       })
     }
     const done = childDone.filter(Boolean).length
-    const total = manifest.clipCount
+    const total = generatedChildJobIds.length
 
     if (done < total) {
       if (hasTimedOut(manifest.startedAt)) {
-        const failedChildren = resolveFailedChildren(manifest.childJobIds, childDone)
+        const failedChildren = resolveFailedChildren(generatedChildJobIds, childDone)
         if (failedChildren.length > 0) {
           return NextResponse.json({
             status: 'failed',
@@ -141,7 +169,8 @@ export async function GET(request: NextRequest) {
             Payload: Buffer.from(
               JSON.stringify({
                 parentJobId,
-                clipKeys: childClipKeys,
+                clipKeys: orderedClipKeys,
+                ...(orderedClipDurations ? { clipDurations: orderedClipDurations } : {}),
                 voiceKey: manifest.voiceKey,
                 voiceDuration: manifest.voiceDuration,
                 keepAmbient: manifest.keepAmbient,

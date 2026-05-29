@@ -138,6 +138,9 @@ export default function ScenicVideoPage() {
   const [isSendingToDevice, setIsSendingToDevice] = useState(false)
   const [sendToDeviceResult, setSendToDeviceResult] = useState<SendToDeviceResult | null>(null)
   const [scenicLibrary, setScenicLibrary] = useState<ScenicLibraryItem[]>([])
+  const [reusedClipKeys, setReusedClipKeys] = useState<string[]>([])
+  const [alsoGenerateNew, setAlsoGenerateNew] = useState(true)
+  const [isLongJob, setIsLongJob] = useState(false)
   const [startedAtMs, setStartedAtMs] = useState<number | null>(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
 
@@ -194,10 +197,9 @@ export default function ScenicVideoPage() {
 
     const poll = async () => {
       try {
-        const url =
-          activeClipCount === 1
-            ? `/api/scenic-video/status?jobId=${encodeURIComponent(jobId)}`
-            : `/api/scenic-video/status-long?parentJobId=${encodeURIComponent(jobId)}`
+        const url = isLongJob
+          ? `/api/scenic-video/status-long?parentJobId=${encodeURIComponent(jobId)}`
+          : `/api/scenic-video/status?jobId=${encodeURIComponent(jobId)}`
         const response = await fetch(url, { cache: 'no-store' })
         const data = (await response.json()) as StatusResponse
         if (!response.ok) {
@@ -223,7 +225,7 @@ export default function ScenicVideoPage() {
           return
         }
 
-        if (activeClipCount > 1) {
+        if (isLongJob) {
           const done = Number.isFinite(data.done) ? Number(data.done) : 0
           const total = Number.isFinite(data.total) ? Number(data.total) : activeClipCount
           setProgressDone(done)
@@ -251,7 +253,7 @@ export default function ScenicVideoPage() {
       cancelled = true
       if (timeoutId) window.clearTimeout(timeoutId)
     }
-  }, [activeClipCount, jobId, status])
+  }, [activeClipCount, isLongJob, jobId, status])
 
   const elapsedDisplay = useMemo(() => {
     const mins = Math.floor(elapsedSeconds / 60)
@@ -259,18 +261,48 @@ export default function ScenicVideoPage() {
     return `${mins}:${String(secs).padStart(2, '0')}`
   }, [elapsedSeconds])
 
+  const reusedClipsPayload = useMemo(
+    () =>
+      reusedClipKeys
+        .map((key) => scenicLibrary.find((item) => item.key === key))
+        .filter((item): item is ScenicLibraryItem => Boolean(item))
+        .map((item) => ({ key: item.key, durationSeconds: Math.max(1, item.durationSeconds) })),
+    [reusedClipKeys, scenicLibrary]
+  )
+
+  const willGenerateNew = reusedClipsPayload.length === 0 || alsoGenerateNew
+  const plannedClipCount = (willGenerateNew ? clipCount : 0) + reusedClipsPayload.length
+
+  const toggleReusedClip = (key: string) => {
+    setReusedClipKeys((current) =>
+      current.includes(key) ? current.filter((item) => item !== key) : [...current, key]
+    )
+  }
+
   const handleGenerate = async () => {
-    if (clipCount === 1 && !prompt.trim()) {
+    const reuseCount = reusedClipsPayload.length
+    const generateNew = reuseCount === 0 || alsoGenerateNew
+
+    if (reuseCount === 0 && !generateNew) {
+      setErrorMessage('Select at least one library clip to reuse, or enable new clip generation.')
+      return
+    }
+    if (generateNew && clipCount === 1 && !prompt.trim()) {
       setErrorMessage('Please enter a scenic prompt before generating.')
       return
     }
-    if (clipCount > 1) {
+    if (generateNew && clipCount > 1) {
       const selectedPrompts = clipPrompts.slice(0, uniqueClipCount).map((item) => item.trim())
       if (selectedPrompts.some((item) => !item)) {
         setErrorMessage('Please provide a scene prompt for each clip before generating.')
         return
       }
     }
+
+    // Any job that involves reused clips or more than one clip must run through
+    // the multi-clip (stitch) pipeline so the clips get assembled into one video.
+    const useLong = reuseCount > 0 || clipCount > 1
+    const totalClips = (generateNew ? clipCount : 0) + reuseCount
 
     setErrorMessage(null)
     setStatus('generating')
@@ -279,26 +311,37 @@ export default function ScenicVideoPage() {
     setJobId(null)
     setSendToDeviceResult(null)
     setFailedChildren([])
-    setActiveClipCount(clipCount)
+    setActiveClipCount(Math.max(1, totalClips) as ScenicClipCount)
+    setIsLongJob(useLong)
     setProgressDone(0)
-    setProgressTotal(clipCount)
+    setProgressTotal(generateNew ? clipCount : 0)
     setStartedAtMs(Date.now())
     setElapsedSeconds(0)
 
     try {
-      const endpoint = clipCount === 1 ? '/api/scenic-video/generate' : '/api/scenic-video/generate-long'
-      const payload =
-        clipCount === 1
-          ? {
-              prompt: prompt.trim(),
-              durationSeconds,
-              generateAudio,
-            }
-          : {
-              prompt: clipPrompts[0]?.trim() || prompt.trim(),
-              prompts: clipPrompts.slice(0, uniqueClipCount).map((item) => item.trim()),
-              clipCount,
-            }
+      const endpoint = useLong ? '/api/scenic-video/generate-long' : '/api/scenic-video/generate'
+      let payload: Record<string, unknown>
+      if (!useLong) {
+        payload = {
+          prompt: prompt.trim(),
+          durationSeconds,
+          generateAudio,
+        }
+      } else {
+        payload = {
+          includeGenerated: generateNew,
+          reusedClips: reusedClipsPayload,
+        }
+        if (generateNew) {
+          payload.prompt = clipPrompts[0]?.trim() || prompt.trim()
+          payload.prompts =
+            clipCount > 1
+              ? clipPrompts.slice(0, uniqueClipCount).map((item) => item.trim())
+              : [prompt.trim()]
+          payload.clipCount = clipCount
+        }
+      }
+
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -308,7 +351,7 @@ export default function ScenicVideoPage() {
       if (!response.ok) {
         throw new Error(data.details || data.error || 'Failed to start scenic video generation.')
       }
-      const returnedJobId = clipCount === 1 ? data.jobId : data.parentJobId
+      const returnedJobId = useLong ? data.parentJobId : data.jobId
       if (!returnedJobId) {
         throw new Error('Generate route did not return a job identifier.')
       }
@@ -704,13 +747,52 @@ export default function ScenicVideoPage() {
               </span>
             </label>
 
+            {reusedClipsPayload.length > 0 ? (
+              <div className="mt-5 rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className={`${headingFont.className} text-lg text-[#f8f1df]`}>
+                    Reusing {reusedClipsPayload.length} library clip{reusedClipsPayload.length > 1 ? 's' : ''}
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setReusedClipKeys([])}
+                    className="rounded-md border border-[#d4af37]/30 px-2.5 py-1 text-xs text-[#f8f1df]/80 hover:bg-[#1a2642]"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <label className="mt-3 flex items-start gap-3 text-sm text-[#f8f1df]/85">
+                  <input
+                    type="checkbox"
+                    checked={alsoGenerateNew}
+                    onChange={(event) => setAlsoGenerateNew(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-[#d4af37]/50 bg-[#0b1120] text-[#d4af37] focus:ring-[#d4af37]/60"
+                  />
+                  <span>
+                    Also generate {clipCount === 1 ? 'a new clip' : `${clipCount} new clips`} from the prompt(s) above
+                    <span className="mt-1 block text-xs text-[#f8f1df]/65">
+                      Uncheck to build the video only from reused clips (no new Veo generation).
+                    </span>
+                  </span>
+                </label>
+                <p className="mt-3 text-xs text-[#f8f1df]/70">
+                  Final video: {plannedClipCount} clip{plannedClipCount > 1 ? 's' : ''}
+                  {willGenerateNew ? ` (${clipCount} new, then ${reusedClipsPayload.length} reused)` : ' (reused only)'}
+                </p>
+              </div>
+            ) : null}
+
             <button
               type="button"
               onClick={() => void handleGenerate()}
               disabled={status === 'generating' || status === 'stitching'}
               className="mt-6 rounded-lg bg-[#d4af37] px-5 py-2.5 text-sm font-semibold text-[#0b1120] transition hover:bg-[#e2c462] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {status === 'generating' || status === 'stitching' ? 'Generating clip...' : 'Generate clip'}
+              {status === 'generating' || status === 'stitching'
+                ? 'Generating clip...'
+                : reusedClipsPayload.length > 0 && !willGenerateNew
+                  ? 'Assemble reused clips'
+                  : 'Generate clip'}
             </button>
 
             {errorMessage ? <p className="mt-3 text-sm text-red-300">{errorMessage}</p> : null}
@@ -757,11 +839,13 @@ export default function ScenicVideoPage() {
                 <div className="flex items-center gap-3">
                   <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-[#d4af37]/25 border-t-[#d4af37]" />
                   <p className="text-sm text-[#f8f1df]">
-                    {activeClipCount === 1
+                    {!isLongJob
                       ? 'Generating... this usually takes about 1-2 minutes.'
                       : status === 'stitching'
                         ? 'Stitching clips into one final video...'
-                        : `Generating clip ${Math.min(progressDone + 1, progressTotal)}/${progressTotal}...`}
+                        : progressTotal === 0
+                          ? 'Assembling reused clips into one final video...'
+                          : `Generating clip ${Math.min(progressDone + 1, progressTotal)}/${progressTotal}...`}
                   </p>
                 </div>
                 <p className="mt-3 text-xs text-[#f8f1df]/70">Elapsed: {elapsedDisplay}</p>
@@ -865,42 +949,69 @@ export default function ScenicVideoPage() {
                 Shared Video Library
               </h3>
               <p className="mt-1 text-xs text-[#f8f1df]/70">
-                Raw scenic source clips sync here automatically for reuse.
+                Raw scenic source clips sync here automatically. Select clips to reuse them in your next generation
+                instead of generating fresh ones.
               </p>
               {scenicLibrary.length === 0 ? (
                 <p className="mt-3 text-xs text-[#f8f1df]/65">No saved videos yet.</p>
               ) : (
                 <div className="mt-3 space-y-2">
-                  {scenicLibrary.map((item) => (
-                    <div
-                      key={item.id}
-                      className="rounded-lg border border-[#d4af37]/20 bg-[#101a30] p-3"
-                    >
-                      <p className="text-xs text-[#f8f1df]/75">
-                        Saved {new Date(item.savedAtIso).toLocaleString()} • {Math.max(1, item.durationSeconds)}s
-                      </p>
-                      <p className="mt-1 break-all text-[11px] text-[#f8f1df]/60">{item.key}</p>
-                      {item.memoryThought ? (
-                        <p className="mt-1 text-xs text-[#f8f1df]/80">{item.memoryThought}</p>
-                      ) : null}
-                      <div className="mt-2 flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => void handleOpenLibraryItem(item, false)}
-                          className="rounded-md border border-[#d4af37]/35 px-3 py-1.5 text-xs text-[#f8f1df] hover:bg-[#1a2642]"
-                        >
-                          Open
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleOpenLibraryItem(item, true)}
-                          className="rounded-md bg-[#d4af37] px-3 py-1.5 text-xs font-semibold text-[#0b1120] hover:bg-[#e2c462]"
-                        >
-                          Download again
-                        </button>
+                  {scenicLibrary.map((item) => {
+                    const isSelected = reusedClipKeys.includes(item.key)
+                    const selectionIndex = reusedClipKeys.indexOf(item.key)
+                    return (
+                      <div
+                        key={item.id}
+                        className={`rounded-lg border p-3 transition ${
+                          isSelected
+                            ? 'border-emerald-500/60 bg-emerald-500/10'
+                            : 'border-[#d4af37]/20 bg-[#101a30]'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-xs text-[#f8f1df]/75">
+                            Saved {new Date(item.savedAtIso).toLocaleString()} • {Math.max(1, item.durationSeconds)}s
+                          </p>
+                          {isSelected ? (
+                            <span className="shrink-0 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-200">
+                              Reuse #{selectionIndex + 1}
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="mt-1 break-all text-[11px] text-[#f8f1df]/60">{item.key}</p>
+                        {item.memoryThought ? (
+                          <p className="mt-1 text-xs text-[#f8f1df]/80">{item.memoryThought}</p>
+                        ) : null}
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleReusedClip(item.key)}
+                            className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                              isSelected
+                                ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                : 'border border-emerald-500/50 text-emerald-200 hover:bg-emerald-500/10'
+                            }`}
+                          >
+                            {isSelected ? 'Reusing ✓' : 'Reuse clip'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleOpenLibraryItem(item, false)}
+                            className="rounded-md border border-[#d4af37]/35 px-3 py-1.5 text-xs text-[#f8f1df] hover:bg-[#1a2642]"
+                          >
+                            Open
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleOpenLibraryItem(item, true)}
+                            className="rounded-md bg-[#d4af37] px-3 py-1.5 text-xs font-semibold text-[#0b1120] hover:bg-[#e2c462]"
+                          >
+                            Download again
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>

@@ -127,6 +127,81 @@ export function resolveFailedChildren(childJobIds: string[], childDone: boolean[
   return childJobIds.filter((_, index) => !childDone[index])
 }
 
+export type ClipPlanEntryType = 'generate' | 'reuse'
+
+export interface ClipPlanEntry {
+  type: ClipPlanEntryType
+  // For 'generate' entries.
+  childJobId?: string
+  prompt?: string
+  // For 'reuse' entries (existing Shared Video Library clips).
+  key?: string
+  bucket?: string
+  durationSeconds?: number
+}
+
+export interface ReusedClipInput {
+  key: string
+  bucket?: string
+  durationSeconds?: number
+}
+
+// Reused clips reference objects already produced by the social video
+// pipeline. Restrict to the known output prefixes so a generation request
+// can never be used to stitch arbitrary S3 objects into a downloadable video.
+export function isReusableClipKey(key: unknown): key is string {
+  if (typeof key !== 'string') return false
+  const trimmed = key.trim()
+  if (!trimmed.endsWith('.mp4')) return false
+  return trimmed.startsWith('scenic-video/') || trimmed.startsWith('poem-video/')
+}
+
+export function normalizeReusedClips(
+  input: unknown,
+  defaultBucket: string,
+  maxCount: number
+): ReusedClipInput[] | { error: string } {
+  if (input === undefined || input === null) return []
+  if (!Array.isArray(input)) {
+    return { error: 'reusedClips must be an array' }
+  }
+  if (input.length > maxCount) {
+    return { error: `reusedClips supports at most ${maxCount} clips` }
+  }
+
+  const normalized: ReusedClipInput[] = []
+  for (const raw of input) {
+    const key = (raw && typeof raw === 'object' ? (raw as { key?: unknown }).key : raw) as unknown
+    if (!isReusableClipKey(key)) {
+      return { error: 'each reused clip must reference a valid scenic-video/ or poem-video/ .mp4 key' }
+    }
+    const bucketRaw =
+      raw && typeof raw === 'object' ? (raw as { bucket?: unknown }).bucket : undefined
+    const durationRaw =
+      raw && typeof raw === 'object' ? (raw as { durationSeconds?: unknown }).durationSeconds : undefined
+    const durationSeconds = Number(durationRaw)
+    normalized.push({
+      key: (key as string).trim(),
+      bucket: typeof bucketRaw === 'string' && bucketRaw.trim() ? bucketRaw.trim() : defaultBucket,
+      durationSeconds: Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : 8,
+    })
+  }
+  return normalized
+}
+
+// Builds the ordered list of S3 keys passed to the stitch/mix lambdas.
+// 'generate' entries resolve to the standard Veo child clip key; 'reuse'
+// entries use the existing library key directly.
+export function clipPlanToOrderedKeys(clips: ClipPlanEntry[]): string[] {
+  return clips.map((clip) =>
+    clip.type === 'reuse' ? String(clip.key) : `scenic-video/${clip.childJobId}/clip-0.mp4`
+  )
+}
+
+export function generateEntriesFromPlan(clips: ClipPlanEntry[]): ClipPlanEntry[] {
+  return clips.filter((clip) => clip.type === 'generate' && clip.childJobId)
+}
+
 interface ChildErrorMarker {
   jobId?: string
   error?: string

@@ -129,11 +129,32 @@ export default function PoemVideoPage() {
   const [failedChildren, setFailedChildren] = useState<string[]>([])
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false)
   const [videoLibrary, setVideoLibrary] = useState<SharedVideoLibraryItem[]>([])
+  const [reusedClipKeys, setReusedClipKeys] = useState<string[]>([])
 
   const clipCountPreview = useMemo(() => {
     if (!voiceDuration) return 0
     return Math.min(8, Math.max(1, Math.ceil(voiceDuration / 8)))
   }, [voiceDuration])
+
+  const reusedClipsPayload = useMemo(
+    () =>
+      reusedClipKeys
+        .map((key) => videoLibrary.find((item) => item.key === key))
+        .filter((item): item is SharedVideoLibraryItem => Boolean(item))
+        .map((item) => ({ key: item.key, durationSeconds: Math.max(1, item.durationSeconds) })),
+    [reusedClipKeys, videoLibrary]
+  )
+
+  // Reused clips fill clip slots, so we only generate enough new clips to cover
+  // the rest of the voiceover duration.
+  const reusedUsedCount = Math.min(reusedClipsPayload.length, clipCountPreview)
+  const generatedClipCount = Math.max(0, clipCountPreview - reusedUsedCount)
+
+  const toggleReusedClip = (key: string) => {
+    setReusedClipKeys((current) =>
+      current.includes(key) ? current.filter((item) => item !== key) : [...current, key]
+    )
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -189,12 +210,12 @@ export default function PoemVideoPage() {
   }, [loadLibrary])
 
   useEffect(() => {
-    if (!useDifferentScenes || clipCountPreview <= 0) return
+    if (!useDifferentScenes || generatedClipCount <= 0) return
     setClipPrompts((current) => {
-      const next = Array.from({ length: clipCountPreview }, (_, index) => current[index] || singlePrompt)
+      const next = Array.from({ length: generatedClipCount }, (_, index) => current[index] || singlePrompt)
       return next
     })
-  }, [clipCountPreview, singlePrompt, useDifferentScenes])
+  }, [generatedClipCount, singlePrompt, useDifferentScenes])
 
   useEffect(() => {
     if ((status !== 'generating' && status !== 'mixing') || !parentJobId) return
@@ -437,25 +458,33 @@ export default function PoemVideoPage() {
     }
 
     const single = singlePrompt.trim()
-    if (!useDifferentScenes && !single) {
-      setErrorMessage('Enter a scenic prompt before generating video.')
-      return
+    // Only require prompts when there are new clips left to generate after reuse.
+    if (generatedClipCount > 0) {
+      if (!useDifferentScenes && !single) {
+        setErrorMessage('Enter a scenic prompt before generating video.')
+        return
+      }
+      if (useDifferentScenes) {
+        const promptsToCheck = clipPrompts.slice(0, generatedClipCount).map((item) => item.trim())
+        if (promptsToCheck.length < generatedClipCount || promptsToCheck.some((item) => !item)) {
+          setErrorMessage('Each clip prompt must be non-empty.')
+          return
+        }
+      }
     }
 
-    const resolvedPrompts = useDifferentScenes
-      ? clipPrompts.slice(0, clipCountPreview).map((item) => item.trim())
-      : single
-
-    if (Array.isArray(resolvedPrompts) && resolvedPrompts.some((item) => !item)) {
-      setErrorMessage('Each clip prompt must be non-empty.')
-      return
-    }
+    const resolvedPrompts =
+      generatedClipCount <= 0
+        ? []
+        : useDifferentScenes
+          ? clipPrompts.slice(0, generatedClipCount).map((item) => item.trim())
+          : single
 
     setErrorMessage(null)
     setIsGeneratingVideo(true)
     setStatus('generating')
     setProgressDone(0)
-    setProgressTotal(Math.max(1, clipCountPreview))
+    setProgressTotal(generatedClipCount)
     setVideoUrl(null)
     setVideoKey(null)
     setFailedChildren([])
@@ -470,6 +499,7 @@ export default function PoemVideoPage() {
           voiceDuration,
           keepAmbient,
           prompts: resolvedPrompts,
+          reusedClips: reusedClipsPayload,
         }),
       })
       const data = (await response.json()) as GenerateVideoResponse
@@ -601,8 +631,14 @@ export default function PoemVideoPage() {
                   Duration: <span className="text-[#f8f1df]">{formatDuration(voiceDuration)}</span>
                 </p>
                 <p className="text-sm text-[#f8f1df]/80">
-                  Will generate <span className="text-[#f8f1df]">{clipCountPreview}</span> Veo clips (~
+                  Needs <span className="text-[#f8f1df]">{clipCountPreview}</span> clips (~
                   <span className="text-[#f8f1df]">{clipCountPreview * 8}s</span>)
+                  {reusedUsedCount > 0 ? (
+                    <>
+                      {' '}— reusing <span className="text-[#f8f1df]">{reusedUsedCount}</span>, generating{' '}
+                      <span className="text-[#f8f1df]">{generatedClipCount}</span> new
+                    </>
+                  ) : null}
                 </p>
               </div>
             ) : null}
@@ -627,7 +663,7 @@ export default function PoemVideoPage() {
                   const checked = event.target.checked
                   setUseDifferentScenes(checked)
                   if (checked) {
-                    setClipPrompts(Array.from({ length: Math.max(1, clipCountPreview) }, () => singlePrompt))
+                    setClipPrompts(Array.from({ length: Math.max(1, generatedClipCount) }, () => singlePrompt))
                   }
                 }}
                 className="mt-0.5 h-4 w-4 rounded border-[#d4af37]/50 bg-[#0b1120] text-[#d4af37] focus:ring-[#d4af37]/60"
@@ -635,11 +671,11 @@ export default function PoemVideoPage() {
               <span>Use different scenes per clip</span>
             </label>
 
-            {useDifferentScenes && clipCountPreview > 0 ? (
+            {useDifferentScenes && generatedClipCount > 0 ? (
               <div className="mt-3 space-y-2">
-                {Array.from({ length: clipCountPreview }, (_, index) => (
+                {Array.from({ length: generatedClipCount }, (_, index) => (
                   <label key={`clip-prompt-${index}`} className="block text-xs text-[#f8f1df]/75">
-                    Clip {index + 1} prompt
+                    New clip {index + 1} prompt
                     <textarea
                       value={clipPrompts[index] || ''}
                       onChange={(event) =>
@@ -673,7 +709,11 @@ export default function PoemVideoPage() {
               disabled={isGeneratingVideo || !voiceKey || !voiceDuration}
               className="mt-5 rounded-lg bg-[#d4af37] px-5 py-2.5 text-sm font-semibold text-[#0b1120] hover:bg-[#e2c462] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isGeneratingVideo ? 'Generating video...' : 'Generate video'}
+              {isGeneratingVideo
+                ? 'Generating video...'
+                : reusedUsedCount > 0 && generatedClipCount === 0
+                  ? 'Assemble video from reused clips'
+                  : 'Generate video'}
             </button>
 
             {errorMessage ? <p className="mt-3 text-sm text-red-300">{errorMessage}</p> : null}
@@ -695,7 +735,9 @@ export default function PoemVideoPage() {
                   <p className="text-sm text-[#f8f1df]">
                     {status === 'mixing'
                       ? 'Mixing voice + video...'
-                      : `Generating clip ${Math.min(progressDone + 1, progressTotal)}/${progressTotal}...`}
+                      : progressTotal === 0
+                        ? 'Assembling reused clips with voiceover...'
+                        : `Generating clip ${Math.min(progressDone + 1, progressTotal)}/${progressTotal}...`}
                   </p>
                 </div>
                 {parentJobId ? (
@@ -740,39 +782,90 @@ export default function PoemVideoPage() {
                 Shared Video Library
               </h3>
               <p className="mt-1 text-xs text-[#f8f1df]/70">
-                Raw scenic source clips sync here automatically for reuse.
+                Raw scenic source clips sync here automatically. Select clips to reuse them in this poem video instead
+                of generating fresh ones.
               </p>
+              {reusedClipsPayload.length > 0 ? (
+                <div className="mt-3 rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs text-[#f8f1df]/85">
+                      Reusing {reusedUsedCount} of {Math.max(1, clipCountPreview)} clip
+                      {Math.max(1, clipCountPreview) > 1 ? 's' : ''}
+                      {generatedClipCount > 0 ? ` • generating ${generatedClipCount} new` : ' • no new generation'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setReusedClipKeys([])}
+                      className="rounded-md border border-[#d4af37]/30 px-2.5 py-1 text-xs text-[#f8f1df]/80 hover:bg-[#1a2642]"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  {reusedClipsPayload.length > clipCountPreview && clipCountPreview > 0 ? (
+                    <p className="mt-1 text-[11px] text-amber-300/90">
+                      Only the first {clipCountPreview} selected clip{clipCountPreview > 1 ? 's' : ''} will be used to
+                      match the voiceover length.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
               {videoLibrary.length === 0 ? (
                 <p className="mt-3 text-xs text-[#f8f1df]/65">No saved videos yet.</p>
               ) : (
                 <div className="mt-3 space-y-2">
-                  {videoLibrary.map((item) => (
-                    <div
-                      key={item.id}
-                      className="rounded-lg border border-[#d4af37]/20 bg-[#101a30] p-3"
-                    >
-                      <p className="text-xs text-[#f8f1df]/75">
-                        Saved {new Date(item.savedAtIso).toLocaleString()} • {Math.max(1, item.durationSeconds)}s
-                      </p>
-                      <p className="mt-1 break-all text-[11px] text-[#f8f1df]/60">{item.key}</p>
-                      <div className="mt-2 flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => void handleOpenLibraryItem(item, false)}
-                          className="rounded-md border border-[#d4af37]/35 px-3 py-1.5 text-xs text-[#f8f1df] hover:bg-[#1a2642]"
-                        >
-                          Open
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleOpenLibraryItem(item, true)}
-                          className="rounded-md bg-[#d4af37] px-3 py-1.5 text-xs font-semibold text-[#0b1120] hover:bg-[#e2c462]"
-                        >
-                          Download again
-                        </button>
+                  {videoLibrary.map((item) => {
+                    const isSelected = reusedClipKeys.includes(item.key)
+                    const selectionIndex = reusedClipKeys.indexOf(item.key)
+                    return (
+                      <div
+                        key={item.id}
+                        className={`rounded-lg border p-3 transition ${
+                          isSelected
+                            ? 'border-emerald-500/60 bg-emerald-500/10'
+                            : 'border-[#d4af37]/20 bg-[#101a30]'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-xs text-[#f8f1df]/75">
+                            Saved {new Date(item.savedAtIso).toLocaleString()} • {Math.max(1, item.durationSeconds)}s
+                          </p>
+                          {isSelected ? (
+                            <span className="shrink-0 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-200">
+                              Reuse #{selectionIndex + 1}
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="mt-1 break-all text-[11px] text-[#f8f1df]/60">{item.key}</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleReusedClip(item.key)}
+                            className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                              isSelected
+                                ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                : 'border border-emerald-500/50 text-emerald-200 hover:bg-emerald-500/10'
+                            }`}
+                          >
+                            {isSelected ? 'Reusing ✓' : 'Reuse clip'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleOpenLibraryItem(item, false)}
+                            className="rounded-md border border-[#d4af37]/35 px-3 py-1.5 text-xs text-[#f8f1df] hover:bg-[#1a2642]"
+                          >
+                            Open
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleOpenLibraryItem(item, true)}
+                            className="rounded-md bg-[#d4af37] px-3 py-1.5 text-xs font-semibold text-[#0b1120] hover:bg-[#e2c462]"
+                          >
+                            Download again
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
