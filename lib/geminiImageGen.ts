@@ -48,7 +48,7 @@ function normalizeReferenceMimeType(contentTypeHeader: string | null, referenceU
 
 export async function generateAndUploadPhoto(
   prompt: string,
-  options: { referenceImageUrl?: string | null; referenceMode?: 'identity' | 'style' | 'identity-transform' } = {}
+  options: { referenceImageUrl?: string | null; referenceMode?: 'identity' | 'style' | 'identity-transform'; key?: string } = {}
 ): Promise<string | null> {
   const apiKey = process.env.GEMINI_API_KEY
   
@@ -135,7 +135,7 @@ export async function generateAndUploadPhoto(
         const base64 = imagePart.inlineData.data
         const buffer = Buffer.from(base64, 'base64')
         
-        const key = `social-generated/${uuidv4()}.png`
+        const key = options.key || `social-generated/${uuidv4()}.png`
         await s3Client.send(new PutObjectCommand({
           Bucket: process.env.S3_BUCKET_NAME || 'heartbeat-photos-prod',
           Key: key,

@@ -346,6 +346,28 @@ export default function SocialMediaCommandCenter() {
           </div>
         </Link>
 
+        {/* Honor & Miss */}
+        <Link
+          href="/admin/social/honor-miss"
+          className="bg-[#1a1f2e] rounded-2xl p-6 border border-gray-800/50 hover:border-amber-500/50 transition-all group"
+        >
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <span className="text-4xl">🕊️</span>
+              <h2 className="text-xl font-bold text-white mt-2">Honor &amp; Miss</h2>
+              <p className="text-gray-400 text-sm mt-1">LLM-driven &ldquo;ways I honor&rdquo; / &ldquo;things I miss&rdquo; slideshows</p>
+            </div>
+          </div>
+          <div className="flex gap-4 text-sm">
+            <span className="text-gray-400">
+              <span className="text-amber-400 font-medium">Memory slide</span> generator
+            </span>
+          </div>
+          <div className="mt-4 flex items-center text-amber-300 text-sm font-medium group-hover:translate-x-1 transition-transform">
+            Open Honor &amp; Miss →
+          </div>
+        </Link>
+
         {/* Send To Phone */}
         <Link
           href="/admin/social/send-to-phone"
