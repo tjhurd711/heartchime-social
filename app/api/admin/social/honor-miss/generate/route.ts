@@ -237,16 +237,10 @@ export async function POST(request: NextRequest) {
     // the intro anchor always uses the persona reference.
     const subjectReferenceUrl = perspective === 'third_person' ? subjectMasterPhotoUrl : null
 
-    // Run all N+2 slide generations concurrently. S3 keys are deterministic per
-    // slide order, so execution order does not matter — only the awaited results.
     // One failing slide must not fail the whole job; failures are surfaced so the
     // user can regenerate those slides individually.
     const failedSlides: number[] = []
-    const imageResults = await Promise.allSettled(
-      slides.map((slide) => generateHonorMissSlideImage({ jobId, slide, referenceUrl, subjectReferenceUrl, blurLevel }))
-    )
-    imageResults.forEach((settled, idx) => {
-      const slide = slides[idx]
+    const applyResult = (slide: HonorMissSlide, settled: PromiseSettledResult<Awaited<ReturnType<typeof generateHonorMissSlideImage>>>) => {
       if (settled.status === 'fulfilled' && settled.value.url) {
         slide.s3_key = settled.value.s3Key
         slide.image_url = settled.value.url
@@ -258,7 +252,32 @@ export async function POST(request: NextRequest) {
           console.error('[honor-miss/generate] Image failed for slide', slide.order)
         }
       }
-    })
+    }
+
+    // Generate the intro/anchor FIRST so its generated "copy" (different people)
+    // can serve as the identity reference for every framed_photo/polaroid memory
+    // slide. This keeps the whole slideshow on one consistent fictional face
+    // instead of re-referencing the original S3 photo (the real person).
+    const introSlide = slides.find((s) => s.role === 'intro')
+    let anchorImageUrl: string | null = null
+    if (introSlide) {
+      const [introSettled] = await Promise.allSettled([
+        generateHonorMissSlideImage({ jobId, slide: introSlide, referenceUrl, subjectReferenceUrl, blurLevel }),
+      ])
+      applyResult(introSlide, introSettled)
+      anchorImageUrl = introSlide.image_url
+    }
+
+    // Then run the remaining slides concurrently, referencing the anchor copy.
+    // S3 keys are deterministic per slide order, so execution order does not
+    // matter — only the awaited results.
+    const restSlides = slides.filter((s) => s.role !== 'intro')
+    const restResults = await Promise.allSettled(
+      restSlides.map((slide) =>
+        generateHonorMissSlideImage({ jobId, slide, referenceUrl, subjectReferenceUrl, anchorImageUrl, blurLevel })
+      )
+    )
+    restResults.forEach((settled, idx) => applyResult(restSlides[idx], settled))
     failedSlides.sort((a, b) => a - b)
 
     // ─── STEP 4: Persist job ────────────────────────────────────────────────

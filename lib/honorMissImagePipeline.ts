@@ -45,6 +45,11 @@ interface GenerateArgs {
   // and polaroid memory slides render this subject instead of the persona. The
   // intro anchor always uses the persona referenceUrl.
   subjectReferenceUrl?: string | null
+  // The generated intro/anchor image (slide 1's "copy" with different people).
+  // When set, framed_photo/polaroid memory slides use THIS as their identity
+  // reference instead of the original S3 photo, so the whole slideshow stays on
+  // one consistent fictional face. Ignored for the intro slide itself.
+  anchorImageUrl?: string | null
   // 1–10 blurriness level applied to the faded interior of framed/polaroid photos.
   blurLevel?: number
   // Optional key suffix (inserted before ".png") used for cache-busting on regenerate.
@@ -71,7 +76,7 @@ async function geminiSingleCall(
 }
 
 export async function generateHonorMissSlideImage(args: GenerateArgs): Promise<SlideImageResult> {
-  const { jobId, slide, referenceUrl, subjectReferenceUrl, blurLevel, keySuffix } = args
+  const { jobId, slide, referenceUrl, subjectReferenceUrl, anchorImageUrl, blurLevel, keySuffix } = args
 
   try {
     // ── Anchor (intro) ──────────────────────────────────────────────────────
@@ -101,9 +106,14 @@ export async function generateHonorMissSlideImage(args: GenerateArgs): Promise<S
 
     // ── Two-step: framed_photo / polaroid ───────────────────────────────────
     if (slide.visual_type === 'framed_photo' || slide.visual_type === 'polaroid') {
-      // Third-person tributes render the subject in memory slides; first-person
-      // uses the persona reference (unchanged behavior).
-      const memoryReference = subjectReferenceUrl || referenceUrl
+      // Identity reference priority:
+      //   1. the generated intro/anchor copy (slide 1's "different people" image),
+      //      so framed/polaroid slides match the slideshow's fictional face;
+      //   2. the third-person subject reference;
+      //   3. the persona reference.
+      // The anchor is preferred so we DON'T re-reference the original S3 photo
+      // (which would reproduce the real person instead of slide 1's copy).
+      const memoryReference = anchorImageUrl || subjectReferenceUrl || referenceUrl
       const subject = (slide.image_subject || '').trim() || slide.caption
       const stepAPrompt = buildPersonActionPrompt(subject)
       const stepAKey = withSuffix(s3KeyForStepA(jobId, slide.order), keySuffix)

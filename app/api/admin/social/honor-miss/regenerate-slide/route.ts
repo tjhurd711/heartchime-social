@@ -45,6 +45,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Slide ${order} not found in job` }, { status: 404 })
     }
 
+    // The already-generated intro/anchor image (slide 1's "copy" with different
+    // people). Framed_photo/polaroid slides reference THIS for identity so a
+    // regenerated memory slide matches the slideshow's fictional face rather than
+    // re-referencing the original S3 photo.
+    const anchorImageUrl = slides.find((s) => s.role === 'intro')?.image_url || null
+
     // Regenerate via the two-model pipeline, into a versioned key so caches/CDNs
     // do not serve the stale image.
     const result = await generateHonorMissSlideImage({
@@ -53,6 +59,7 @@ export async function POST(request: NextRequest) {
       referenceUrl: job.master_photo_url || null,
       // Present only for third-person tributes; reuses the subject for framed/polaroid slides.
       subjectReferenceUrl: job.subject_master_photo_url || null,
+      anchorImageUrl,
       keySuffix: `-r${Date.now()}`,
     })
 
