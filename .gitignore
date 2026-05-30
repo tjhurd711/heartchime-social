@@ -44,9 +44,9 @@ yarn-error.log*
 next-env.d.ts
 .env*.local
 
-# lambda build artifacts
-lambdas/poem-mix/poem-mix.zip
-lambdas/poem-mix/.build/
+# lambda build artifacts (regenerated from source by each deploy.sh)
+lambdas/*/*.zip
+lambdas/*/.build/
 
 # python
 __pycache__/

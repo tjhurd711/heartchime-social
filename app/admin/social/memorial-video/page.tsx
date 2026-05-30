@@ -58,6 +58,7 @@ interface SendToDeviceResult {
 
 type PhotoInputMode = 'upload' | 'reference'
 type PhotoRepeatCount = 1 | 2 | 3
+type ImageProvider = 'google' | 'openai'
 
 interface ChainedSlideConfig {
   id: string
@@ -106,9 +107,49 @@ function ensurePositiveNumber(value: string, fallback: number): number {
   return parsed
 }
 
+function coerceErrorText(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (value == null) return ''
+  if (value instanceof Error) return value.message
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value)
+    } catch {
+      return ''
+    }
+  }
+  return String(value)
+}
+
+// Reads a fetch Response and returns a readable error message, tolerating
+// non-JSON bodies (e.g. an HTML/plain-text gateway timeout page) and object-shaped
+// error fields so the UI never surfaces a useless "[object Object]".
+async function readErrorFromResponse(response: Response, fallback: string): Promise<string> {
+  let parsed: unknown = null
+  try {
+    parsed = await response.clone().json()
+  } catch {
+    try {
+      const text = (await response.text()).trim()
+      if (text) return `${fallback} (HTTP ${response.status}: ${text.slice(0, 200)})`
+    } catch {
+      // ignore
+    }
+    return `${fallback} (HTTP ${response.status})`
+  }
+  if (parsed && typeof parsed === 'object') {
+    const record = parsed as Record<string, unknown>
+    const message = coerceErrorText(record.error) || coerceErrorText(record.details) || coerceErrorText(record.message)
+    if (message) return message
+  }
+  const coerced = coerceErrorText(parsed)
+  return coerced || `${fallback} (HTTP ${response.status})`
+}
+
 export default function MemorialVideoPage() {
   const [jobId, setJobId] = useState('')
   const [photoInputMode, setPhotoInputMode] = useState<PhotoInputMode>('upload')
+  const [referenceProvider, setReferenceProvider] = useState<ImageProvider>('google')
   const [photos, setPhotos] = useState<UploadedPhoto[]>([])
   const [music, setMusic] = useState<UploadedMusic | null>(null)
   const [secondsPerPhoto, setSecondsPerPhoto] = useState(2)
@@ -117,6 +158,7 @@ export default function MemorialVideoPage() {
   const [isGeneratingReferencePhotos, setIsGeneratingReferencePhotos] = useState(false)
   const [isUploadingMusic, setIsUploadingMusic] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [generationStatus, setGenerationStatus] = useState('')
   const [isSendingToDevice, setIsSendingToDevice] = useState(false)
   const [sendToDeviceResult, setSendToDeviceResult] = useState<SendToDeviceResult | null>(null)
   const [deviceNoteText, setDeviceNoteText] = useState('')
@@ -366,6 +408,7 @@ export default function MemorialVideoPage() {
         body: JSON.stringify({
           referenceKey: selectedReferenceKey,
           mode: 'style',
+          provider: referenceProvider,
           detail: slide1DetailTrimmed,
           blurLevel: slide1BlurLevel,
           ageDeltaYears: slide1AgeDeltaYears,
@@ -373,10 +416,10 @@ export default function MemorialVideoPage() {
           jobId: activeJobId,
         }),
       })
-      const data = await response.json()
       if (!response.ok) {
-        throw new Error(data?.error || data?.details || 'Failed generating Slide 1')
+        throw new Error(await readErrorFromResponse(response, 'Failed generating Slide 1'))
       }
+      const data = await response.json()
       const generated = data as GenerateReferencePhotoResponse
       previousImageUrl = generated.url
       generatedPhotos.push({
@@ -389,7 +432,7 @@ export default function MemorialVideoPage() {
       })
       setSlideProgress((prev) => ({ ...prev, [slide1ProgressId]: 'Done' }))
     } catch (slide1Error) {
-      failedSlides.push(`Slide 1: ${slide1Error instanceof Error ? slide1Error.message : 'Unknown error'}`)
+      failedSlides.push(`Slide 1: ${coerceErrorText(slide1Error) || 'Unknown error'}`)
       setSlideProgress((prev) => ({ ...prev, [slide1ProgressId]: 'Failed' }))
     }
 
@@ -410,6 +453,7 @@ export default function MemorialVideoPage() {
           body: JSON.stringify({
             referenceImageUrl: previousImageUrl,
             mode: 'identity',
+            provider: referenceProvider,
             prompt: slide.scene,
             activity: slide.activity,
             blurLevel: slide.blurLevel,
@@ -418,10 +462,10 @@ export default function MemorialVideoPage() {
             jobId: activeJobId,
           }),
         })
-        const data = await response.json()
         if (!response.ok) {
-          throw new Error(data?.error || data?.details || `Failed generating Slide ${slideNumber}`)
+          throw new Error(await readErrorFromResponse(response, `Failed generating Slide ${slideNumber}`))
         }
+        const data = await response.json()
         const generated = data as GenerateReferencePhotoResponse
         previousImageUrl = generated.url
         generatedPhotos.push({
@@ -434,7 +478,7 @@ export default function MemorialVideoPage() {
         })
         setSlideProgress((prev) => ({ ...prev, [slide.id]: 'Done' }))
       } catch (slideError) {
-        failedSlides.push(`Slide ${slideNumber}: ${slideError instanceof Error ? slideError.message : 'Unknown error'}`)
+        failedSlides.push(`Slide ${slideNumber}: ${coerceErrorText(slideError) || 'Unknown error'}`)
         setSlideProgress((prev) => ({ ...prev, [slide.id]: 'Failed' }))
       }
     }
@@ -516,6 +560,7 @@ export default function MemorialVideoPage() {
     const seconds = ensurePositiveNumber(String(secondsPerPhoto), 2)
     setSecondsPerPhoto(seconds)
     setIsGenerating(true)
+    setGenerationStatus('Starting render...')
 
     try {
       const response = await fetch('/api/memorial-video/generate-slideshow', {
@@ -528,21 +573,67 @@ export default function MemorialVideoPage() {
           musicKey: music?.key,
         }),
       })
-      const data = await response.json()
       if (!response.ok) {
-        throw new Error(data?.error || data?.details || 'Failed to generate slideshow.')
+        throw new Error(await readErrorFromResponse(response, 'Failed to generate slideshow.'))
       }
+      const data = await response.json()
+      const jobId: string = data.jobId
+      if (!jobId) {
+        throw new Error('Render did not start (no job id returned).')
+      }
+      const estimatedDuration = Number(data.estimatedDuration ?? 0)
+
+      // The render runs asynchronously in Lambda; poll S3 (via the status route)
+      // until the finished mp4 appears. This avoids holding a long request open
+      // and being cut off by the platform's request timeout.
+      const finished = await pollSlideshowStatus(jobId)
       setResult({
-        url: data.url,
-        key: data.key,
-        jobId: data.jobId,
-        duration: Number(data.duration ?? 0),
+        url: finished.url,
+        key: finished.key,
+        jobId,
+        duration: finished.duration > 0 ? finished.duration : estimatedDuration,
       })
+      setGenerationStatus('')
     } catch (generationError) {
-      setError(generationError instanceof Error ? generationError.message : 'Failed to generate slideshow.')
+      setError(coerceErrorText(generationError) || 'Failed to generate slideshow.')
+      setGenerationStatus('')
     } finally {
       setIsGenerating(false)
     }
+  }
+
+  async function pollSlideshowStatus(
+    jobId: string,
+    { intervalMs = 3000, timeoutMs = 8 * 60 * 1000 }: { intervalMs?: number; timeoutMs?: number } = {}
+  ): Promise<{ url: string; key: string; duration: number }> {
+    const startedAt = Date.now()
+    while (Date.now() - startedAt < timeoutMs) {
+      const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000)
+      setGenerationStatus(`Rendering video... (${elapsedSeconds}s)`)
+      await new Promise((resolve) => setTimeout(resolve, intervalMs))
+
+      let statusResponse: Response
+      try {
+        statusResponse = await fetch(`/api/memorial-video/slideshow-status?jobId=${encodeURIComponent(jobId)}`)
+      } catch {
+        // Transient network error while polling; keep trying until the timeout.
+        continue
+      }
+      if (!statusResponse.ok) {
+        continue
+      }
+      const statusData = await statusResponse.json()
+      if (statusData?.status === 'ready' && statusData.url && statusData.key) {
+        return {
+          url: statusData.url as string,
+          key: statusData.key as string,
+          duration: Number(statusData.duration ?? 0),
+        }
+      }
+    }
+    throw new Error(
+      'The video is taking longer than expected. It may still finish in the background — refresh and check the library shortly.'
+    )
   }
 
   async function handleSendToDevice() {
@@ -658,6 +749,33 @@ export default function MemorialVideoPage() {
                   <p className="mt-1 text-xs text-[#f8f1df]/65">
                     Astronaut-style reference mode: same photo feel/composition, different people.
                   </p>
+                  <div className="mt-3 mb-4">
+                    <span className="block text-xs text-[#f8f1df]/80">Image model (all generated slides)</span>
+                    <div className="mt-1 inline-flex rounded-lg border border-[#d4af37]/40 bg-[#0b1120] p-1">
+                      <button
+                        type="button"
+                        onClick={() => setReferenceProvider('google')}
+                        className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                          referenceProvider === 'google'
+                            ? 'bg-[#d4af37] text-[#0b1120]'
+                            : 'text-[#f8f1df]/70 hover:text-[#f8f1df]'
+                        }`}
+                      >
+                        Google (Gemini)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReferenceProvider('openai')}
+                        className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                          referenceProvider === 'openai'
+                            ? 'bg-[#d4af37] text-[#0b1120]'
+                            : 'text-[#f8f1df]/70 hover:text-[#f8f1df]'
+                        }`}
+                      >
+                        ChatGPT (gpt-image-2)
+                      </button>
+                    </div>
+                  </div>
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       type="button"
@@ -942,7 +1060,7 @@ export default function MemorialVideoPage() {
 
               <div className="mt-5">
                 <label className="block text-sm text-[#f8f1df]/85">
-                  Repeat each photo
+                  Loop the photo set
                   <select
                     value={photoRepeatCount}
                     onChange={(event) => {
@@ -951,9 +1069,9 @@ export default function MemorialVideoPage() {
                     }}
                     className="mt-2 w-full rounded-lg border border-[#d4af37]/30 bg-[#0f172a] px-3 py-2 text-sm text-[#f8f1df] focus:outline-none focus:ring-2 focus:ring-[#d4af37]/40"
                   >
-                    <option value={1}>Show each photo once (default)</option>
-                    <option value={2}>Show each photo twice</option>
-                    <option value={3}>Show each photo three times</option>
+                    <option value={1}>Play through once (default)</option>
+                    <option value={2}>Loop the set twice</option>
+                    <option value={3}>Loop the set three times</option>
                   </select>
                 </label>
               </div>
@@ -995,8 +1113,11 @@ export default function MemorialVideoPage() {
                 disabled={isGenerating || isUploadingPhotos || isGeneratingReferencePhotos || photos.length === 0}
                 className="mt-4 w-full rounded-lg bg-[#d4af37] px-4 py-3 text-sm font-semibold text-[#0b1120] hover:bg-[#e2c462] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isGenerating ? 'Generating slideshow (10-30s)...' : 'Generate Memorial Video'}
+                {isGenerating ? 'Generating slideshow...' : 'Generate Memorial Video'}
               </button>
+              {isGenerating && generationStatus ? (
+                <p className="mt-3 text-sm text-[#d4af37]">{generationStatus}</p>
+              ) : null}
               {error ? <p className="mt-3 text-sm text-red-300">{error}</p> : null}
             </div>
           </section>

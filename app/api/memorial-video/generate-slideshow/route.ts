@@ -64,9 +64,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const expandedPhotoKeys = photoKeys.flatMap((key) =>
-      Array.from({ length: parsedPhotoRepeatCount }, () => key)
-    )
+    const expandedPhotoKeys = Array.from(
+      { length: parsedPhotoRepeatCount },
+      () => photoKeys
+    ).flat()
 
     const jobId = crypto.randomUUID()
     const payload = {
@@ -76,56 +77,44 @@ export async function POST(request: NextRequest) {
       music_key: musicKey,
     }
 
+    // Fire the render asynchronously ('Event') so we never hold the HTTP request
+    // open for the full ffmpeg render. The render can take ~30s+, which collides
+    // with the platform's request timeout and previously caused the browser to
+    // receive a gateway error even though the video finished successfully.
+    // The client polls /api/memorial-video/slideshow-status with this jobId
+    // until the finished mp4 appears in S3.
     const command = new InvokeCommand({
       FunctionName: 'memorial-slideshow',
-      InvocationType: 'RequestResponse',
+      InvocationType: 'Event',
       Payload: Buffer.from(JSON.stringify(payload)),
     })
 
     const invokeResult = await lambdaClient.send(command)
-    const lambdaPayloadRaw = invokeResult.Payload
-      ? new TextDecoder().decode(invokeResult.Payload)
-      : '{}'
-    const lambdaPayload = lambdaPayloadRaw ? JSON.parse(lambdaPayloadRaw) : {}
+    const accepted =
+      typeof invokeResult.StatusCode === 'number' &&
+      invokeResult.StatusCode >= 200 &&
+      invokeResult.StatusCode < 300
 
-    if (invokeResult.FunctionError) {
-      const detail =
-        lambdaPayload?.errorMessage ||
-        lambdaPayload?.errorType ||
-        lambdaPayload?.body ||
-        'Lambda invocation failed'
+    if (!accepted) {
       return NextResponse.json(
-        { error: 'Failed to generate memorial slideshow.', details: detail },
-        { status: 500 }
+        {
+          error: 'Failed to start memorial slideshow render.',
+          details: `Lambda invoke returned status ${invokeResult.StatusCode ?? 'unknown'}`,
+        },
+        { status: 502 }
       )
     }
 
-    const normalizedPayload =
-      lambdaPayload &&
-      typeof lambdaPayload === 'object' &&
-      'body' in lambdaPayload &&
-      typeof lambdaPayload.body === 'string'
-        ? JSON.parse(lambdaPayload.body)
-        : lambdaPayload
+    const estimatedDuration = expandedPhotoKeys.length * parsedSecondsPerPhoto
 
-    const url = normalizedPayload?.url
-    const key = normalizedPayload?.key
-    const resolvedJobId = normalizedPayload?.jobId || jobId
-    const duration = Number(normalizedPayload?.duration ?? 0)
-
-    if (!url || !key) {
-      return NextResponse.json(
-        { error: 'Memorial slideshow Lambda returned an invalid response.' },
-        { status: 500 }
-      )
-    }
-
-    return NextResponse.json({
-      url,
-      key,
-      jobId: resolvedJobId,
-      duration,
-    })
+    return NextResponse.json(
+      {
+        jobId,
+        status: 'processing',
+        estimatedDuration,
+      },
+      { status: 202 }
+    )
   } catch (error) {
     return NextResponse.json(
       {

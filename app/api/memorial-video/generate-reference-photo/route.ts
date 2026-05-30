@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateAndUploadPhoto } from '@/lib/geminiImageGen'
+import { generateAndUploadGptImageEdit } from '@/lib/openaiImageGen'
 import { mintLiveReferencePresignedUrl } from '@/lib/socialReferenceS3'
 import { applyPhotoGenerationStyle } from '@/lib/socialPhotoStyle'
+
+type ImageProvider = 'google' | 'openai'
 
 interface GenerateReferencePhotoRequest {
   referenceKey?: string
@@ -13,6 +16,7 @@ interface GenerateReferencePhotoRequest {
   ageDeltaYears?: number
   photoFilterStyle?: 'none' | 'black_and_white' | 'old_timey' | 'faded_film'
   mode?: 'style' | 'identity'
+  provider?: ImageProvider
   jobId?: string
 }
 
@@ -95,6 +99,7 @@ export async function POST(request: NextRequest) {
     const ageDeltaYears = clampAgeDeltaYears(body.ageDeltaYears)
     const photoFilterStyle = body.photoFilterStyle || 'none'
     const mode = body.mode === 'style' ? 'style' : 'identity'
+    const provider: ImageProvider = body.provider === 'openai' ? 'openai' : 'google'
     const jobId = body.jobId?.trim() || ''
 
     if (!referenceKey && !referenceImageUrlFromBody) {
@@ -120,10 +125,12 @@ export async function POST(request: NextRequest) {
       photo_blur_level: String(blurLevel),
       photo_filter_style: photoFilterStyle,
     })
-    const generatedUrl = await generateAndUploadPhoto(styledPrompt, {
-      referenceImageUrl,
-      referenceMode: mode,
-    })
+    const generatedUrl = provider === 'openai'
+      ? await generateAndUploadGptImageEdit(styledPrompt, referenceImageUrl)
+      : await generateAndUploadPhoto(styledPrompt, {
+          referenceImageUrl,
+          referenceMode: mode,
+        })
 
     if (!generatedUrl) {
       return NextResponse.json(
