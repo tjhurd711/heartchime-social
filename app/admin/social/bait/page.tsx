@@ -177,7 +177,14 @@ export default function BaitLibraryAdminPage() {
 
   const mergeUpdatedRows = (updatedRows: BaitItem[]) => {
     const rowMap = new Map(updatedRows.map((row) => [row.id, row]))
-    setItems((previous) => previous.map((row) => rowMap.get(row.id) || row))
+    setItems((previous) =>
+      previous.map((row) => {
+        const updated = rowMap.get(row.id)
+        // Merge so fields the PATCH response omits (e.g. presignedUrl, which is
+        // generated at load time and not a DB column) are preserved.
+        return updated ? { ...row, ...updated } : row
+      })
+    )
   }
 
   const applyOptimisticPatch = (ids: string[], patch: Partial<BaitItem>) => {

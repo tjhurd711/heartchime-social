@@ -122,6 +122,15 @@ interface HonorMissJob {
   slides: JobSlide[]
 }
 
+// Rows returned by GET /api/admin/social/honor-miss/jobs (full DB rows). Lets us
+// recover slideshows whose generate request dropped the client connection (the
+// ~3 min synchronous job often finishes server-side after the browser gives up).
+interface RecentJob extends HonorMissJob {
+  created_at?: string | null
+  status?: string | null
+  subject_name?: string | null
+}
+
 function roleLabel(role: JobSlide['role']): string {
   if (role === 'intro') return 'Intro'
   if (role === 'closer') return 'Closer'
@@ -143,6 +152,19 @@ async function parseJsonResponse(res: Response): Promise<{ ok: boolean; data: Re
         : `Server returned an unexpected response (HTTP ${res.status}). Please try again.`
     return { ok: false, data: null, errorText }
   }
+}
+
+// Error responses sometimes carry `details` (or `error`) as an object — e.g. an
+// upstream API payload forwarded verbatim. Coerce those to a readable string so
+// the UI never surfaces a useless "[object Object]".
+function extractErrorMessage(data: Record<string, unknown> | null, fallback: string): string {
+  const details = data?.details
+  if (typeof details === 'string' && details) return details
+  if (details) return JSON.stringify(details)
+  const error = data?.error
+  if (typeof error === 'string' && error) return error
+  if (error) return JSON.stringify(error)
+  return fallback
 }
 
 function HonorMissPage() {
@@ -186,6 +208,11 @@ function HonorMissPage() {
   const [job, setJob] = useState<HonorMissJob | null>(null)
   const [regenerating, setRegenerating] = useState<Record<number, boolean>>({})
   const [sending, setSending] = useState(false)
+
+  // Recover saved slideshows when a generate request appears to fail/time out.
+  const [recentJobs, setRecentJobs] = useState<RecentJob[]>([])
+  const [showRecent, setShowRecent] = useState(false)
+  const [loadingRecent, setLoadingRecent] = useState(false)
 
   useEffect(() => {
     const loadLovedOnes = async () => {
@@ -298,7 +325,7 @@ function HonorMissPage() {
         throw new Error(errorText)
       }
       if (!ok || !data) {
-        throw new Error((data?.details as string) || (data?.error as string) || 'Generation failed')
+        throw new Error(extractErrorMessage(data, 'Generation failed'))
       }
       setJob(data.job as HonorMissJob)
       const failedSlides = Array.isArray(data.failedSlides) ? (data.failedSlides as number[]) : []
@@ -329,7 +356,7 @@ function HonorMissPage() {
         throw new Error(errorText)
       }
       if (!ok || !data) {
-        throw new Error((data?.details as string) || (data?.error as string) || 'Regeneration failed')
+        throw new Error(extractErrorMessage(data, 'Regeneration failed'))
       }
       setJob(data.job as HonorMissJob)
     } catch (err) {
@@ -382,6 +409,39 @@ function HonorMissPage() {
     } finally {
       setSending(false)
     }
+  }
+
+  const loadRecentJobs = async () => {
+    setLoadingRecent(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/admin/social/honor-miss/jobs')
+      const { ok, data, errorText } = await parseJsonResponse(res)
+      if (errorText) {
+        throw new Error(errorText)
+      }
+      if (!ok || !data) {
+        throw new Error(extractErrorMessage(data, 'Failed to load recent jobs'))
+      }
+      setRecentJobs(Array.isArray(data.jobs) ? (data.jobs as RecentJob[]) : [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load recent jobs')
+    } finally {
+      setLoadingRecent(false)
+    }
+  }
+
+  const toggleRecent = () => {
+    const next = !showRecent
+    setShowRecent(next)
+    if (next) void loadRecentJobs()
+  }
+
+  const handleLoadJob = (selected: RecentJob) => {
+    setError(null)
+    setJob(selected)
+    setSuccess('Loaded saved slideshow.')
+    setShowRecent(false)
   }
 
   // Object pool swaps with the frame: kept/ritual objects for "honor", shared
@@ -702,6 +762,13 @@ function HonorMissPage() {
             >
               {generating ? 'Generating…' : 'Generate slideshow'}
             </button>
+            <button
+              type="button"
+              onClick={() => toggleRecent()}
+              className="rounded-lg border border-[#415477] px-4 py-2.5 text-sm font-semibold text-[#d7c29b] hover:border-[#d8b372] hover:text-[#f3ead9]"
+            >
+              {showRecent ? 'Hide recent jobs' : 'Recent jobs'}
+            </button>
             <span className="text-sm text-[#7f8db0]">
               Slide 1: <span className="text-[#d6b274]">&ldquo;{previewCaption}&rdquo;</span>
             </span>
@@ -709,10 +776,66 @@ function HonorMissPage() {
 
           {generating && (
             <p className="text-xs text-[#7f8db0]">
-              Generating {slideCount + 2} images — this can take a couple of minutes. Keep this tab open.
+              Generating {slideCount + 2} images — this can take a couple of minutes. Keep this tab open. If it looks
+              like it timed out, the slideshow often finished anyway — open <strong>Recent jobs</strong> to load it.
             </p>
           )}
         </section>
+
+        {/* ─── Recent jobs (recover saved slideshows) ─────────────────── */}
+        {showRecent && (
+          <section className="rounded-2xl border border-[#2c3b59] bg-[#121b2d] p-4 md:p-6 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className={`${cormorant.className} text-2xl text-[#f1d386]`}>Recent slideshows</h2>
+                <p className="text-xs text-[#7f8db0]">
+                  Saved jobs — load one to preview, regenerate slides, or send to phone.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadRecentJobs()}
+                disabled={loadingRecent}
+                className="rounded-lg border border-[#415477] px-3 py-1.5 text-xs text-[#d7c29b] hover:border-[#d8b372] disabled:opacity-60"
+              >
+                {loadingRecent ? 'Loading…' : 'Refresh'}
+              </button>
+            </div>
+
+            {loadingRecent ? (
+              <p className="text-sm text-[#7f8db0]">Loading saved slideshows…</p>
+            ) : recentJobs.length === 0 ? (
+              <p className="text-sm text-[#7f8db0]">No saved slideshows yet.</p>
+            ) : (
+              <ul className="divide-y divide-[#23314d]">
+                {recentJobs.map((rj) => {
+                  const slides = rj.slides || []
+                  const withImages = slides.filter((s) => s.image_url).length
+                  return (
+                    <li key={rj.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                      <div className="min-w-0">
+                        <p className="text-sm text-[#f3ead9] truncate">
+                          {rj.intro_caption || `${rj.mode} · ${rj.relation}`}
+                        </p>
+                        <p className="text-xs text-[#7f8db0]">
+                          {(rj.persona_name || '—')} · {rj.mode} · {slides.length} slides · {withImages} with images
+                          {rj.created_at ? ` · ${new Date(rj.created_at).toLocaleString()}` : ''}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleLoadJob(rj)}
+                        className="shrink-0 rounded-lg bg-[#b58d45] px-4 py-1.5 text-xs font-semibold text-[#111827] hover:bg-[#c59c4f]"
+                      >
+                        Load
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </section>
+        )}
 
         {error && (
           <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-red-300 text-sm">{error}</div>
