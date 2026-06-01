@@ -9,6 +9,7 @@ interface GeneratePoemVoiceRequest {
   poem?: string
   voiceId?: string
   jobId?: string
+  speed?: number
 }
 
 interface ElevenLabsAlignment {
@@ -27,6 +28,14 @@ const ELEVENLABS_TTS_MODEL_ID = 'eleven_turbo_v2_5'
 
 function roundUpToTenth(value: number): number {
   return Math.ceil(value * 10) / 10
+}
+
+// ElevenLabs accepts a `speed` in voice_settings within roughly 0.7–1.2,
+// where 1.0 is normal, <1.0 is slower, and >1.0 is faster. Clamp to that range
+// and default to 1.0 when missing/invalid.
+function clampSpeed(raw: number | undefined): number {
+  if (!Number.isFinite(raw)) return 1
+  return Math.min(1.2, Math.max(0.7, raw as number))
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -143,6 +152,7 @@ export async function POST(request: NextRequest) {
     const poem = body.poem?.trim() || ''
     const voiceId = body.voiceId?.trim() || ''
     const jobId = body.jobId?.trim() || ''
+    const speed = clampSpeed(body.speed)
 
     if (!poem) {
       return NextResponse.json({ error: 'poem is required' }, { status: 400 })
@@ -168,6 +178,7 @@ export async function POST(request: NextRequest) {
         voice_settings: {
           stability: 0.45,
           similarity_boost: 0.8,
+          speed,
         },
       }),
     })

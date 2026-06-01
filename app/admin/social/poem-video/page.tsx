@@ -109,6 +109,7 @@ export default function PoemVideoPage() {
   const [voicesError, setVoicesError] = useState<string | null>(null)
   const [isLoadingVoices, setIsLoadingVoices] = useState(false)
   const [selectedVoiceId, setSelectedVoiceId] = useState('')
+  const [voiceSpeed, setVoiceSpeed] = useState(1.0)
 
   const [parentJobId, setParentJobId] = useState<string | null>(null)
   const [voiceKey, setVoiceKey] = useState<string | null>(null)
@@ -434,6 +435,7 @@ export default function PoemVideoPage() {
           poem: poemText,
           voiceId: selectedVoiceId,
           jobId: voiceJobId,
+          speed: voiceSpeed,
         }),
       })
       const data = (await response.json()) as GenerateVoiceResponse
@@ -627,6 +629,26 @@ export default function PoemVideoPage() {
                 ))}
               </div>
             ) : null}
+
+            <label className="mt-4 block text-sm text-[#f8f1df]/85">
+              Voice speed: <span className="text-[#f8f1df]">{voiceSpeed.toFixed(2)}x</span>
+              <span className="ml-2 text-xs text-[#f8f1df]/55">
+                {voiceSpeed < 1 ? 'slower' : voiceSpeed > 1 ? 'faster' : 'normal'}
+              </span>
+              <input
+                type="range"
+                min={0.7}
+                max={1.2}
+                step={0.05}
+                value={voiceSpeed}
+                onChange={(event) => setVoiceSpeed(Number(event.target.value))}
+                className="mt-2 w-full accent-[#d4af37]"
+              />
+              <span className="mt-1 flex justify-between text-[11px] text-[#f8f1df]/50">
+                <span>0.70x (slower)</span>
+                <span>1.20x (faster)</span>
+              </span>
+            </label>
 
             <button
               type="button"
