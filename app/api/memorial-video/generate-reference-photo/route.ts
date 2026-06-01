@@ -5,6 +5,7 @@ import { mintLiveReferencePresignedUrl } from '@/lib/socialReferenceS3'
 import { applyPhotoGenerationStyle } from '@/lib/socialPhotoStyle'
 
 type ImageProvider = 'google' | 'openai'
+type CameraDistance = 'further' | 'same' | 'closer'
 
 interface GenerateReferencePhotoRequest {
   referenceKey?: string
@@ -17,6 +18,7 @@ interface GenerateReferencePhotoRequest {
   photoFilterStyle?: 'none' | 'black_and_white' | 'old_timey' | 'faded_film'
   mode?: 'style' | 'identity'
   provider?: ImageProvider
+  cameraDistance?: CameraDistance
   jobId?: string
 }
 
@@ -40,6 +42,12 @@ function clampAgeDeltaYears(raw: number | undefined): number {
   return Math.min(60, Math.max(-60, Math.floor(raw || 0)))
 }
 
+// These models tend to drift closer / zoom in on the subjects. This lock forces
+// the generated photo to keep the SAME camera-to-subject distance and framing as
+// the reference so the perceived distance stays consistent across every slide.
+const FRAMING_DISTANCE_LOCK =
+  'CAMERA DISTANCE LOCK (highest priority): Match the exact same camera-to-subject distance, framing, and zoom level as the reference image. The people must occupy the same proportion of the frame as in the reference - do NOT zoom in, do NOT move the camera closer, do NOT crop tighter on faces or bodies, do NOT create a close-up. Preserve the same shot scale (wide/medium/full-body), the same headroom, and the same amount of surrounding background as the reference so the subjects look just as far away as in the original.'
+
 function buildAgeDeltaClause(ageDeltaYears: number): string {
   if (ageDeltaYears === 0) return ''
   if (ageDeltaYears > 0) {
@@ -48,24 +56,38 @@ function buildAgeDeltaClause(ageDeltaYears: number): string {
   return ` Make them look about ${Math.abs(ageDeltaYears)} years younger than in the reference image.`
 }
 
+function buildCameraDistanceClause(distance: CameraDistance): string {
+  if (distance === 'closer') {
+    return ' Take this photo from closer to the subjects than the reference image (a bit more zoomed in), while still looking like a natural casual phone photo.'
+  }
+  if (distance === 'further') {
+    return ' Take this photo from further away than the reference image, so the people appear smaller in the frame with more of the surroundings visible.'
+  }
+  return ' Keep roughly the same camera-to-subject distance as the reference image (do not zoom into a tight close-up).'
+}
+
 function buildIdentityLockedPrompt(
   scenePrompt: string,
   activityPrompt: string,
   detailPrompt: string,
-  ageDeltaYears: number
+  ageDeltaYears: number,
+  cameraDistance: CameraDistance
 ): string {
   const activityClause = activityPrompt
-    ? ` Activity they are doing: ${activityPrompt}.`
-    : ' Activity they are doing: a natural candid moment.'
+    ? ` They are actively ${activityPrompt} — let this activity drive their pose, body position, hands, and expression.`
+    : ' Let their pose and expression come naturally from a candid moment.'
   const detailClause = detailPrompt
     ? ` Specific detail to include: ${detailPrompt}.`
     : ''
   const ageClause = buildAgeDeltaClause(ageDeltaYears)
+  const cameraClause = buildCameraDistanceClause(cameraDistance)
   return (
-    'Establish a high-fidelity identity lock on the subjects in the reference image. ' +
-    'Photorealistic candid phone photo. Keep these EXACT same people - same faces, same identities, same ages - ' +
-    `from the reference image. New scene: ${scenePrompt}.${activityClause}${detailClause}${ageClause} ` +
-    'They are wearing different clothes/outfits from the reference. Super realistic, natural casual phone-photo quality, not stylized.'
+    'Photorealistic candid phone photo of the EXACT same people from the reference image — same faces, same identities, same ages. ' +
+    `Scene: ${scenePrompt}.${activityClause}${detailClause}${ageClause} ` +
+    'Give them a new, different pose and body position that fits what they are doing — do NOT reuse or copy the pose from the reference image. ' +
+    'They are wearing completely different clothes from the reference, and their worn accessories must change to match the new outfit too: change or remove hats, sunglasses, glasses, and jewelry rather than keeping the same ones from the reference. ' +
+    'Super realistic, natural casual phone-photo quality, not stylized.' +
+    cameraClause
   )
 }
 
@@ -74,8 +96,9 @@ function buildStyleLockedPrompt(detailPrompt: string, ageDeltaYears: number): st
     'STYLE-ONLY REFERENCE LOCK (highest priority): Create another photo just like this reference photo but with completely different people with different clothing and a slightly different setting. Other than that the photo should look the exact same - this should not look like a stock photo, if there was glare keep it, if bad lighting keep it, truly only look to make the people different and thats it. RELATIONSHIP LOCK (highest priority): Preserve the same relationship roles and composition from the reference image. Do not swap who is who (for example, father/daughter must stay father/daughter), do not flip generational roles, and do not change the apparent gender role pairing implied by the reference composition. Keep the awkwardness: imperfect lighting, awkward expressions, slight blur/soft focus, and real phone-photo messiness.'
   const detail = detailPrompt.trim()
   const ageClause = buildAgeDeltaClause(ageDeltaYears).trim()
+  const base = `${styleOnlyConstraint} ${FRAMING_DISTANCE_LOCK}`
   if (!detail && !ageClause) {
-    return styleOnlyConstraint
+    return base
   }
   const extras: string[] = []
   if (detail) {
@@ -84,7 +107,7 @@ function buildStyleLockedPrompt(detailPrompt: string, ageDeltaYears: number): st
   if (ageClause) {
     extras.push(ageClause)
   }
-  return `${styleOnlyConstraint}\n\n${extras.join(' ')}`
+  return `${base}\n\n${extras.join(' ')}`
 }
 
 export async function POST(request: NextRequest) {
@@ -100,6 +123,10 @@ export async function POST(request: NextRequest) {
     const photoFilterStyle = body.photoFilterStyle || 'none'
     const mode = body.mode === 'style' ? 'style' : 'identity'
     const provider: ImageProvider = body.provider === 'openai' ? 'openai' : 'google'
+    const cameraDistance: CameraDistance =
+      body.cameraDistance === 'closer' || body.cameraDistance === 'further'
+        ? body.cameraDistance
+        : 'same'
     const jobId = body.jobId?.trim() || ''
 
     if (!referenceKey && !referenceImageUrlFromBody) {
@@ -120,7 +147,7 @@ export async function POST(request: NextRequest) {
       : referenceImageUrlFromBody
     const basePrompt = mode === 'style'
       ? buildStyleLockedPrompt(detail, ageDeltaYears)
-      : buildIdentityLockedPrompt(prompt, activity, detail, ageDeltaYears)
+      : buildIdentityLockedPrompt(prompt, activity, detail, ageDeltaYears, cameraDistance)
     const styledPrompt = applyPhotoGenerationStyle(basePrompt, {
       photo_blur_level: String(blurLevel),
       photo_filter_style: photoFilterStyle,

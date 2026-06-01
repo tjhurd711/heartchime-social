@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { v4 as uuidv4 } from 'uuid'
+import { stripImageMetadata } from '@/lib/stripImageMetadata'
 
 // S3 config
 const s3Client = new S3Client({
@@ -71,8 +72,8 @@ export async function POST(request: NextRequest) {
     
     console.log('[test-gemini] Got base64 image, length:', base64Image.length)
     
-    // Convert base64 to buffer
-    const buffer = Buffer.from(base64Image, 'base64')
+    // Convert base64 to buffer (strips C2PA / embedded metadata before upload)
+    const buffer = await stripImageMetadata(Buffer.from(base64Image, 'base64'))
     
     // Generate unique filename
     const filename = `social-generated/${uuidv4()}.png`

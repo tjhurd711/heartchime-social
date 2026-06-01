@@ -1,5 +1,6 @@
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { v4 as uuidv4 } from 'uuid'
+import { stripImageMetadata } from './stripImageMetadata'
 
 const OPENAI_IMAGE_MODEL = 'gpt-image-2'
 const OPENAI_IMAGE_SIZE = '1024x1536'
@@ -49,20 +50,20 @@ function inferImageMimeTypeFromUrl(rawUrl: string): string {
   }
 }
 
-function uploadBufferToGeneratedMedia(buffer: Buffer, key?: string): Promise<string> {
+async function uploadBufferToGeneratedMedia(buffer: Buffer, key?: string): Promise<string> {
   const objectKey = key && key.trim() ? key.trim() : `social-generated/${uuidv4()}.png`
   const bucketName = process.env.S3_BUCKET_NAME || 'heartbeat-photos-prod'
+  const cleanBuffer = await stripImageMetadata(buffer)
 
-  return s3Client
-    .send(
-      new PutObjectCommand({
-        Bucket: bucketName,
-        Key: objectKey,
-        Body: buffer,
-        ContentType: 'image/png',
-      })
-    )
-    .then(() => `https://${bucketName}.s3.us-east-2.amazonaws.com/${objectKey}`)
+  await s3Client.send(
+    new PutObjectCommand({
+      Bucket: bucketName,
+      Key: objectKey,
+      Body: cleanBuffer,
+      ContentType: 'image/png',
+    })
+  )
+  return `https://${bucketName}.s3.us-east-2.amazonaws.com/${objectKey}`
 }
 
 interface GptImageOptions {

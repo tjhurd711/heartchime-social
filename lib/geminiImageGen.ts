@@ -1,5 +1,6 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { v4 as uuidv4 } from 'uuid'
+import { stripImageMetadata } from './stripImageMetadata'
 
 const s3Client = new S3Client({
   region: process.env.AWS_REGION || 'us-east-2',
@@ -133,7 +134,7 @@ export async function generateAndUploadPhoto(
       const imagePart = (responseParts as GeminiResponsePart[]).find((part) => part.inlineData?.mimeType?.startsWith('image/'))
       if (imagePart?.inlineData?.data) {
         const base64 = imagePart.inlineData.data
-        const buffer = Buffer.from(base64, 'base64')
+        const buffer = await stripImageMetadata(Buffer.from(base64, 'base64'))
         
         const key = options.key || `social-generated/${uuidv4()}.png`
         await s3Client.send(new PutObjectCommand({

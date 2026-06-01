@@ -9,6 +9,7 @@ import {
   mapLovedOneToKey,
   hasEraPhotos,
 } from '@/lib/aiUgcEraPhotos'
+import { stripImageMetadata } from '@/lib/stripImageMetadata'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SUPABASE & S3 CLIENTS
@@ -564,7 +565,7 @@ async function generateGenericPhotoWithGemini3Pro(prompt: string): Promise<strin
         console.log('[ai-ugc/generate] ✅ Image data received! Uploading to S3...')
         
         const base64 = imagePart.inlineData.data
-        const buffer = Buffer.from(base64, 'base64')
+        const buffer = await stripImageMetadata(Buffer.from(base64, 'base64'))
         console.log('[ai-ugc/generate] 📊 Image buffer size:', buffer.length, 'bytes')
 
         const bucket = process.env.S3_BUCKET_NAME || 'heartbeat-photos-prod'
@@ -758,7 +759,7 @@ async function generatePhotoWithGemini3Pro(
         console.log('[ai-ugc/generate] ✅ Image data received! Uploading to S3...')
         
         const base64 = imagePart.inlineData.data
-        const buffer = Buffer.from(base64, 'base64')
+        const buffer = await stripImageMetadata(Buffer.from(base64, 'base64'))
         console.log('[ai-ugc/generate] 📊 Image buffer size:', buffer.length, 'bytes')
 
         const bucket = process.env.S3_BUCKET_NAME || 'heartbeat-photos-prod'

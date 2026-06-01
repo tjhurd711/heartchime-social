@@ -60,6 +60,8 @@ type PhotoInputMode = 'upload' | 'reference'
 type PhotoRepeatCount = 1 | 2 | 3
 type ImageProvider = 'google' | 'openai'
 
+type CameraDistance = (typeof CAMERA_DISTANCE_OPTIONS)[number]['value']
+
 interface ChainedSlideConfig {
   id: string
   scene: string
@@ -67,6 +69,7 @@ interface ChainedSlideConfig {
   blurLevel: number
   ageDeltaYears: number
   photoFilterStyle: (typeof PHOTO_FILTER_OPTIONS)[number]['value']
+  cameraDistance: CameraDistance
 }
 
 const CUSTOM_OPTION_VALUE = '__custom__'
@@ -76,6 +79,11 @@ const PHOTO_FILTER_OPTIONS = [
   { value: 'black_and_white', label: 'Black & White' },
   { value: 'old_timey', label: 'Old-Timey Vintage' },
   { value: 'faded_film', label: 'Faded Film' },
+] as const
+const CAMERA_DISTANCE_OPTIONS = [
+  { value: 'further', label: 'Further from camera' },
+  { value: 'same', label: 'Same distance' },
+  { value: 'closer', label: 'Closer to camera' },
 ] as const
 const SCENE_OPTIONS = [
   'Sitting on a porch swing',
@@ -174,6 +182,7 @@ export default function MemorialVideoPage() {
       blurLevel: 1,
       ageDeltaYears: 0,
       photoFilterStyle: 'none',
+      cameraDistance: 'same',
     },
   ])
   const [slideProgress, setSlideProgress] = useState<Record<string, string>>({})
@@ -266,8 +275,8 @@ export default function MemorialVideoPage() {
 
   function updateChainedSlide(
     id: string,
-    field: 'scene' | 'activity' | 'blurLevel' | 'ageDeltaYears' | 'photoFilterStyle',
-    value: string | number | (typeof PHOTO_FILTER_OPTIONS)[number]['value']
+    field: 'scene' | 'activity' | 'blurLevel' | 'ageDeltaYears' | 'photoFilterStyle' | 'cameraDistance',
+    value: string | number | (typeof PHOTO_FILTER_OPTIONS)[number]['value'] | CameraDistance
   ) {
     setChainedSlides((prev) => prev.map((slide) => (slide.id === id ? { ...slide, [field]: value } : slide)))
   }
@@ -285,6 +294,7 @@ export default function MemorialVideoPage() {
           blurLevel: 1,
           ageDeltaYears: 0,
           photoFilterStyle: 'none',
+          cameraDistance: 'same',
         },
       ]
     })
@@ -394,11 +404,15 @@ export default function MemorialVideoPage() {
     setIsGeneratingReferencePhotos(true)
     setSlideProgress({})
 
-    const generatedPhotos: UploadedPhoto[] = []
     const failedSlides: string[] = []
 
-    let previousImageUrl: string | null = null
     const slide1ProgressId = 'slide-1'
+
+    // Step 1: generate the anchor (Slide 1) first. Every other slide references
+    // this single image so identities/framing stay consistent and the rest can
+    // be generated in parallel rather than chained one after another.
+    let anchorUrl: string | null = null
+    let anchorPhoto: UploadedPhoto | null = null
 
     setSlideProgress((prev) => ({ ...prev, [slide1ProgressId]: 'Generating...' }))
     try {
@@ -421,67 +435,83 @@ export default function MemorialVideoPage() {
       }
       const data = await response.json()
       const generated = data as GenerateReferencePhotoResponse
-      previousImageUrl = generated.url
-      generatedPhotos.push({
+      anchorUrl = generated.url
+      anchorPhoto = {
         id: crypto.randomUUID(),
         key: generated.key,
         fileName: 'Generated Slide 1',
         previewUrl: generated.url,
         sourceUrl: generated.url,
         previewIsObjectUrl: false,
-      })
+      }
       setSlideProgress((prev) => ({ ...prev, [slide1ProgressId]: 'Done' }))
     } catch (slide1Error) {
       failedSlides.push(`Slide 1: ${coerceErrorText(slide1Error) || 'Unknown error'}`)
       setSlideProgress((prev) => ({ ...prev, [slide1ProgressId]: 'Failed' }))
     }
 
-    for (let index = 0; index < chained.length; index += 1) {
-      const slide = chained[index]
-      const slideNumber = index + 2
-      setSlideProgress((prev) => ({ ...prev, [slide.id]: 'Generating...' }))
-      if (!previousImageUrl) {
-        failedSlides.push(`Slide ${slideNumber}: missing previous slide image`)
-        setSlideProgress((prev) => ({ ...prev, [slide.id]: 'Failed' }))
-        continue
-      }
-
-      try {
-        const response = await fetch('/api/memorial-video/generate-reference-photo', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            referenceImageUrl: previousImageUrl,
-            mode: 'identity',
-            provider: referenceProvider,
-            prompt: slide.scene,
-            activity: slide.activity,
-            blurLevel: slide.blurLevel,
-            ageDeltaYears: slide.ageDeltaYears,
-            photoFilterStyle: slide.photoFilterStyle,
-            jobId: activeJobId,
-          }),
+    // Step 2: fan out — generate all remaining slides at the same time, each
+    // referencing the anchor (Slide 1). Results are kept in slide order.
+    const chainedResults: (UploadedPhoto | null)[] = new Array(chained.length).fill(null)
+    if (anchorUrl) {
+      const anchorImageUrl = anchorUrl
+      setSlideProgress((prev) => {
+        const next = { ...prev }
+        chained.forEach((slide) => {
+          next[slide.id] = 'Generating...'
         })
-        if (!response.ok) {
-          throw new Error(await readErrorFromResponse(response, `Failed generating Slide ${slideNumber}`))
-        }
-        const data = await response.json()
-        const generated = data as GenerateReferencePhotoResponse
-        previousImageUrl = generated.url
-        generatedPhotos.push({
-          id: crypto.randomUUID(),
-          key: generated.key,
-          fileName: `Generated Slide ${slideNumber}`,
-          previewUrl: generated.url,
-          sourceUrl: generated.url,
-          previewIsObjectUrl: false,
+        return next
+      })
+      await Promise.all(
+        chained.map(async (slide, index) => {
+          const slideNumber = index + 2
+          try {
+            const response = await fetch('/api/memorial-video/generate-reference-photo', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                referenceImageUrl: anchorImageUrl,
+                mode: 'identity',
+                provider: referenceProvider,
+                prompt: slide.scene,
+                activity: slide.activity,
+                blurLevel: slide.blurLevel,
+                ageDeltaYears: slide.ageDeltaYears,
+                photoFilterStyle: slide.photoFilterStyle,
+                cameraDistance: slide.cameraDistance,
+                jobId: activeJobId,
+              }),
+            })
+            if (!response.ok) {
+              throw new Error(await readErrorFromResponse(response, `Failed generating Slide ${slideNumber}`))
+            }
+            const data = await response.json()
+            const generated = data as GenerateReferencePhotoResponse
+            chainedResults[index] = {
+              id: crypto.randomUUID(),
+              key: generated.key,
+              fileName: `Generated Slide ${slideNumber}`,
+              previewUrl: generated.url,
+              sourceUrl: generated.url,
+              previewIsObjectUrl: false,
+            }
+            setSlideProgress((prev) => ({ ...prev, [slide.id]: 'Done' }))
+          } catch (slideError) {
+            failedSlides.push(`Slide ${slideNumber}: ${coerceErrorText(slideError) || 'Unknown error'}`)
+            setSlideProgress((prev) => ({ ...prev, [slide.id]: 'Failed' }))
+          }
         })
-        setSlideProgress((prev) => ({ ...prev, [slide.id]: 'Done' }))
-      } catch (slideError) {
-        failedSlides.push(`Slide ${slideNumber}: ${coerceErrorText(slideError) || 'Unknown error'}`)
+      )
+    } else {
+      chained.forEach((slide, index) => {
+        failedSlides.push(`Slide ${index + 2}: skipped (Slide 1 failed)`)
         setSlideProgress((prev) => ({ ...prev, [slide.id]: 'Failed' }))
-      }
+      })
     }
+
+    const generatedPhotos: UploadedPhoto[] = [anchorPhoto, ...chainedResults].filter(
+      (photo): photo is UploadedPhoto => photo !== null
+    )
 
     if (generatedPhotos.length > 0) {
       setPhotos((prev) => [...prev, ...generatedPhotos])
@@ -880,7 +910,7 @@ export default function MemorialVideoPage() {
                     </div>
                   </div>
                   <p className="text-xs text-[#f8f1df]/60">
-                    Each slide uses the immediately previous generated slide as its reference (identity chain, no age progression).
+                    Slide 1 is generated first, then every slide below references Slide 1 and is generated in parallel (same identity & camera distance, no age progression).
                   </p>
 
                   {chainedSlides.map((slide, index) => {
@@ -973,6 +1003,21 @@ export default function MemorialVideoPage() {
                             </option>
                           ))}
                         </select>
+                      </label>
+                      <label className="mt-2 block text-xs text-[#f8f1df]/80">
+                        Camera distance (Slide {index + 2})
+                        <select
+                          value={slide.cameraDistance}
+                          onChange={(event) => updateChainedSlide(slide.id, 'cameraDistance', event.target.value as CameraDistance)}
+                          className="mt-1 w-full rounded-lg border border-[#d4af37]/30 bg-[#0b1120] px-3 py-2 text-sm text-[#f8f1df] focus:outline-none focus:ring-2 focus:ring-[#d4af37]/40"
+                        >
+                          {CAMERA_DISTANCE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="mt-1 block text-[11px] text-[#f8f1df]/60">Relative to Slide 1 (the reference for this photo).</span>
                       </label>
                     </div>
                     )})}

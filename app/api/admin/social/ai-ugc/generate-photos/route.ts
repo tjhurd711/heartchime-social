@@ -11,6 +11,7 @@ import {
   validateTogetherPhoto,
   hasEraPhotos,
 } from '@/lib/aiUgcEraPhotos'
+import { stripImageMetadata } from '@/lib/stripImageMetadata'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GENERATE PHOTOS ONLY (NO HEARTCHIME CARD)
@@ -414,7 +415,7 @@ async function generateGenericPhotoWithGemini3Pro(prompt: string): Promise<strin
       const imagePart = parts.find((p: any) => p.inlineData?.mimeType?.startsWith('image/'))
       if (imagePart?.inlineData?.data) {
         const base64 = imagePart.inlineData.data
-        const buffer = Buffer.from(base64, 'base64')
+        const buffer = await stripImageMetadata(Buffer.from(base64, 'base64'))
 
         const bucket = process.env.S3_BUCKET_NAME || 'heartbeat-photos-prod'
         const key = `ai-ugc-posts/${uuidv4()}.png`
@@ -568,7 +569,7 @@ async function generatePhotoWithGemini3Pro(
         console.log('[generate-photos] ✅ Image data received! Uploading to S3...')
         
         const base64 = imagePart.inlineData.data
-        const buffer = Buffer.from(base64, 'base64')
+        const buffer = await stripImageMetadata(Buffer.from(base64, 'base64'))
         console.log('[generate-photos] 📊 Image buffer size:', buffer.length, 'bytes')
 
         const bucket = process.env.S3_BUCKET_NAME || 'heartbeat-photos-prod'

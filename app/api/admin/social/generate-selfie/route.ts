@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { v4 as uuidv4 } from 'uuid'
 import { buildSelfiePrompt, SelfieParams } from '@/lib/socialPhotoPrompt'
+import { stripImageMetadata } from '@/lib/stripImageMetadata'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // S3 CLIENT
@@ -144,7 +145,7 @@ export async function POST(request: NextRequest) {
     }
 
     const base64 = imagePart.inlineData.data
-    const buffer = Buffer.from(base64, 'base64')
+    const buffer = await stripImageMetadata(Buffer.from(base64, 'base64'))
 
     // ═══════════════════════════════════════════════════════════════════════
     // STEP 4: Upload to S3
