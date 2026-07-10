@@ -44,6 +44,12 @@ yarn-error.log*
 next-env.d.ts
 .env*.local
 
+# YouTube cookies — never commit (cloud fetch loads from private S3)
+youtube-cookies.txt
+**/youtube-cookies.txt
+www.youtube.com_cookies.txt
+**/www.youtube.com_cookies.txt
+
 # lambda build artifacts (regenerated from source by each deploy.sh)
 lambdas/*/*.zip
 lambdas/*/.build/

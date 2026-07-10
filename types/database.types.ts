@@ -401,6 +401,42 @@ export type Database = {
         }
         Relationships: []
       }
+      fetch_jobs: {
+        Row: {
+          claimed_at: string | null
+          claimed_by: string | null
+          celebrity_slug: string
+          created_at: string
+          error: string | null
+          id: string
+          params: Json
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          claimed_at?: string | null
+          claimed_by?: string | null
+          celebrity_slug: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          params?: Json
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          claimed_at?: string | null
+          claimed_by?: string | null
+          celebrity_slug?: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          params?: Json
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       deceased: {
         Row: {
           age: number | null
@@ -2506,6 +2542,20 @@ export type Database = {
       }
     }
     Functions: {
+      claim_fetch_job: {
+        Args: { p_worker_id: string }
+        Returns: {
+          claimed_at: string | null
+          claimed_by: string | null
+          celebrity_slug: string
+          created_at: string
+          error: string | null
+          id: string
+          params: Json
+          status: string
+          updated_at: string
+        }[]
+      }
       cleanup_old_trends: { Args: never; Returns: undefined }
       get_due_gems: {
         Args: { batch_limit?: number }

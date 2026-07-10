@@ -87,14 +87,22 @@ const s3 = new S3Client({
 })
 
 const body = readFileSync(cookiesPath)
+const uploadedAt = new Date().toISOString()
 await s3.send(
   new PutObjectCommand({
     Bucket: bucket,
     Key: key,
     Body: body,
     ContentType: 'text/plain',
+    // Private by bucket policy; never ACL public. Metadata powers the UI age indicator.
+    Metadata: {
+      'uploaded-at': uploadedAt,
+      source: 'upload-youtube-cookies.mjs',
+    },
   })
 )
 
 console.log(`Uploaded ${cookiesPath} → s3://${bucket}/${key}`)
+console.log(`Cookie metadata uploaded-at=${uploadedAt}`)
 console.log('Next: node scripts/configure-celebrity-clips-lambda.mjs')
+console.log('Refresh loop: export-youtube-cookies.ps1 → upload-youtube-cookies.mjs (every ~7 days)')

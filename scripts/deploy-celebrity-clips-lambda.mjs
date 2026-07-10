@@ -9,6 +9,7 @@ import {
   UpdateFunctionCodeCommand,
   UpdateFunctionConfigurationCommand,
 } from '@aws-sdk/client-lambda'
+import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import AdmZip from 'adm-zip'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -77,12 +78,45 @@ for (const file of ['handler.py', 'celebrity_videos.py', 'ecs_fallback.py']) {
   cpSync(join(lambdaDir, file), join(buildDir, file))
 }
 
+// Never ship cookie files inside the deploy zip (cloud fetch loads from private S3).
+for (const banned of ['youtube-cookies.txt', 'www.youtube.com_cookies.txt', 'cookies.txt']) {
+  const bannedPath = join(buildDir, banned)
+  if (existsSync(bannedPath)) {
+    throw new Error(`Refusing to deploy: cookie file found in build dir (${bannedPath})`)
+  }
+}
+
 console.log('Creating zip...')
 zipDirectory(buildDir, zipPath)
 const zipBuffer = readFileSync(zipPath)
 console.log(`Zip size: ${(zipBuffer.length / 1024 / 1024).toFixed(1)} MB`)
 
-const code = { ZipFile: zipBuffer }
+const bucket = env.S3_BUCKET_NAME || 'heartbeat-photos-prod'
+const s3Key = `lambda-deploys/${functionName}/${Date.now()}.zip`
+// Direct UpdateFunctionCode ZipFile limit is ~50MB; use S3 for larger packages.
+const useS3Code = zipBuffer.length > 45 * 1024 * 1024
+let code
+if (useS3Code) {
+  console.log(`Uploading zip to s3://${bucket}/${s3Key} (too large for direct ZipFile)...`)
+  const s3 = new S3Client({
+    region,
+    credentials: {
+      accessKeyId: env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+    },
+  })
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: s3Key,
+      Body: zipBuffer,
+      ContentType: 'application/zip',
+    })
+  )
+  code = { S3Bucket: bucket, S3Key: s3Key }
+} else {
+  code = { ZipFile: zipBuffer }
+}
 
 let existingConfig = null
 let exists = true
@@ -108,9 +142,13 @@ const lambdaEnv = {
 delete lambdaEnv.Variables.YT_DLP_BIN
 if (env.YOUTUBE_COOKIES_S3_KEY?.trim()) {
   lambdaEnv.Variables.YOUTUBE_COOKIES_S3_KEY = env.YOUTUBE_COOKIES_S3_KEY.trim()
+} else {
+  lambdaEnv.Variables.YOUTUBE_COOKIES_S3_KEY = 'config/youtube-cookies.txt'
 }
 if (env.YOUTUBE_COOKIES_S3_BUCKET?.trim()) {
   lambdaEnv.Variables.YOUTUBE_COOKIES_S3_BUCKET = env.YOUTUBE_COOKIES_S3_BUCKET.trim()
+} else {
+  lambdaEnv.Variables.YOUTUBE_COOKIES_S3_BUCKET = bucket
 }
 
 const config = {
@@ -126,11 +164,11 @@ if (exists) {
   await client.send(
     new UpdateFunctionCodeCommand({
       FunctionName: functionName,
-      ZipFile: zipBuffer,
+      ...code,
     })
   )
   console.log(`Waiting for ${functionName} code update...`)
-  await new Promise((resolve) => setTimeout(resolve, 10000))
+  await new Promise((resolve) => setTimeout(resolve, 15000))
   console.log(`Updating ${functionName} environment...`)
   await client.send(
     new UpdateFunctionConfigurationCommand({
@@ -152,3 +190,6 @@ if (exists) {
 
 rmSync(buildDir, { recursive: true, force: true })
 console.log(`Done. ${functionName} is deployed in ${region}.`)
+if (useS3Code) {
+  console.log(`Deploy artifact: s3://${bucket}/${s3Key}`)
+}
