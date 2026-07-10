@@ -12,28 +12,12 @@ interface NavItem {
 
 const socialNavigation: NavItem[] = [
   {
-    name: '📊 Dashboard',
-    href: '/admin/social',
-  },
-  {
     name: '👥 Recipients',
     href: '/admin/social/recipients',
   },
   {
-    name: '🌲 Evergreen',
-    href: '/admin/social/evergreen',
-  },
-  {
-    name: '📋 Posts',
-    href: '/admin/social/evergreen',
-  },
-  {
     name: '➕ Create',
     href: '/admin/social/create',
-  },
-  {
-    name: '📝 Hooks',
-    href: '/admin/social/evergreen/hooks',
   },
   {
     name: '🎬 Templates',
@@ -46,6 +30,10 @@ const socialNavigation: NavItem[] = [
   {
     name: '🧪 Engine Test',
     href: '/admin/social/engine-test',
+  },
+  {
+    name: '🎞️ Video Editor',
+    href: '/admin/social/video-editor',
   },
   {
     name: '📞 Voicemail',
@@ -167,7 +155,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="relative max-w-md w-full">
           <div className="text-center mb-8">
             <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-lg shadow-amber-500/20">
-              <Image src="/heartchime_icon.png" alt="Heartchime" width={40} height={40} className="rounded-lg" style={{ width: 'auto', height: 'auto' }} />
+              <Image src="/heartchime_icon.svg" alt="Heartchime" width={40} height={40} className="rounded-lg" style={{ width: 'auto', height: 'auto' }} />
             </div>
             <h1 className="text-3xl font-bold text-white mb-2">Admin Access</h1>
             <p className="text-gray-400">Enter your PIN to continue</p>
@@ -198,7 +186,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 type="submit"
                 className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-white font-semibold py-4 rounded-xl hover:from-amber-400 hover:to-orange-400 transition-all text-lg shadow-lg shadow-amber-500/20"
               >
-                Unlock Dashboard
+                Unlock Admin
               </button>
             </form>
           </div>
@@ -228,11 +216,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <div className="p-6 border-b border-gray-800/50">
             <Link href="/admin" className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-lg shadow-amber-500/20">
-                <Image src="/heartchime_icon.png" alt="Heartchime" width={28} height={28} className="rounded-lg" style={{ width: 'auto', height: 'auto' }} />
+                <Image src="/heartchime_icon.svg" alt="Heartchime" width={28} height={28} className="rounded-lg" style={{ width: 'auto', height: 'auto' }} />
               </div>
               <div>
                 <h1 className="text-lg font-bold text-white">Heartchime</h1>
-                <p className="text-xs text-gray-500">Admin Dashboard</p>
+                <p className="text-xs text-gray-500">Admin</p>
               </div>
             </Link>
           </div>
@@ -286,7 +274,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </button>
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center">
-                <Image src="/heartchime_icon.png" alt="Heartchime" width={20} height={20} className="rounded" style={{ width: 'auto', height: 'auto' }} />
+                <Image src="/heartchime_icon.svg" alt="Heartchime" width={20} height={20} className="rounded" style={{ width: 'auto', height: 'auto' }} />
               </div>
               <span className="font-semibold text-white">Heartchime</span>
             </div>

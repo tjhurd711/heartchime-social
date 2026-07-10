@@ -122,7 +122,7 @@ export default function HeartchimePreviewCard({
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
           <Image
-            src="/heartchime_icon.png"
+            src="/heartchime_icon.svg"
             alt="Heartchime"
             width={50}
             height={40}
@@ -284,7 +284,7 @@ export default function HeartchimePreviewCard({
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         <Image
-          src="/heartchime_icon.png"
+          src="/heartchime_icon.svg"
           alt="Heartchime"
           width={50}
           height={40}

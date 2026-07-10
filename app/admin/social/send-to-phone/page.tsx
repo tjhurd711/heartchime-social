@@ -264,8 +264,8 @@ export default function SendToPhonePage() {
     <div className={`min-h-screen bg-[#0b1220] text-[#f3ead9] p-5 md:p-8 ${dmSans.className}`}>
       <div className="max-w-5xl mx-auto space-y-6">
         <header className="space-y-3">
-          <Link href="/admin/social" className="inline-flex text-sm text-[#d6b274] hover:text-[#ecc98a] transition-colors">
-            ← Back to Social
+          <Link href="/admin/social/create" className="inline-flex text-sm text-[#d6b274] hover:text-[#ecc98a] transition-colors">
+            ← Back to Create
           </Link>
           <div>
             <h1 className={`text-4xl text-[#f3ead9] ${cormorant.className}`}>Send To Phone</h1>

@@ -344,6 +344,63 @@ export type Database = {
           },
         ]
       }
+      celebrity_videos: {
+        Row: {
+          bucket: string
+          celebrity_name: string
+          created_at: string
+          download_duration_seconds: number | null
+          download_start_seconds: number | null
+          duration_seconds: number | null
+          error: string | null
+          id: string
+          phase: string
+          s3_key: string | null
+          search_query: string | null
+          source_url: string
+          status: string
+          title: string | null
+          updated_at: string
+          video_id: string
+        }
+        Insert: {
+          bucket?: string
+          celebrity_name: string
+          created_at?: string
+          download_duration_seconds?: number | null
+          download_start_seconds?: number | null
+          duration_seconds?: number | null
+          error?: string | null
+          id?: string
+          phase: string
+          s3_key?: string | null
+          search_query?: string | null
+          source_url: string
+          status: string
+          title?: string | null
+          updated_at?: string
+          video_id: string
+        }
+        Update: {
+          bucket?: string
+          celebrity_name?: string
+          created_at?: string
+          download_duration_seconds?: number | null
+          download_start_seconds?: number | null
+          duration_seconds?: number | null
+          error?: string | null
+          id?: string
+          phase?: string
+          s3_key?: string | null
+          search_query?: string | null
+          source_url?: string
+          status?: string
+          title?: string | null
+          updated_at?: string
+          video_id?: string
+        }
+        Relationships: []
+      }
       deceased: {
         Row: {
           age: number | null

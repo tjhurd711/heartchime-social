@@ -362,8 +362,8 @@ function CreateLiveNowPostContent() {
       {/* Header */}
       <div>
         <div className="flex items-center gap-2 mb-1">
-          <Link href="/admin/social" className="text-gray-400 hover:text-white text-sm">
-            Social Command Center
+          <Link href="/admin/social/create" className="text-gray-400 hover:text-white text-sm">
+            Create
           </Link>
           <span className="text-gray-600">/</span>
           <Link href="/admin/social/live-now" className="text-gray-400 hover:text-white text-sm">

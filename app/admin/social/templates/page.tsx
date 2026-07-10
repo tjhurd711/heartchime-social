@@ -58,10 +58,10 @@ export default function TemplatesGalleryPage() {
     <div className="p-6 lg:p-8 space-y-6">
       <div>
         <Link
-          href="/admin/social"
+          href="/admin/social/create"
           className="text-gray-400 hover:text-white text-sm flex items-center gap-1 mb-2"
         >
-          ← Back to Social Dashboard
+          ← Back to Create
         </Link>
         <h1 className="text-3xl font-bold text-white">Template Gallery</h1>
         <p className="text-gray-400 mt-1">Pick a template to generate a post with dynamic variables</p>

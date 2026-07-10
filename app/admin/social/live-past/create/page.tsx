@@ -419,8 +419,8 @@ export default function CreateLivePastPostPage() {
       {/* Header */}
       <div>
         <div className="flex items-center gap-2 mb-1">
-          <Link href="/admin/social" className="text-gray-400 hover:text-white text-sm">
-            Social Command Center
+          <Link href="/admin/social/create" className="text-gray-400 hover:text-white text-sm">
+            Create
           </Link>
           <span className="text-gray-600">/</span>
           <Link href="/admin/social/live-past" className="text-gray-400 hover:text-white text-sm">
@@ -766,8 +766,8 @@ export default function CreateLivePastPostPage() {
       <div className="bg-[#1a1f2e] rounded-2xl border border-gray-800/50 p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-white">4. Hook Text</h2>
-          <Link href="/admin/social/evergreen/hooks" className="text-sm text-pink-400 hover:text-pink-300">
-            Manage Hooks →
+          <Link href="/admin/social/templates" className="text-sm text-pink-400 hover:text-pink-300">
+            Templates →
           </Link>
         </div>
 

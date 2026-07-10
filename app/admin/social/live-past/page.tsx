@@ -316,10 +316,10 @@ export default function LivePastPage() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Link 
-              href="/admin/social"
+              href="/admin/social/create"
               className="text-gray-400 hover:text-white text-sm"
             >
-              Social Command Center
+              Create
             </Link>
             <span className="text-gray-600">/</span>
             <span className="text-gray-300 text-sm">Live Past</span>

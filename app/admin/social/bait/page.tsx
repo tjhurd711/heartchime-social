@@ -380,8 +380,8 @@ export default function BaitLibraryAdminPage() {
     <div className={`min-h-screen bg-[#0b1220] text-[#f3ead9] p-5 md:p-8 ${dmSans.className}`}>
       <div className="max-w-7xl mx-auto space-y-6">
         <header className="space-y-3">
-          <Link href="/admin/social" className="inline-flex text-sm text-[#d6b274] hover:text-[#ecc98a] transition-colors">
-            ← Back to Social
+          <Link href="/admin/social/create" className="inline-flex text-sm text-[#d6b274] hover:text-[#ecc98a] transition-colors">
+            ← Back to Create
           </Link>
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>

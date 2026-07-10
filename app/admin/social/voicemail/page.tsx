@@ -266,8 +266,8 @@ export default function VoicemailTesterPage() {
   return (
     <div className="space-y-6 p-6 lg:p-8">
       <div>
-        <Link href="/admin/social" className="mb-2 inline-flex text-sm text-gray-400 hover:text-gray-200">
-          ← Back to Social Dashboard
+        <Link href="/admin/social/create" className="mb-2 inline-flex text-sm text-gray-400 hover:text-gray-200">
+          ← Back to Create
         </Link>
         <h1 className="text-3xl font-bold text-white">Voicemail Voice Generator</h1>
         <p className="mt-1 max-w-3xl text-sm text-gray-400">

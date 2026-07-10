@@ -214,10 +214,10 @@ export default function DeliveryPage() {
         <h1 className="text-2xl font-bold text-white mb-2">Post Not Found</h1>
         <p className="text-gray-400 mb-6">This post does not exist or has been deleted.</p>
         <Link
-          href="/admin/social/evergreen"
+          href="/admin/social/create"
           className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
         >
-          Back to Evergreen
+          Back to Create
         </Link>
       </div>
     );
@@ -238,10 +238,10 @@ export default function DeliveryPage() {
       <div className="max-w-xl mx-auto space-y-4">
         <div className="bg-gray-800 rounded-xl p-6">
           <Link
-            href="/admin/social/evergreen"
+            href="/admin/social/create"
             className="text-gray-400 hover:text-white text-sm flex items-center gap-1 mb-3"
           >
-            ← Back to Evergreen
+            ← Back to Create
           </Link>
           <h1 className="text-xl font-semibold text-white">Delivery Preview</h1>
           <p className="text-sm text-gray-400 mt-1">Finalize slides, then send to iPhone.</p>

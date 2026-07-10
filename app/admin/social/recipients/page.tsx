@@ -75,6 +75,7 @@ export default function RecipientsPage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState<string | null>(null)
   const [showDeleteModal, setShowDeleteModal] = useState<string | null>(null)
+  const [showDeleteAllModal, setShowDeleteAllModal] = useState(false)
   const [saving, setSaving] = useState(false)
   
   // Upload state
@@ -298,6 +299,32 @@ export default function RecipientsPage() {
     }
   }
 
+  const handleDeleteAllRecipients = async () => {
+    if (recipients.length === 0) return
+
+    setSaving(true)
+    try {
+      const { error } = await supabase
+        .from('social_recipients')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000')
+
+      if (error) {
+        console.error('Error deleting all recipients:', error)
+        alert('Failed to delete all recipients')
+      } else {
+        setShowDeleteAllModal(false)
+        setRecipients([])
+        loadRecipients()
+      }
+    } catch (error) {
+      console.error('Error deleting all recipients:', error)
+      alert('Failed to delete all recipients')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   // Get recipient being deleted (for modal)
   const recipientToDelete = showDeleteModal 
     ? recipients.find(r => r.id === showDeleteModal) 
@@ -446,10 +473,10 @@ export default function RecipientsPage() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Link 
-              href="/admin/social"
+              href="/admin/social/create"
               className="text-gray-400 hover:text-white text-sm"
             >
-              Social Media
+              Create
             </Link>
             <span className="text-gray-600">/</span>
             <span className="text-gray-300 text-sm">Recipients</span>
@@ -458,6 +485,15 @@ export default function RecipientsPage() {
           <p className="text-gray-400 mt-1">Manage AI-generated faces for all social content pipelines</p>
         </div>
         <div className="flex items-center gap-3">
+          {recipients.length > 0 && (
+            <button
+              onClick={() => setShowDeleteAllModal(true)}
+              disabled={saving}
+              className="px-4 py-2 bg-red-500/15 text-red-300 font-medium rounded-xl hover:bg-red-500/25 border border-red-500/30 transition-all disabled:opacity-50"
+            >
+              Delete All
+            </button>
+          )}
           <button
             onClick={scanS3}
             disabled={isScanning}
@@ -1002,6 +1038,35 @@ export default function RecipientsPage() {
                   className="flex-1 px-4 py-2.5 bg-red-500 text-white font-medium rounded-xl hover:bg-red-400 transition-colors disabled:opacity-50"
                 >
                   {saving ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteAllModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#1a1f2e] rounded-2xl border border-gray-800/50 w-full max-w-md p-6">
+            <div className="text-center">
+              <h3 className="text-xl font-semibold text-white mb-2">Delete All Recipients?</h3>
+              <p className="text-gray-400 mb-6">
+                This will permanently delete all <span className="text-white font-medium">{recipients.length}</span> recipients.
+                Image files in S3 are not removed.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDeleteAllModal(false)}
+                  className="flex-1 px-4 py-2.5 bg-gray-800 text-gray-300 font-medium rounded-xl hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteAllRecipients}
+                  disabled={saving}
+                  className="flex-1 px-4 py-2.5 bg-red-500 text-white font-medium rounded-xl hover:bg-red-400 transition-colors disabled:opacity-50"
+                >
+                  {saving ? 'Deleting...' : 'Delete All'}
                 </button>
               </div>
             </div>

@@ -221,10 +221,10 @@ export default function LiveNowPage() {
       <div className="flex items-start justify-between">
         <div>
           <Link 
-            href="/admin/social"
+            href="/admin/social/create"
             className="text-gray-400 hover:text-white text-sm flex items-center gap-1 mb-2"
           >
-            ← Back to Command Center
+            ← Back to Create
           </Link>
           <h1 className="text-3xl font-bold text-white">⚡ Live Now - Trend Radar</h1>
           <p className="text-gray-400 mt-1">

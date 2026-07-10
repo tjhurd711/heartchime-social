@@ -124,7 +124,7 @@ export default function LiveNowPostDetailPage() {
           .from('social_recipients')
           .select('id, name, age_range, image_clean_url')
           .eq('id', postData.recipient_id)
-          .single();
+          .maybeSingle();
         if (recipientData) recipient = recipientData;
       }
 
@@ -502,7 +502,7 @@ export default function LiveNowPostDetailPage() {
           {/* Header */}
           <div className="bg-[#1a1f2e] rounded-2xl border border-gray-800/50 p-6">
             <div className="flex items-center gap-2 text-sm text-gray-400 mb-4">
-              <Link href="/admin/social" className="hover:text-white">Social Command Center</Link>
+              <Link href="/admin/social/create" className="hover:text-white">Create</Link>
               <span>/</span>
               <Link href="/admin/social/live-now" className="hover:text-white">Live Now</Link>
               <span>/</span>

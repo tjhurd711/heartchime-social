@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Heartchime">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#f97316"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#g)"/>
+  <path fill="#fff" d="M64 96c-1.2 0-2.4-.4-3.4-1.2C45.6 84.8 32 72.8 32 56.5 32 45.6 40.8 36 52 36c6.4 0 12.2 3.1 16 8 3.8-4.9 9.6-8 16-8 11.2 0 20 9.6 20 20.5 0 16.3-13.6 28.3-28.6 38.3-.9.8-2.1 1.2-3.4 1.2z"/>
+</svg>

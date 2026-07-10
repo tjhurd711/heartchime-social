@@ -216,7 +216,7 @@ export default function LivePastPostDetailPage() {
           .from('social_recipients')
           .select('id, name, age_range, image_clean_url')
           .eq('id', postData.recipient_id)
-          .single()
+          .maybeSingle()
         if (recipientData) recipient = recipientData
       }
 
@@ -747,8 +747,8 @@ export default function LivePastPostDetailPage() {
           <div className="bg-[#1a1f2e] rounded-2xl border border-gray-800/50 p-6">
             {/* Breadcrumb */}
             <div className="flex items-center gap-2 mb-4 text-sm">
-              <Link href="/admin/social" className="text-gray-400 hover:text-white">
-                Social Command Center
+              <Link href="/admin/social/create" className="text-gray-400 hover:text-white">
+                Create
               </Link>
               <span className="text-gray-600">/</span>
               <Link href="/admin/social/live-past" className="text-gray-400 hover:text-white">

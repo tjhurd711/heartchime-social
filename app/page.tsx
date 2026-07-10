@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
 
 export default function HomePage() {
-  redirect('/admin/social')
+  redirect('/admin/social/create')
 }

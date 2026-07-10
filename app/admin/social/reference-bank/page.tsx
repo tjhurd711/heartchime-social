@@ -179,10 +179,10 @@ export default function ReferencePhotoBankPage() {
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
             <Link
-              href="/admin/social"
+              href="/admin/social/create"
               className="inline-flex text-sm text-[#d9be8c] hover:text-[#f2d29b] transition-colors"
             >
-              ← Back to Social
+              ← Back to Create
             </Link>
             <h1 className={`text-4xl mt-2 text-[#f2e9da] ${cormorant.className}`}>
               Reference Photo Bank

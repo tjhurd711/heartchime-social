@@ -211,10 +211,10 @@ export default function TributesAdminPage() {
       <div className="max-w-5xl mx-auto space-y-6">
         <header className="space-y-3">
           <Link
-            href="/admin/social"
+            href="/admin/social/create"
             className="inline-flex text-sm text-[#d6b274] hover:text-[#ecc98a] transition-colors"
           >
-            ← Back to Social
+            ← Back to Create
           </Link>
           <div>
             <h1 className={`text-4xl text-[#f3ead9] ${cormorant.className}`}>Tributes</h1>

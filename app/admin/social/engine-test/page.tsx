@@ -257,10 +257,10 @@ export default function EngineTestPage() {
     <div className={`${dmSans.className} p-6 lg:p-8 space-y-6 text-[#f7f1df]`}>
       <div>
         <Link
-          href="/admin/social"
+          href="/admin/social/create"
           className="text-[#d7c9a6] hover:text-[#f7f1df] text-sm flex items-center gap-1 mb-2"
         >
-          ← Back to Social Dashboard
+          ← Back to Create
         </Link>
         <h1 className={`${cormorant.className} text-4xl font-semibold text-[#f7f1df]`}>Engine Test</h1>
         <p className="text-[#d7c9a6] mt-2 max-w-3xl">
