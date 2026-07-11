@@ -1,21 +1,19 @@
 /**
- * Local / worker clip fetch entrypoints.
- * Implementation lives in celebrityClipLocalRunner.mjs (shared with fetch-worker.mjs).
+ * Local clip fetch entrypoints.
+ * Implementation lives in celebrityClipLocalRunner.mjs (shared by local-fetch / replace / add APIs).
  */
 import {
   resolveLocalCookiesPath,
   runLocalCelebrityClipFetch as runFetch,
   runLocalCelebrityClipReplace as runReplace,
   runLocalCelebrityClipAdd as runAdd,
-  runFetchJobParams,
-  workerHostname,
 } from './celebrityClipLocalRunner.mjs'
 
 export function isLocalClipFetchEnabled(): boolean {
   return process.env.NODE_ENV !== 'production' || process.env.ALLOW_LOCAL_CLIP_FETCH === 'true'
 }
 
-export { resolveLocalCookiesPath, runFetchJobParams, workerHostname }
+export { resolveLocalCookiesPath }
 
 export interface LocalClipFetchOutcome {
   ok: boolean
@@ -23,6 +21,7 @@ export interface LocalClipFetchOutcome {
   error?: string
   stderr?: string
   cookiesPath?: string
+  rateLimited?: boolean
 }
 
 export function runLocalCelebrityClipFetch(celebrityName: string): LocalClipFetchOutcome {

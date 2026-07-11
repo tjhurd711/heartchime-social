@@ -344,12 +344,6 @@ export default function VideoEditorPage() {
   }, [])
 
   const [localFetchAvailable, setLocalFetchAvailable] = useState(false)
-  const [workerJob, setWorkerJob] = useState<{
-    id: string
-    status: string
-    claimed_by: string | null
-    error: string | null
-  } | null>(null)
   const [cookieStatus, setCookieStatus] = useState<{
     configured: boolean
     uploadedAt: string | null
@@ -482,7 +476,6 @@ export default function VideoEditorPage() {
     setError(null)
     setResult(null)
     setSendToDeviceResult(null)
-    setWorkerJob(null)
     setFetching(true)
     setFetchStatus('Starting ECS fetch (yt-dlp on cele-zip-processing)...')
 
@@ -537,7 +530,6 @@ export default function VideoEditorPage() {
     setError(null)
     setResult(null)
     setSendToDeviceResult(null)
-    setWorkerJob(null)
     setFetching(true)
     setFetchStatus('Fetching on this PC (local yt-dlp + your cookies)... This may take 1–2 minutes.')
 
@@ -562,105 +554,6 @@ export default function VideoEditorPage() {
       await loadKnownNames()
     } catch (localError) {
       setError(localError instanceof Error ? localError.message : 'Local fetch failed')
-      setFetchStatus('')
-      await loadClips(name).catch(() => undefined)
-    } finally {
-      setFetching(false)
-    }
-  }
-
-  async function handleFetchClipsViaWorker() {
-    const name = celebrityName.trim()
-    if (!name) {
-      setError('Enter a celebrity name first.')
-      return
-    }
-
-    setError(null)
-    setResult(null)
-    setSendToDeviceResult(null)
-    setFetching(true)
-    setWorkerJob(null)
-    setFetchStatus('Queuing job for home-PC worker...')
-
-    try {
-      const response = await fetch('/api/admin/social/celebrity-videos/fetch-worker', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ celebrityName: name, mode: 'fetch' }),
-      })
-      const data = await response.json()
-      if (!response.ok) {
-        throw new Error(data?.details || data?.error || 'Failed to enqueue worker job')
-      }
-
-      const jobId = String(data.jobId || data.job?.id || '')
-      if (!jobId) {
-        throw new Error('Worker job created but no job id returned')
-      }
-
-      setWorkerJob({
-        id: jobId,
-        status: String(data.job?.status || data.status || 'pending'),
-        claimed_by: data.job?.claimed_by ?? null,
-        error: data.job?.error ?? null,
-      })
-      setFetchStatus('Job pending — waiting for a home-PC worker...')
-
-      const startedAt = Date.now()
-      let lastStatus = { readyCount: 0, selectedCount: 0, failedErrors: [] as string[] }
-      while (Date.now() - startedAt < 12 * 60 * 1000) {
-        await new Promise((resolve) => setTimeout(resolve, POLL_MS))
-
-        const jobRes = await fetch(
-          `/api/admin/social/celebrity-videos/fetch-worker?jobId=${encodeURIComponent(jobId)}`
-        )
-        const jobData = await jobRes.json()
-        if (jobRes.ok && jobData.job) {
-          const job = jobData.job as {
-            status: string
-            claimed_by: string | null
-            error: string | null
-          }
-          setWorkerJob({
-            id: jobId,
-            status: job.status,
-            claimed_by: job.claimed_by,
-            error: job.error,
-          })
-
-          if (job.status === 'pending') {
-            setFetchStatus('Job pending — waiting for a home-PC worker...')
-          } else if (job.status === 'claimed') {
-            setFetchStatus(
-              `Worker claimed${job.claimed_by ? ` (${job.claimed_by})` : ''} — fetching clips...`
-            )
-          } else if (job.status === 'failed') {
-            throw new Error(job.error || 'Worker fetch failed')
-          } else if (job.status === 'done') {
-            lastStatus = await loadClips(name)
-            setFetchStatus(
-              lastStatus.readyCount > 0
-                ? `Ready — ${lastStatus.readyCount} clips on S3 (via worker).`
-                : 'Worker finished (check clips below).'
-            )
-            break
-          }
-        }
-
-        lastStatus = await loadClips(name)
-        if (lastStatus.readyCount >= 3) {
-          setFetchStatus(`Ready — ${lastStatus.readyCount} clips on S3 (via worker).`)
-          break
-        }
-      }
-
-      if (lastStatus.readyCount === 0 && lastStatus.failedErrors.some((msg) => isYoutubeBotBlockError(msg))) {
-        setError(YOUTUBE_BOT_BLOCK_UI)
-      }
-      await loadKnownNames()
-    } catch (workerError) {
-      setError(workerError instanceof Error ? workerError.message : 'Worker fetch failed')
       setFetchStatus('')
       await loadClips(name).catch(() => undefined)
     } finally {
@@ -1160,7 +1053,6 @@ export default function VideoEditorPage() {
     setError(null)
     setResult(null)
     setSendToDeviceResult(null)
-    setWorkerJob(null)
     setFetching(true)
     setFetchStatus('Starting YouTube fetch...')
 
@@ -1501,20 +1393,12 @@ export default function VideoEditorPage() {
             </label>
 
             <div className="mt-4 flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={() => void handleFetchClipsViaWorker()}
-                disabled={fetching || rendering}
-                className="rounded-lg bg-[#d4af37] px-4 py-2 text-sm font-semibold text-[#0b1120] hover:bg-[#e2c462] disabled:opacity-50"
-              >
-                {fetching && workerJob ? 'Worker fetching...' : 'Fetch via worker'}
-              </button>
               {localFetchAvailable ? (
                 <button
                   type="button"
                   onClick={() => void handleFetchClipsLocally()}
                   disabled={fetching || rendering}
-                  className="rounded-lg border border-[#d4af37]/40 px-4 py-2 text-sm font-semibold text-[#f8f1df] hover:bg-[#1a2440] disabled:opacity-50"
+                  className="rounded-lg bg-[#d4af37] px-4 py-2 text-sm font-semibold text-[#0b1120] hover:bg-[#e2c462] disabled:opacity-50"
                 >
                   {fetching ? 'Fetching...' : 'Fetch locally (this PC)'}
                 </button>
@@ -1523,7 +1407,11 @@ export default function VideoEditorPage() {
                 type="button"
                 onClick={() => void handleFetchClips()}
                 disabled={fetching || rendering}
-                className="rounded-lg border border-[#d4af37]/40 px-4 py-2 text-sm font-semibold text-[#f8f1df] hover:bg-[#1a2440] disabled:opacity-50"
+                className={`rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50 ${
+                  localFetchAvailable
+                    ? 'border border-[#d4af37]/40 text-[#f8f1df] hover:bg-[#1a2440]'
+                    : 'bg-[#d4af37] text-[#0b1120] hover:bg-[#e2c462]'
+                }`}
               >
                 {fetching ? 'Fetching...' : 'Fetch from YouTube (AWS)'}
               </button>
@@ -1544,18 +1432,6 @@ export default function VideoEditorPage() {
                 {fetching ? 'Working...' : 'Fetch via ECS'}
               </button>
             </div>
-            {workerJob ? (
-              <p
-                className={`mt-2 text-xs ${
-                  workerJob.status === 'failed' ? 'text-red-300' : 'text-[#f8f1df]/70'
-                }`}
-              >
-                Worker job:{' '}
-                <span className="font-medium text-[#d4af37]">{workerJob.status}</span>
-                {workerJob.claimed_by ? ` · claimed by ${workerJob.claimed_by}` : null}
-                {workerJob.error ? ` · ${workerJob.error}` : null}
-              </p>
-            ) : null}
             {cookieStatus ? (
               <p
                 className={`mt-2 text-xs ${
@@ -1574,9 +1450,9 @@ export default function VideoEditorPage() {
               </p>
             ) : null}
             <p className="mt-2 text-xs text-[#f8f1df]/55">
-              Fetch via worker queues a job for a home PC running{' '}
-              <code className="text-[#d4af37]/80">node scripts/fetch-worker.mjs</code> (see
-              scripts/WORKERS.md). Local fetch uses this PC’s cookies; AWS/ECS uses S3 cookies.
+              {localFetchAvailable
+                ? 'Local fetch uses this PC’s cookies. AWS/ECS uses cookies from S3 — keep them fresh for the deployed site.'
+                : 'AWS/ECS fetch uses S3 cookies (see YOUTUBE-COOKIES.md). Use ECS when Lambda still fails after a cookie refresh.'}
             </p>
             {fetchStatus ? <p className="mt-3 text-sm text-[#d4af37]">{fetchStatus}</p> : null}
 
