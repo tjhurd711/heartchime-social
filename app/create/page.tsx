@@ -538,7 +538,7 @@ function CardPreview({
         <img
           src={HEARTCHIME_ICON_URL}
           alt="Heartchime"
-          style={{ width: 78, height: 60, objectFit: 'contain' }}
+          style={{ width: 50, height: 40, objectFit: 'contain' }}
         />
         <span style={{ fontWeight: 600, fontSize: 25, color: NAVY }}>HeartChime</span>
       </div>
