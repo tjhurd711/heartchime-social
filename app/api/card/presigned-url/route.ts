@@ -25,6 +25,10 @@ const ALLOWED_MIME_TYPES = new Set([
 
 const cardS3Client = new S3Client({
   region: CARD_REGION,
+  // Default checksums add x-amz-checksum-crc32=AAAAAA== to the presigned URL.
+  // The browser PUT cannot replace that placeholder, so S3 rejects the upload.
+  requestChecksumCalculation: 'WHEN_REQUIRED',
+  responseChecksumValidation: 'WHEN_REQUIRED',
   credentials: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
