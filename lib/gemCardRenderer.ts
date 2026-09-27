@@ -1,9 +1,12 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// SOCIAL CARD RENDERER - Puppeteer-based PNG generation for TikTok/Instagram
+// GEM CARD RENDERER - Puppeteer-based PNG generation for HeartGem cards
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// Renders HeartChime cards as 1080x1920 PNG images
-// Card design matches the socialMode HeartchimePreviewCard exactly
+// Renders HeartGem cards as 1080x1920 PNG images.
+// Mirrors lib/socialCardRenderer.ts exactly (same headless-Chrome pipeline,
+// same Twemoji handling, same S3 upload) — only the card layout differs:
+// websitegem.png icon + "HeartGem" wordmark, the image, a "Because…" context
+// line, and an optional "via @handle" credit.
 // ═══════════════════════════════════════════════════════════════════════════
 
 import chromium from '@sparticuz/chromium'
@@ -22,37 +25,47 @@ const isLocal = !process.env.AWS_LAMBDA_FUNCTION_VERSION && !process.env.VERCEL
 const CARD_WIDTH = 720
 const SCALE = CARD_WIDTH / 300 // 2.4x
 
-// Colors (matching Framer design)
+// Colors (matching the showcase GemCard design)
 const GOLD_COLOR = '#FFC300'
 const ORANGE_COLOR = '#FF9800'
 const NAVY_BLUE = '#1A365D'
+const LIGHTER_NAVY = '#2C5282'
 const WHITE = '#FFFFFF'
 
 // Scaled dimensions
+const BORDER_RING = Math.round(2.5 * SCALE) // 8px navy border ring
 const CARD_PADDING = Math.round(20 * SCALE) // 64px
-const CARD_BORDER_RADIUS = Math.round(24 * SCALE) // 77px
-const ICON_WIDTH = Math.round(50 * SCALE) // 160px
+const OUTER_BORDER_RADIUS = Math.round(24 * SCALE) // 77px
+const INNER_BORDER_RADIUS = Math.round(21.5 * SCALE) // 69px
+const ICON_WIDTH = Math.round(44 * SCALE) // 141px (gem icon is ~44x40 in showcase)
 const ICON_HEIGHT = Math.round(40 * SCALE) // 128px
 const HEADER_FONT_SIZE = Math.round(25 * SCALE) // 80px
 const PHOTO_BORDER_RADIUS = Math.round(16 * SCALE) // 51px
-const MESSAGE_FONT_SIZE = Math.round(18 * SCALE) // 58px
+const CONTEXT_FONT_SIZE = Math.round(16 * SCALE) // 51px
+const HANDLE_FONT_SIZE = Math.round(12 * SCALE) // 38px
 const GAP = Math.round(16 * SCALE) // 51px
+const PLAY_BUTTON_SIZE = Math.round(64 * SCALE) // 205px
+const PLAY_ICON_SIZE = Math.round(30 * SCALE) // 96px
 
-// HeartChime icon URL (public)
-const HEARTCHIME_ICON_URL = 'https://heartbeat-photos-prod.s3.us-east-2.amazonaws.com/icons/websitechime.png'
+// HeartGem icon URL (public)
+const HEARTGEM_ICON_URL = 'https://heartbeat-photos-prod.s3.us-east-2.amazonaws.com/icons/websitegem.png'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HTML TEMPLATE
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function generateHTML(photoUrl: string, message: string, dotCount = 0): string {
-  // Escape message for HTML
-  const escapedMessage = message
+function escapeHtml(value: string): string {
+  return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;')
+}
+
+export function generateHTML(photoUrl: string, context: string, creatorHandle = ''): string {
+  const escapedContext = escapeHtml(context)
+  const escapedHandle = escapeHtml(creatorHandle)
 
   return `
 <!DOCTYPE html>
@@ -81,16 +94,23 @@ export function generateHTML(photoUrl: string, message: string, dotCount = 0): s
       font-family: 'Raleway', sans-serif;
     }
     
-    .card {
+    /* Outer navy ring fakes the gradient border, matching the showcase. */
+    .card-border {
       width: ${CARD_WIDTH}px;
+      padding: ${BORDER_RING}px;
+      border-radius: ${OUTER_BORDER_RADIUS}px;
+      background: ${NAVY_BLUE};
+      box-shadow: 0 ${Math.round(6 * SCALE)}px ${Math.round(15 * SCALE)}px ${Math.round(2 * SCALE)}px rgba(26, 54, 93, 0.3);
+    }
+
+    .card {
       padding: ${CARD_PADDING}px;
-      border-radius: ${CARD_BORDER_RADIUS}px;
-      background: linear-gradient(135deg, ${GOLD_COLOR} 0%, ${ORANGE_COLOR} 100%);
+      border-radius: ${INNER_BORDER_RADIUS}px;
+      background: linear-gradient(135deg, ${NAVY_BLUE} 0%, ${LIGHTER_NAVY} 100%);
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: ${GAP}px;
-      box-shadow: 0 0 ${Math.round(30 * SCALE)}px ${Math.round(5 * SCALE)}px rgba(255, 195, 0, 0.4);
     }
     
     .header {
@@ -109,102 +129,128 @@ export function generateHTML(photoUrl: string, message: string, dotCount = 0): s
       font-family: 'Raleway', sans-serif;
       font-weight: 600;
       font-size: ${HEADER_FONT_SIZE}px;
-      color: ${NAVY_BLUE};
+      background: linear-gradient(135deg, ${GOLD_COLOR}, ${ORANGE_COLOR});
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
     }
     
     .photo-container {
       width: 100%;
-      height: ${Math.round(195 * SCALE)}px;
       position: relative;
       border-radius: ${PHOTO_BORDER_RADIUS}px;
       overflow: hidden;
     }
     
+    /* Size to the image's natural aspect ratio (height: auto) so the whole
+       photo shows, exactly like the live preview — instead of a fixed-height
+       box that crops the top/bottom of the image. */
     .photo {
       width: 100%;
-      height: 100%;
+      height: auto;
+      min-height: ${Math.round(150 * SCALE)}px;
+      max-height: ${Math.round(350 * SCALE)}px;
       object-fit: cover;
       object-position: center;
       display: block;
+    }
+
+    /* Play button overlay — makes the still read as a video frame. */
+    .play-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .play-button {
+      width: ${PLAY_BUTTON_SIZE}px;
+      height: ${PLAY_BUTTON_SIZE}px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 ${Math.round(4 * SCALE)}px ${Math.round(12 * SCALE)}px rgba(0, 0, 0, 0.35);
+    }
+
+    .play-button svg {
+      width: ${PLAY_ICON_SIZE}px;
+      height: ${PLAY_ICON_SIZE}px;
+      margin-left: ${Math.round(4 * SCALE)}px;
     }
     
     .photo-placeholder {
       width: 100%;
       height: ${Math.round(200 * SCALE)}px;
       border-radius: ${PHOTO_BORDER_RADIUS}px;
-      background: rgba(26, 54, 93, 0.2);
+      background: rgba(255, 255, 255, 0.1);
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: ${Math.round(48 * SCALE)}px;
-      opacity: 0.4;
+      opacity: 0.6;
     }
     
-    .message {
+    .context {
       font-family: 'Raleway', sans-serif;
-      font-size: ${MESSAGE_FONT_SIZE}px;
-      font-weight: 500;
-      color: ${NAVY_BLUE};
+      font-size: ${CONTEXT_FONT_SIZE}px;
+      font-weight: 600;
+      background: linear-gradient(135deg, ${GOLD_COLOR}, ${ORANGE_COLOR});
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
       text-align: center;
-      line-height: 1.5;
+      line-height: 1.4;
       margin: 0;
       padding: 0 ${Math.round(10 * SCALE)}px;
     }
 
+    .handle {
+      font-family: 'Raleway', sans-serif;
+      font-size: ${HANDLE_FONT_SIZE}px;
+      font-weight: 500;
+      font-style: italic;
+      color: rgba(255, 195, 0, 0.7);
+      text-align: center;
+      margin: ${Math.round(-8 * SCALE)}px 0 0;
+    }
+
     /* Inline emoji images injected by Twemoji, sized to match the surrounding text */
-    .message img.emoji {
+    .context img.emoji {
       height: 1em;
       width: 1em;
       margin: 0 0.05em 0 0.1em;
       vertical-align: -0.12em;
       display: inline-block;
     }
-
-    .dots {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: ${Math.round(6 * SCALE)}px;
-    }
-
-    .dot {
-      width: ${Math.round(8 * SCALE)}px;
-      height: ${Math.round(8 * SCALE)}px;
-      border-radius: 50%;
-      background: rgba(26, 54, 93, 0.3);
-    }
-
-    .dot.active {
-      width: ${Math.round(22 * SCALE)}px;
-      border-radius: ${Math.round(4 * SCALE)}px;
-      background: ${NAVY_BLUE};
-    }
   </style>
 </head>
 <body>
-  <div class="card">
-    <!-- Header -->
-    <div class="header">
-      <img class="icon" src="${HEARTCHIME_ICON_URL}" alt="Heartchime" />
-      <span class="title">HeartChime</span>
-    </div>
-    
-    <!-- Photo -->
-    ${photoUrl 
-      ? `<div class="photo-container"><img class="photo" src="${photoUrl}" alt="Memory" /></div>`
-      : `<div class="photo-placeholder">📷</div>`
-    }
+  <div class="card-border">
+    <div class="card">
+      <!-- Header -->
+      <div class="header">
+        <img class="icon" src="${HEARTGEM_ICON_URL}" alt="HeartGem" />
+        <span class="title">HeartGem</span>
+      </div>
+      
+      <!-- Photo -->
+      ${photoUrl 
+        ? `<div class="photo-container"><img class="photo" src="${photoUrl}" alt="Memory" /><div class="play-overlay"><div class="play-button"><svg viewBox="0 0 24 24" fill="${GOLD_COLOR}"><path d="M8 5v14l11-7z"/></svg></div></div></div>`
+        : `<div class="photo-placeholder">📷</div>`
+      }
+      
+      <!-- Context -->
+      <p class="context">${escapedContext}</p>
 
-    <!-- Slideshow dots -->
-    ${dotCount >= 2
-      ? `<div class="dots">${Array.from({ length: dotCount })
-          .map((_, i) => `<span class="dot${i === 0 ? ' active' : ''}"></span>`)
-          .join('')}</div>`
-      : ''
-    }
-    
-    <!-- Message -->
-    <p class="message">${escapedMessage}</p>
+      <!-- Creator handle -->
+      ${creatorHandle
+        ? `<p class="handle">via ${escapedHandle}</p>`
+        : ''
+      }
+    </div>
   </div>
 </body>
 </html>
@@ -217,10 +263,10 @@ export function generateHTML(photoUrl: string, message: string, dotCount = 0): s
 
 async function fetchImageAsDataUrl(url: string): Promise<string | null> {
   try {
-    console.log(`[socialCardRenderer] 📥 Fetching image: ${url.slice(0, 60)}...`)
+    console.log(`[gemCardRenderer] 📥 Fetching image: ${url.slice(0, 60)}...`)
     const response = await fetch(url)
     if (!response.ok) {
-      console.error(`[socialCardRenderer] ❌ Failed to fetch image: ${response.status}`)
+      console.error(`[gemCardRenderer] ❌ Failed to fetch image: ${response.status}`)
       return null
     }
     
@@ -229,10 +275,10 @@ async function fetchImageAsDataUrl(url: string): Promise<string | null> {
     const base64 = Buffer.from(arrayBuffer).toString('base64')
     
     const dataUrl = `data:${contentType};base64,${base64}`
-    console.log(`[socialCardRenderer] ✅ Converted to data URL (${base64.length} chars)`)
+    console.log(`[gemCardRenderer] ✅ Converted to data URL (${base64.length} chars)`)
     return dataUrl
   } catch (error) {
-    console.error('[socialCardRenderer] ❌ Error fetching image:', error)
+    console.error('[gemCardRenderer] ❌ Error fetching image:', error)
     return null
   }
 }
@@ -241,10 +287,10 @@ async function fetchImageAsDataUrl(url: string): Promise<string | null> {
 // MAIN RENDER FUNCTION
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function renderSocialCard(
+export async function renderGemCard(
   photoUrl: string,
-  message: string,
-  dotCount = 0
+  context: string,
+  creatorHandle = ''
 ): Promise<Buffer> {
   let browser = null
 
@@ -253,14 +299,14 @@ export async function renderSocialCard(
     let imageDataUrl = ''
     if (photoUrl) {
       if (photoUrl.startsWith('data:')) {
-        console.log('[socialCardRenderer] 📥 Using provided data URL')
+        console.log('[gemCardRenderer] 📥 Using provided data URL')
         imageDataUrl = photoUrl
       } else {
         const dataUrl = await fetchImageAsDataUrl(photoUrl)
         if (dataUrl) {
           imageDataUrl = dataUrl
         } else {
-          console.warn('[socialCardRenderer] ⚠️ Could not fetch photo, card will have placeholder')
+          console.warn('[gemCardRenderer] ⚠️ Could not fetch photo, card will have placeholder')
         }
       }
     }
@@ -285,7 +331,7 @@ export async function renderSocialCard(
     })
 
     // Generate and load HTML with base64 data URL instead of external URL
-    const html = generateHTML(imageDataUrl, message, dotCount)
+    const html = generateHTML(imageDataUrl, context, creatorHandle)
     await page.setContent(html, {
       waitUntil: 'load', // Puppeteer-core setContent only supports load/domcontentloaded
     })
@@ -364,16 +410,19 @@ const s3Client = new S3Client({
 
 const S3_BUCKET = process.env.AWS_S3_BUCKET || 'heartbeat-photos-prod'
 
-export async function renderAndUploadSocialCard(
+export async function renderAndUploadGemCard(
   photoUrl: string,
-  message: string,
-  dotCount = 0
+  context: string,
+  creatorHandle = ''
 ): Promise<string> {
   // Render the card
-  const buffer = await renderSocialCard(photoUrl, message, dotCount)
+  const buffer = await renderGemCard(photoUrl, context, creatorHandle)
 
-  // Generate unique filename
-  const filename = `social-cards/${uuidv4()}.png`
+  // Generate unique filename. Must live under the social-cards/* prefix, which
+  // is the prefix the bucket policy makes publicly readable — a sibling prefix
+  // like gem-cards/* uploads fine but returns 403 AccessDenied on read, so the
+  // browser ends up saving an XML error body as a .png.
+  const filename = `social-cards/gems/${uuidv4()}.png`
 
   // Upload to S3
   await s3Client.send(
@@ -389,4 +438,3 @@ export async function renderAndUploadSocialCard(
   // Return public URL
   return `https://${S3_BUCKET}.s3.amazonaws.com/${filename}`
 }
-
