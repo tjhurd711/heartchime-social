@@ -31,15 +31,15 @@ const WHITE = '#FFFFFF'
 // Scaled dimensions
 const CARD_PADDING = Math.round(20 * SCALE) // 64px
 const CARD_BORDER_RADIUS = Math.round(24 * SCALE) // 77px
-const ICON_WIDTH = Math.round(50 * SCALE) // 160px
-const ICON_HEIGHT = Math.round(40 * SCALE) // 128px
+const ICON_WIDTH = Math.round(78 * SCALE)
+const ICON_HEIGHT = Math.round(60 * SCALE)
 const HEADER_FONT_SIZE = Math.round(25 * SCALE) // 80px
 const PHOTO_BORDER_RADIUS = Math.round(16 * SCALE) // 51px
 const MESSAGE_FONT_SIZE = Math.round(18 * SCALE) // 58px
 const GAP = Math.round(16 * SCALE) // 51px
 
 // HeartChime icon URL (public)
-const HEARTCHIME_ICON_URL = 'https://heartbeat-photos-prod.s3.us-east-2.amazonaws.com/icons/websitechime.png'
+const HEARTCHIME_ICON_URL = 'https://heartbeat-photos-prod.s3.us-east-2.amazonaws.com/icons/websitechime-v2.png'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HTML TEMPLATE

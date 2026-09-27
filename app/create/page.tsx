@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid'
 // The S3-hosted icon the server renderer bakes into the final PNG. Using the same
 // asset here keeps the live preview identical to the downloaded card.
 const HEARTCHIME_ICON_URL =
-  'https://heartbeat-photos-prod.s3.us-east-2.amazonaws.com/icons/websitechime.png'
+  'https://heartbeat-photos-prod.s3.us-east-2.amazonaws.com/icons/websitechime-v2.png'
 
 const GOLD = '#FFC300'
 const ORANGE = '#FF9800'
@@ -538,7 +538,7 @@ function CardPreview({
         <img
           src={HEARTCHIME_ICON_URL}
           alt="Heartchime"
-          style={{ width: 50, height: 40, objectFit: 'contain' }}
+          style={{ width: 78, height: 60, objectFit: 'contain' }}
         />
         <span style={{ fontWeight: 600, fontSize: 25, color: NAVY }}>HeartChime</span>
       </div>
