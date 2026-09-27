@@ -132,7 +132,7 @@ function generateMusicPlayerHTML(
     .header {
       display: flex;
       align-items: center;
-      gap: 0;
+      gap: ${Math.round(6 * SCALE)}px;
     }
     
     .icon {
@@ -342,7 +342,7 @@ function generateVideoPreviewHTML(
     .header {
       display: flex;
       align-items: center;
-      gap: 0;
+      gap: ${Math.round(6 * SCALE)}px;
     }
     
     .icon {

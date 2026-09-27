@@ -96,7 +96,7 @@ export function generateHTML(photoUrl: string, message: string, dotCount = 0): s
     .header {
       display: flex;
       align-items: center;
-      gap: 0;
+      gap: ${Math.round(6 * SCALE)}px;
     }
     
     .icon {

@@ -533,7 +533,7 @@ function CardPreview({
         boxShadow: '0 0 30px 5px rgba(255, 195, 0, 0.4)',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={HEARTCHIME_ICON_URL}
