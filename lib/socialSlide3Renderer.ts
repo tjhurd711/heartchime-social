@@ -69,8 +69,8 @@ const WHITE = '#FFFFFF'
 // Scaled dimensions - SAME AS MAIN CARD
 const CARD_PADDING = Math.round(20 * SCALE) // 64px
 const CARD_BORDER_RADIUS = Math.round(24 * SCALE) // 77px
-const ICON_WIDTH = Math.round(50 * SCALE)
-const ICON_HEIGHT = Math.round(40 * SCALE)
+const ICON_WIDTH = Math.round(36 * SCALE)
+const ICON_HEIGHT = Math.round(28 * SCALE)
 const HEADER_FONT_SIZE = Math.round(25 * SCALE) // 80px
 const PHOTO_BORDER_RADIUS = Math.round(16 * SCALE) // 51px
 const MESSAGE_FONT_SIZE = Math.round(18 * SCALE) // 58px
